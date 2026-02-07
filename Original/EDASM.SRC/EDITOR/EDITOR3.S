@@ -4,30 +4,67 @@ This file was generated using the DiskBrowser utility with minimal editing.
 It is meant for viewing purposes only.
 
             ORG    $9900
+;=================================================
+; EDITOR/EDITOR3.S - Editor Module Part 3: Utilities & Parsing
 ;
-; Parse cmd line for dec string
-; Convert to a 16-bit unsigned val
-; Stops process on a non-dec char
+; This is the third part of the EDASM.ED editor module.
+; It contains utility routines for:
+; - Number parsing and conversion (decimal, hex, binary)
+; - String processing
+; - Command-line parsing
+; - Input validation
+; - Screen I/O helpers
+; - Memory management utilities
 ;
-; Output
-;  C=0 - Conversion was done and
-;  (Reg11)=16-bit value
-;  C=1 - No conversion
+; This file provides the lower-level support routines used
+; by the higher-level command handlers in EDITOR1.S and
+; EDITOR2.S.
 ;
-L9900       LDA    #0
-            STA    Reg11
-            STA    Reg11+1
-            LDA    Z12             ;Get char
-            JSR    L996D           ;Convert if dec digit
-            BCS    L9958           ;Not dec
-            STA    Reg11
-            STA    L996C
-L9912       JSR    XB274           ;Get next non-blank char
-            JSR    L996D
-            BCS    L9957           ;Not a dec digit
+; KEY FUNCTIONS:
+; - Decimal string to 16-bit binary conversion
+; - Hex/octal string parsing
+; - Character classification (is digit, is hex, is alpha)
+; - String comparison and matching
+; - Buffer manipulation
+; - Screen coordinate calculations
 ;
-            STA    Reg4            ;(A)=0-9
-            ORA    L996C
+; EXTERNAL REFERENCES (X-labels):
+; XB274 → LB274: Get next non-blank character
+;
+; SWEET16 USAGE:
+; This module uses Sweet16 registers R0-R15 for 16-bit
+; arithmetic and pointer operations.
+;=================================================
+;
+; Decimal String Parser
+; Parses command line for decimal string and converts to 16-bit value.
+; Processing stops on first non-decimal character.
+;
+; Input:
+;   Z12 = First character to process
+;
+; Output:
+;   Carry clear: Conversion successful
+;     Reg11 = 16-bit unsigned value
+;   Carry set: No conversion (not a decimal digit)
+;
+L9900       LDA    #0              ;Initialize result to zero
+            STA    Reg11           ;Clear low byte
+            STA    Reg11+1         ;Clear high byte
+            LDA    Z12             ;Get first character
+            JSR    L996D           ;Try to convert if decimal digit
+            BCS    L9958           ;Not a decimal digit, return with C=1
+            STA    Reg11           ;Store first digit as low byte
+            STA    L996C           ;Save for later use
+;
+; Main conversion loop: multiply accumulator by 10 and add next digit
+;
+L9912       JSR    XB274           ;Get next non-blank character (→ LB274)
+            JSR    L996D           ;Try to convert to decimal
+            BCS    L9957           ;Not a decimal digit, done
+;
+            STA    Reg4            ;Save digit value (0-9)
+            ORA    L996C           ;Combine with previous digit
             STA    L996C
             LDA    Reg11
             STA    Reg0

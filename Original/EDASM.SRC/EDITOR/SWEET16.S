@@ -3,81 +3,122 @@ End of file   :   16,627
 This file was generated using the DiskBrowser utility with minimal editing.
 It is meant for viewing purposes only.
 ;---------------------------------------------------------;
-;  Initial source was disassembled with The Flaming Bird  ;
-;  Disassembler. The Sweet16 code was disassembled with   ;
-;  the Merlin8 disassembler. Final re-assembly must be    ;
-;  done with the EdAsm assembler to produce a binary      ;
-;  image which will be compared against the  original     ;
-;    (c) Phoenix corp. 1992,93  -  All rights reserved    ;
+; EDITOR/SWEET16.S - Sweet16 Virtual Machine Interpreter
+;
+; Sweet16 is a 16-bit virtual machine interpreter originally
+; written by Steve Wozniak for the Apple II. It provides an
+; elegant way to perform 16-bit operations on the 8-bit 6502
+; processor with compact code.
+;
+; DISASSEMBLY CREDITS:
+;  Initial source was disassembled with The Flaming Bird
+;  Disassembler. The Sweet16 code was disassembled with
+;  the Merlin8 disassembler. Final re-assembly must be
+;  done with the EdAsm assembler to produce a binary
+;  image which will be compared against the original.
+;    (c) Phoenix corp. 1992,93  -  All rights reserved
+;
+; IMPLEMENTATION NOTES:
+; - Sweet16 code executes as if on a 16-bit processor
+; - Has sixteen 16-bit little-endian registers (R0-R15)
+; - Registers stored in zero page ($00-$1F, 32 bytes total)
+; - Sweet16 programs are typically much more compact than
+;   equivalent 6502 code, at the cost of slower execution
+;
+; REGISTER ASSIGNMENTS:
+;   R0  - Accumulator (general 16-bit arithmetic)
+;   R1-R11 - General purpose registers
+;   R12 - Subroutine return address stack pointer
+;   R13 - Comparison result register (for branch testing)
+;   R14 - Status register (carry in LSB of R14H)
+;   R15 - Program counter (Sweet16 instruction pointer)
+;
+; STATUS FLAGS:
+;   Carry: Stored in bit 0 of R14+1 (R14H)
+;   Negative: Determined by MSB of "prior result" register
+;   Zero: Determined when "prior result" register is $0000
+;
+; ENTRY POINT: NEWSW16 ($D000)
+; Called with JSR NEWSW16 from 6502 code. The return address
+; on the stack becomes the Sweet16 program counter. Sweet16
+; code follows immediately after the JSR instruction.
+;
+; EXIT: Use RTN instruction to return to 6502 code.
+;
+; X LABEL REFERENCES:
+; External labels (Xabcd) in this file refer to local labels
+; (Labcd) in the EDITOR module or EDASM.SYSTEM (EI) module.
 ;---------------------------------------------------------;
             ORG    $D000
 ;=================================================
-; SWEET16 code is executed as if it were running on a
-; 16-bit processor with sixteen, internal 16-bit
-; little-endian registers, R0 through R15. Some registers
-; have well-defined functions:
-; R0 is the accumulator.
-; R12 subroutine return address stack
-; R13 stores the result of all comparison operations for
-;     branch testing.
-; R14 is the status register.
-; R15 is the program counter.
-; The 16 virtual registers, 32 bytes in total, are located
-; in the zero page of the Apple II's real, physical memory
-; map (at $00-$1F)
+; Sweet16 Interpreter Main Entry Point
 ;
-; The carry bit is in the lsb of R14H
-; Negative and Zero "flags" are the given by the contents
-; of the "prior" result register (indexed with X)
+; This code sets up the Sweet16 virtual machine state and
+; begins executing Sweet16 instructions. It preserves the
+; 6502 registers and sets up R15 as the Sweet16 PC.
 ;
-NEWSW16     EQU    *               ;ENTRY
-            STA    Z58             ;Preserve the regs
-            STX    Z59
-            STY    Z5A
-            PHP
-            PLA
-            STA    Z5B
-            CLD
-            PLA
-            STA    Reg15           ;Init the SW16 program counter
-            PLA                    ; using the Return Addr
-            STA    Reg15+1
-LD011       INC    Reg15           ;Increment SW16 PC for fetch
-            BNE    LD017
-            INC    Reg15+1
+NEWSW16     EQU    *               ;Sweet16 entry point (called with JSR)
+            STA    Z58             ;Preserve 6502 A register
+            STX    Z59             ;Preserve 6502 X register
+            STY    Z5A             ;Preserve 6502 Y register
+            PHP                    ;Push processor status
+            PLA                    ;Pull it to A
+            STA    Z5B             ;Save 6502 flags
+            CLD                    ;Ensure decimal mode is off (Sweet16 uses binary)
+            PLA                    ;Pull return address low byte
+            STA    Reg15           ;Store in R15 (Sweet16 PC low)
+            PLA                    ;Pull return address high byte
+            STA    Reg15+1         ;Store in R15 (Sweet16 PC high)
+                                    ; Now R15 points to Sweet16 code after JSR
 ;
-LD017       LDY    #0
-SW16BK      EQU    *-1
-            LDA    (Reg15),Y       ;Fetch the instruction
-            AND    #$0F            ;Mask register specification
-            ASL                    ;Double for 2-byte registers
-            TAX                    ;(X) is used to index the register Rn
-            LSR
-            EOR    (Reg15),Y       ;Now we have the opcode ($x0) where x=1-F
-            BEQ    ToBR            ;If zero, then non-reg op or CPIM
+; Instruction Fetch and Decode Loop
 ;
-            STX    Reg14+1         ;Indicate "prior" result register
-            LSR                    ;opcodex2 to LSB's
-            LSR
-            LSR
-            TAY                    ;To Y-reg for indexing
-            LDA    LD07F-2,Y
-            STA    Z5C+1
-            LDA    LD05F-2,Y
-            STA    Z5C
-            JMP    (Z5C)           ;Go SW16 REG op rtns
+LD011       INC    Reg15           ;Increment SW16 PC to next instruction byte
+            BNE    LD017           ;If no page crossing, continue
+            INC    Reg15+1         ;Handle page crossing
 ;
-; Non-register ops are handled here. They include
-; the new ops CPIM, BRL and BSL
-; NB. On entry, Y=0
+LD017       LDY    #0              ;Y=0 for indirect indexed addressing
+SW16BK      EQU    *-1             ;Breakpoint location (can patch for debugging)
+            LDA    (Reg15),Y       ;Fetch the instruction byte
+            AND    #$0F            ;Mask out register number (low nibble)
+            ASL                    ;Double for 2-byte register addressing
+            TAX                    ;X now indexes into zero page register (R0-R15)
+            LSR                    ;Restore register number
+            EOR    (Reg15),Y       ;XOR with full opcode byte to isolate operation
+                                    ; This gives us the opcode in high nibble
+            BEQ    ToBR            ;If zero, it's a non-register op or CPIM
 ;
-ToBR        INC    Reg15           ;Increment SW16 PC
-            BNE    ToBR2
-            INC    Reg15+1
-ToBR2       LDA    LD080,X
-            STA    Z5C+1
-            LDA    LD060,X
-            STA    Z5C
+; Register Operation Dispatch
+; We have a register operation (SET, LD, ST, ADD, SUB, etc.)
+;
+            STX    Reg14+1         ;Save "prior result" register number in R14H
+                                    ; Used for N and Z flag determination
+            LSR                    ;Shift opcode right to get index
+            LSR                    ; into dispatch table
+            LSR                    ; (opcode >> 2) gives us table offset
+            TAY                    ;Y = dispatch table index
+            LDA    LD07F-2,Y       ;Get high byte of handler address
+            STA    Z5C+1           ;Store in jump vector
+            LDA    LD05F-2,Y       ;Get low byte of handler address
+            STA    Z5C             ;Store in jump vector
+            JMP    (Z5C)           ;Jump to operation handler
+;
+; Non-Register Operation Dispatch
+; These operations don't operate on specific registers:
+; - CPIM (Compare Immediate)
+; - BRL (Branch Long)
+; - BSL (Branch Subroutine Long)
+; - Branch instructions (BNC, BC, BP, BM, BZ, BNZ, etc.)
+;
+; On entry: Y=0, X=register*2 (but not used for non-reg ops)
+;
+ToBR        INC    Reg15           ;Increment SW16 PC for next byte
+            BNE    ToBR2           ;If no page crossing, continue
+            INC    Reg15+1         ;Handle page crossing
+ToBR2       LDA    LD080,X         ;Get high byte of non-reg handler
+            STA    Z5C+1           ;Store in jump vector
+            LDA    LD060,X         ;Get low byte of non-reg handler
+            STA    Z5C             ;Store in jump vector
             LDA    Reg14+1         ;"Prior" result register
             LSR                    ;Prepare 6502 C-bit for BC, BNC
             LDA    Reg14+1

@@ -5,28 +5,73 @@ It is meant for viewing purposes only.
 
             ORG    $B100
 ;=================================================
-; EDASM Command Interpreter
-; This module references of a number
-; of routines and tables of EdAsm.Ed
+; EI/EDASMINT.S - EdAsm Interpreter (Command Interpreter)
 ;
-EIStart     EQU    *
-            LDX    #3
-LB102       LDA    LB296,X         ;Mark pages $B1-$B8
-            STA    BitMap+20,X     ; & $BF as used
-            LDA    LB29D,X
-            STA    PrtError,X
+; This is the main EdAsm Interpreter module that coordinates
+; between the Editor, Assembler, and Linker modules. It provides:
+;
+; - Command-line interface and parsing
+; - Module loading and switching (ED, ASM, LINK)
+; - System initialization and setup
+; - ProDOS interface routines
+; - Memory management
+; - Error handling and messages
+; - I/O hook management
+;
+; MEMORY ORGANIZATION:
+; This module is loaded at $2400-$2FFE and relocated to
+; $B100-$BCFE (length $0BFF = 3071 bytes). It remains
+; resident in memory at all times whether in edit, assembly,
+; or link mode.
+;
+; INITIALIZATION:
+; On startup, the EI:
+; 1. Marks memory pages $B1-$B8 and $BF as used in ProDOS bitmap
+; 2. Sets up RESET vector to handle Apple II RESET key
+; 3. Sets up Ctrl-Y handler for user break
+; 4. Initializes error message vector
+; 5. Loads and starts the Editor module (EDASM.ED)
+;
+; COMMAND INTERFACE:
+; The EI provides a command-line interface where users enter
+; commands like ASM, EDIT, LINK, CATALOG, RUN, etc. It parses
+; these commands and calls the appropriate routines in the
+; Editor, Assembler, or Linker modules.
+;
+; EXTERNAL REFERENCES:
+; This module references routines in the Editor module (EDASM.ED).
+; See EI/EXTERNALS.S for X-label to L-label mappings.
+;
+; SWEET16:
+; The EI uses Sweet16 extensively for compact 16-bit operations.
+; The Sweet16 interpreter is located at $D000 (Language Card).
+;=================================================
+;
+; Interpreter Initialization
+;
+EIStart     EQU    *               ;EdAsm Interpreter start
+            LDX    #3              ;Loop counter (4 bytes to copy)
+;
+; Mark ProDOS memory pages as used
+;
+LB102       LDA    LB296,X         ;Get bitmap marking values
+            STA    BitMap+20,X     ;Mark pages $B1-$B8 as used in ProDOS
+            LDA    LB29D,X         ; memory bitmap (prevents ProDOS from
+            STA    PrtError,X      ; allocating this memory)
             DEX
-            BPL    LB102
+            BPL    LB102           ;Loop for all 4 bytes
 ;
-; Setup RESET vector
+; Setup RESET Vector
+; When user presses Apple II RESET key, control comes here
 ;
-            LDX    #2
-LB113       LDA    LB29A,X
-            STA    SOFTEV,X
+            LDX    #2              ;3 bytes to copy (RESET vector)
+LB113       LDA    LB29A,X         ;Get RESET handler address
+            STA    SOFTEV,X        ;Store at RESET vector ($03F2-$03F4)
             DEX
-            BPL    LB113
+            BPL    LB113           ;Loop for all 3 bytes
 ;
-; Setup ctrl-Y command
+; Setup Ctrl-Y Command Handler
+; Allows user to break out of programs with Ctrl-Y
 ;
             LDA    #$4C
             STA    USRADR

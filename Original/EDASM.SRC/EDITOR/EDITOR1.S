@@ -4,30 +4,75 @@ This file was generated using the DiskBrowser utility with minimal editing.
 It is meant for viewing purposes only.
 
 ;=================================================
-; $0A,$0B - R5  - TxtBgn
-; $0C,$0D - R6  - HiMem
-; $0E,$0F - R7  - TxtEnd (last char of text buf being edited)
+; EDITOR/EDITOR1.S - Editor Module Part 1: File Operations
+;
+; This is the first part of the EDASM.ED editor module.
+; It contains file operation commands and utilities.
+;
+; SWEET16 REGISTER USAGE:
+; The editor extensively uses Sweet16 for 16-bit pointer operations:
+;   R5 ($0A-$0B) - TxtBgn: Pointer to beginning of text buffer
+;   R6 ($0C-$0D) - HiMem: High memory limit
+;   R7 ($0E-$0F) - TxtEnd: Pointer to last char of text buffer
+;
+; COMMANDS IMPLEMENTED IN THIS FILE:
+; - LOCK: Set file to read-only (access = $C200)
+; - UNLOCK: Allow file modification (access = $C2C2)
+; - DELETE: Remove file from disk (with confirmation if locked)
+; - RENAME: Change filename
+; - CATALOG/CAT: List directory contents
+; - PREFIX: Change ProDOS prefix (working directory)
+; - And various file utility functions
+;
+; EXTERNAL REFERENCES (X-labels):
+; This module calls EDASM.SYSTEM (EI) routines:
+;   XB883 → LB883: Get file attributes
+;   XB904 → LB904: Set file info
+;   XB90B → LB90B: Destroy file
+;   XB912 → LB912: Rename file
+;   XB339 → LB339: Output CR
+;   XB343 → LB343: Output character
+;   XB602 → LB602: Display error
+;   XB1CB → LB1CB: Reset I/O hooks
+;
+; PRODOS ACCESS BITS:
+; Files have access control bits that determine permissions:
+;   Bit 7 (D): Destroy enable
+;   Bit 6 (N): Rename enable
+;   Bit 5-3: Reserved
+;   Bit 2 (B): Backup needed
+;   Bit 1 (W): Write enable
+;   Bit 0 (R): Read enable
+; Common values: $C2C2 = full access, $C200 = read-only
 ;=================================================
-; UNLOCK cmd
 ;
-LD282       SET    R1,$C2C2
-            BR     LD28A
+; UNLOCK Command Handler
+; Sets file access to $C2C2 (full read/write/rename/destroy access)
 ;
-; LOCK cmd
+LD282       SET    R1,$C2C2        ;Set access bits for full access
+            BR     LD28A           ;Branch to common code
 ;
-LD287       SET    R1,$C200
-LD28A       SET    R4,XBD80        ;PN is in $BD80 buf
-            RTN
+; LOCK Command Handler
+; Sets file access to $C200 (read-only, no write/rename/destroy)
 ;
-LD28E       LDA    #TXTtype
-            JSR    XB883           ;Does file exist?
-            BCC    LD298           ;Yes
-LD295       JMP    XB602           ;Display err (A)=err code
+LD287       SET    R1,$C200        ;Set access bits for read-only
+LD28A       SET    R4,XBD80        ;Point R4 to pathname buffer at $BD80
+            RTN                    ;Return to Sweet16 caller
 ;
-LD298       JSR    LD29E
-            JMP    XB1CB
+; Check if File Exists
+; Entry point for operations that require file to exist first
 ;
-; Modify the file attributes if necessary
+LD28E       LDA    #TXTtype        ;File type = TXT ($04)
+            JSR    XB883           ;Check file's attributes (→ LB883 in EI)
+            BCC    LD298           ;File exists, continue
+LD295       JMP    XB602           ;Display error: (A)=error code (→ LB602)
+;
+LD298       JSR    LD29E           ;Modify file attributes
+            JMP    XB1CB           ;Reset I/O hooks and return (→ LB1CB)
+;
+; Modify File Attributes
+; Changes file's access permissions if necessary
+;
 ;
 LD29E       LDA    XBACA           ;File's curr access bits
             AND    Reg1+1
