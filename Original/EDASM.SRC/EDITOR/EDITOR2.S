@@ -4,30 +4,66 @@ This file was generated using the DiskBrowser utility with minimal editing.
 It is meant for viewing purposes only.
 
 ;=================================================
-; EXIT cmd
-; Default to BASIC.SYSTEM
-; The command interpreter's OpenNRd rtn expects
-; a ptr to pathname to be stored at Reg4
+; EDITOR/EDITOR2.S - Editor Module Part 2: System Commands
 ;
-LDCC8       SET    R4,XBD80        ;Set ptr to PN
-            SET    R10,XBD80
-            LDI    R10             ;Did user type a pathname?
-            BNZ    LDCD4           ;Yes
-            SET    R4,XBB1A        ;No, default to BI's name
-LDCD4       RTN
+; This is the second part of the EDASM.ED editor module.
+; It contains system-level commands and module loading routines.
 ;
-            LDA    #>X2000
-            STA    XBA8A           ;Data buf/Load addr
-            LDA    #<X2000
-            STA    XBA8A+1
-            LDA    #$00
-            STA    XBA8C
-            LDA    #$98            ;LEN
+; COMMANDS IMPLEMENTED IN THIS FILE:
+; - EXIT: Exit to another .SYSTEM program (default: BASIC.SYSTEM)
+; - SWAP: Swap between dual text buffers
+; - Various initialization and system interface routines
+;
+; MODULE LOADING:
+; This file handles loading and transferring control to other
+; .SYSTEM programs. When exiting, it:
+; 1. Sets up the load address ($2000 for .SYSTEM files)
+; 2. Opens and reads the target file
+; 3. Initializes video card and I/O hooks
+; 4. Transfers control to the new program
+;
+; EXTERNAL REFERENCES (X-labels):
+; XB937 → LB937: Open and read EDASM module
+; XBA8A: Read parameter block (data buffer address)
+; XBA8C: Read parameter block (length)
+; XBD80: Pathname buffer
+; XBB1A: Default BASIC.SYSTEM pathname
+; X2000: Standard .SYSTEM load address
+;
+; SWEET16 USAGE:
+; This file uses Sweet16 instructions (SET, LDI, BNZ, RTN)
+; for efficient 16-bit pointer operations.
+;=================================================
+;
+; EXIT Command Handler
+; Exits EdAsm and loads another .SYSTEM program.
+; Defaults to BASIC.SYSTEM if no pathname specified.
+;
+; The command interpreter's OpenNRd routine expects
+; a pointer to the pathname to be stored in R4.
+;
+LDCC8       SET    R4,XBD80        ;Point R4 to pathname buffer at $BD80
+            SET    R10,XBD80       ;Also set R10 to pathname buffer
+            LDI    R10             ;Load indirect: get first byte (length)
+            BNZ    LDCD4           ;If non-zero, user typed a pathname
+            SET    R4,XBB1A        ;No pathname: default to BI's (BASIC.SYSTEM) name
+LDCD4       RTN                    ;Return to Sweet16 caller
+;
+; Setup Read Parameters and Load .SYSTEM File
+; Configures ProDOS read parameter block and loads file at $2000
+;
+            LDA    #>X2000         ;High byte of load address
+            STA    XBA8A           ;Store in read parameter block (data buffer)
+            LDA    #<X2000         ;Low byte of load address
+            STA    XBA8A+1         ;Store in read parameter block
+            LDA    #$00            ;Read length low byte (0)
+            STA    XBA8C           ; (will read up to buffer size)
+            LDA    #$98            ;Read length high byte ($9800 = 38KB max)
             STA    XBA8C+1
-            LDA    #SYStype
-            JSR    XB937           ;Open and read file into mem
-            BCS    LDD09           ;Error
-            JSR    LA7AB           ;Init video card, setup I/O hooks
+            LDA    #SYStype        ;File type = SYS ($FF)
+            JSR    XB937           ;Open and read file into memory (→ LB937)
+            BCS    LDD09           ;If carry set, error occurred
+            JSR    LA7AB           ;Initialize video card, setup I/O hooks
             LDA    #$00
             STA    BITMAP+$13
             STA    BITMAP+$15

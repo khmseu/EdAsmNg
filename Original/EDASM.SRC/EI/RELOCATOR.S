@@ -4,29 +4,65 @@ This file was generated using the DiskBrowser utility with minimal editing.
 It is meant for viewing purposes only.
 
 ;---------------------------------------------------------;
-; EDASM.SYSTEM - loaded into mem at $2000-$2FFE (len $FFF)
-; The 1st part of the code is the relocator ($2000-$23FF)
-; The 2nd part of the code is the EdAsm Interpreter
-; ($2400-2FFE) which is relocated to $B100-$BCFE (len $0BFF).
-; The EI is always in memory whether in assembly/edit mode
+; EI/RELOCATOR.S - EDASM.SYSTEM Relocator
+;
+; This is the relocator/loader for EDASM.SYSTEM.
+;
+; MEMORY LAYOUT:
+; EDASM.SYSTEM is loaded at $2000-$2FFE (length $FFF = 4095 bytes)
+; It consists of two parts:
+;   Part 1: Relocator ($2000-$23FF, 1024 bytes)
+;     - Runs once at startup
+;     - Relocates the EI to its final location
+;     - Sets up ProDOS memory management
+;     - Then transfers control to the EI
+;
+;   Part 2: EdAsm Interpreter ($2400-$2FFE, 3071 bytes)
+;     - Relocated to $B100-$BCFE (length $0BFF)
+;     - Remains resident in memory at all times
+;     - Coordinates Editor, Assembler, and Linker modules
+;
+; STARTUP SEQUENCE:
+; 1. ProDOS loads EDASM.SYSTEM at $2000 and starts execution
+; 2. Relocator initializes stack and zeros it
+; 3. Relocator marks ProDOS memory pages as free/used
+; 4. Relocator copies EI code from $2400 to $B100
+; 5. Relocator transfers control to EI at $B100
+; 6. EI initializes and loads the Editor module
+;
+; PRODOS MEMORY MANAGEMENT:
+; The relocator manages the ProDOS memory bitmap to indicate
+; which memory pages are available for use. Pages $20-$BF are
+; initially marked as free, then the EI marks its own pages
+; ($B1-$B8, $BF) as used to prevent ProDOS from overwriting them.
+;
+; EXTERNAL REFERENCES:
+; None - this is the first code to run, so it cannot reference
+; other modules.
 ;---------------------------------------------------------;
-            SYS
+            SYS                    ;Mark as .SYSTEM file
 ;
-            ORG    $2000
+            ORG    $2000           ;ProDOS .SYSTEM load address
 ;
-L2000       LDX    #$F0
-            TXS
-            LDX    #255
-            LDA    #0
-L2007       STA    Stack,X         ;Zero entire stack
-            DEX
-            BNE    L2007
+; Relocator Entry Point
+; Initialize stack and zero it for clean startup
 ;
-            LDY    #19
-            LDA    #$00            ;Mark pages $20-$BF
-L2011       STA    BitMap+4,Y      ; as free
-            DEY
-            BPL    L2011
+L2000       LDX    #$F0            ;Set stack pointer to $F0
+            TXS                    ;Transfer X to stack pointer
+            LDX    #255            ;Counter for zeroing stack
+            LDA    #0              ;Value to store (zero)
+L2007       STA    Stack,X         ;Zero entire stack page ($0100-$01FF)
+            DEX                    ;Decrement counter
+            BNE    L2007           ;Loop until X=0
+;
+; Initialize ProDOS Memory Bitmap
+; Mark pages $20-$BF as free (available for allocation)
+;
+            LDY    #19             ;Loop counter (20 pages to mark)
+            LDA    #$00            ;Mark as free (bit=0)
+L2011       STA    BitMap+4,Y      ;Mark pages $20-$BF as free in bitmap
+            DEY                    ;Decrement counter
+            BPL    L2011           ;Loop while Y >= 0
 ;
             LDA    #<$2000         ;Starting fr $2000
             STA    TxtBgn+1        ; downto $0800

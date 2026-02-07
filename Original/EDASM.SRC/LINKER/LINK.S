@@ -3,31 +3,78 @@ End of file   :   91,112
 This file was generated using the DiskBrowser utility with minimal editing.
 It is meant for viewing purposes only.
 
+;=================================================
+; LINKER/LINK.S - Relocatable Object File Linker
 ;
-; Initial code disassembled with the ORCA.DisAsm
-; Source files for the Linker is of type REL
-; The Linker can produce BIN, REL or SYS object files
+; This is the main linker module (EDASM.LINK) that links
+; multiple relocatable object files (REL) into executable
+; programs (BIN or SYS files).
 ;
-; Init the Linker
+; DISASSEMBLY NOTE:
+; Initial code disassembled with the ORCA.DisAsm disassembler.
 ;
-AsmLinker   EQU    *
-            ldx    #0
-            stx    AsmLinker
-            php                    ;Save status reg
-            pla
-            sta    Z9C             ; here
-            sei                    ;No interrupts
+; SOURCE FILES:
+; Source files for the Linker are of type REL (relocatable).
 ;
-            lda    #0
-ZeroLoop    sta    Stack,x         ;Zero stack area
-            inx
-            bne    ZeroLoop
+; OUTPUT FILES:
+; The Linker can produce three types of object files:
+;   BIN: Binary file (load address specified, not relocatable)
+;   REL: Relocatable file (can be linked with other REL files)
+;   SYS: System file (ProDOS .SYSTEM file, loads at $2000)
 ;
-            dex
-            txs                    ;=$FF
-            lda    Z9C
-            pha                    ;Restore status reg
-            plp
+; LINKING PROCESS:
+; 1. Initialize linker and clear memory structures
+; 2. Read REL files and build:
+;    - Symbol table (unique symbol names)
+;    - ENTRY table (exported symbols with addresses)
+;    - EXTERN table (imported symbols needing resolution)
+; 3. Resolve external references:
+;    - Match EXTERN symbols to ENTRY definitions
+;    - Calculate final addresses
+; 4. Apply relocations using RLD (Relocation Dictionary)
+; 5. Generate output file with relocated code
+; 6. Optionally produce:
+;    - Link map file (memory layout)
+;    - Cross-reference listing (symbol usage)
+;
+; MEMORY STRUCTURES:
+; See LINKER/EXTERNALS.S for detailed memory layout:
+;   - Symbol table at $9200-$A8DF (16-byte records)
+;   - ENTRY table at $4700-$70FF (24-byte records)
+;   - EXTERN table at $7100-$90FF (8-byte records)
+;   - Multiple I/O buffers for file operations
+;
+; EXTERNAL REFERENCES:
+; The linker is mostly self-contained but uses some ProDOS
+; and monitor routines for I/O and error handling.
+;=================================================
+;
+; Linker Initialization
+; Sets up memory structures and prepares for linking
+;
+AsmLinker   EQU    *               ;Linker entry point
+            ldx    #0              ;X = 0
+            stx    AsmLinker       ;Store at entry point (self-modifying code?)
+            php                    ;Save processor status register
+            pla                    ;Pull it to A
+            sta    Z9C             ;Save status here for later restore
+            sei                    ;Disable hardware interrupts (critical init)
+;
+; Zero Hardware Stack
+; Ensures clean stack for linker operations
+;
+            lda    #0              ;A = 0 (value to store)
+ZeroLoop    sta    Stack,x         ;Zero stack location
+            inx                    ;Increment index
+            bne    ZeroLoop        ;Loop until X wraps to 0 (all 256 bytes)
+;
+; Initialize Stack Pointer and Restore Status
+;
+            dex                    ;X = $FF (top of stack)
+            txs                    ;Set stack pointer to $FF
+            lda    Z9C             ;Get saved status register
+            pha                    ;Push to stack
+            plp                    ;Pull to processor status (restore flags)
 ;
             lda    #$00
             sta    MINIVERS        ;minimum interpreter version
