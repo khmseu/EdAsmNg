@@ -3,6 +3,8 @@ find_package(Curses REQUIRED)
 add_library(EdAsmNg_lib
   lib/app.cpp
   lib/ei/relocator.cpp
+  lib/ei/screen.cpp
+  lib/ei/os.cpp
 )
 
 target_include_directories(EdAsmNg_lib PUBLIC
