@@ -60,6 +60,8 @@ namespace {
   void HashFn();
   void GAdrMod();
   void GOpAdr();
+  bool ChkRng(std::uint8_t value, std::uint8_t minVal, std::uint8_t maxVal);
+  void ValidateRange();
 
   // Extern array declarations (defined later in file)
   extern const std::uint8_t CharMap1[];
@@ -3040,6 +3042,142 @@ namespace {
     }
 
     //=================================================
+    // Phase 3d: ChkRng() - Check Range
+    //
+    // Generic range checking function that validates if a value falls
+    // within specified bounds (min/max inclusive).
+    //
+    // Input:
+    //   value - Value to check
+    //   minVal - Minimum acceptable value (inclusive)
+    //   maxVal - Maximum acceptable value (inclusive)
+    //
+    // Output:
+    //   Returns true if value is OUT of range (carry set)
+    //   Returns false if value is IN range (carry clear)
+    //
+    // This is the C++ equivalent of the 6502 assembly ChkRng routine
+    // that uses compare operations and carry flag logic.
+    //=================================================
+    bool ChkRng(std::uint8_t value, std::uint8_t minVal, std::uint8_t maxVal) {
+      // Check if value < minVal
+      if (value < minVal) {
+        return true;  // Out of range (below minimum)
+      }
+
+      // Check if value > maxVal
+      if (value > maxVal) {
+        return true;  // Out of range (above maximum)
+      }
+
+      // Value is within range
+      return false;
+    }
+
+    //=================================================
+    // Phase 3d: ValidateRange() - Validate Addressing Mode Range
+    //
+    // Validates that the operand value (ValExpr) is within the acceptable
+    // range for the current addressing mode. Different addressing modes
+    // have different constraints:
+    //
+    // - Immediate (#$nn): Any 8-bit or 16-bit value is valid
+    // - Zero page ($nn): Must be 0-255 (single byte)
+    // - Absolute ($nnnn): Any 16-bit value is valid
+    // - Branch (BNE, BEQ, etc.): Relative offset must be -128 to +127
+    //
+    // Input:
+    //   LenTIdx - Addressing mode index
+    //   ModWrdL - Mode word flags (bit 3 = branch instruction)
+    //   ValExpr - Operand value/address to validate
+    //
+    // Output:
+    //   Registers error via RegAsmEW() if validation fails
+    //   Error 0x1C: Zero page range error
+    //   Error 0x26: Branch range error
+    //=================================================
+    void ValidateRange() {
+      // Check if this is a branch instruction
+      A = ModWrdL;
+      if ((A & 0x08) != 0) {  // Branch instruction flag (bit 3)
+        // Branch instructions use relative addressing
+        // Valid range: -128 to +127 (signed 8-bit)
+        // In two's complement:
+        //   0x00 to 0x7F = 0 to +127
+        //   0x80 to 0xFF = -128 to -1
+        //
+        // Invalid if high byte is not 0x00 (positive) or 0xFF (negative)
+        A = ValExpr_hi;
+
+        // If high byte is 0x00, check if low byte <= 0x7F
+        if (A == 0x00) {
+          A = ValExpr;
+          if (A <= 0x7F) {
+            return;  // Valid positive offset (0 to +127)
+          }
+          // Low byte > 0x7F but high byte = 0x00: out of range
+          X = 0x26;  // Branch range error
+          RegAsmEW(X);
+          return;
+        }
+
+        // If high byte is 0xFF, check if low byte >= 0x80
+        if (A == 0xFF) {
+          A = ValExpr;
+          if (A >= 0x80) {
+            return;  // Valid negative offset (-128 to -1)
+          }
+          // Low byte < 0x80 but high byte = 0xFF: out of range
+          X = 0x26;  // Branch range error
+          RegAsmEW(X);
+          return;
+        }
+
+        // High byte is neither 0x00 nor 0xFF: definitely out of range
+        X = 0x26;  // Branch range error
+        RegAsmEW(X);
+        return;
+      }
+
+      // Not a branch - check addressing mode via LenTIdx
+      A = LenTIdx;
+
+      // Immediate mode (index 2): Any value is valid
+      if (A == 2) {
+        // Immediate mode - no range restrictions
+        return;
+      }
+
+      // Zero page modes: Must be 0-255 (high byte must be 0)
+      // LenTIdx = 1: Zero page
+      // LenTIdx = 3: Zero page,X
+      // LenTIdx = 6: (Zero page),Y
+      // LenTIdx = 7: (Zero page,X)
+      // LenTIdx = 8: (Zero page)
+      // LenTIdx = 11: Zero page,Y
+      if (A == 1 || A == 3 || A == 6 || A == 7 || A == 8 || A == 11) {
+        // Check if high byte is set (value >= $100)
+        A = ValExpr_hi;
+        if (A != 0) {
+          // Out of zero page range - register error
+          X = 0x1C;  // Zero page range error
+          RegAsmEW(X);
+        }
+        return;
+      }
+
+      // Absolute mode and other modes: Any 16-bit value is valid
+      // LenTIdx = 0: Absolute
+      // LenTIdx = 4: Absolute,X
+      // LenTIdx = 5: Absolute,Y
+      // LenTIdx = 9: (Absolute)
+      // LenTIdx = 10: Accumulator
+      // LenTIdx = 12: (Absolute,X)
+      // No range restrictions for these modes
+      return;
+    }
+
+    //=================================================
     // GOpAdr - Get Operand Address
     // Calculates the final operand address based on addressing mode
     // Handles:
@@ -5493,6 +5631,54 @@ namespace {
       // handling relocation, zero page constraints, and branch offsets
       void GOpAdr() {
         ::GOpAdr();
+      }
+
+      //=================================================
+      // Phase 3d: ValidateRange & ChkRng Test Helpers
+      //=================================================
+
+      // ChkRng - Generic range checker
+      // Returns true if value is OUT of range (carry set)
+      // Returns false if value is IN range (carry clear)
+      bool ChkRng(uint8_t value, uint8_t minVal, uint8_t maxVal) {
+        return ::ChkRng(value, minVal, maxVal);
+      }
+
+      // ValidateRange - Validate operand value against addressing mode constraints
+      void ValidateRange() {
+        ::ValidateRange();
+      }
+
+      // Get last carry flag state (from ChkRng)
+      bool GetLastCarryFlag() {
+        return C;
+      }
+
+      // Get/Set ValExpr for testing
+      uint16_t GetValExpr() {
+        return ValExpr_word;
+      }
+
+      void SetValExpr(uint16_t value) {
+        ValExpr_word = value;
+      }
+
+      // Get/Set LenTIdx for testing
+      uint8_t GetLenTIdx() {
+        return LenTIdx;
+      }
+
+      void SetLenTIdx(uint8_t mode) {
+        LenTIdx = mode;
+      }
+
+      // Get/Set ModWrdL for testing
+      uint8_t GetModWrdL() {
+        return ModWrdL;
+      }
+
+      void SetModWrdL(uint8_t flags) {
+        ModWrdL = flags;
       }
 
     }  // namespace Asm

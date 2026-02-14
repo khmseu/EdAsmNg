@@ -788,3 +788,239 @@ TEST_F(GOpAdrTest, ZeroPageOutOfRange_RegistersError) {
   // Value should be masked to low byte
   EXPECT_EQ(EdAsmNg::Asm::GetValExpr(), 0x0000);
 }
+
+//=================================================
+// Phase 3d: ValidateRange() & ChkRng() Tests
+//=================================================
+
+// Helper functions for range validation testing
+namespace EdAsmNg {
+  namespace Asm {
+    // Range checking test helpers
+    bool     ChkRng(uint8_t value, uint8_t minVal, uint8_t maxVal);
+    void     ValidateRange();
+    bool     GetLastCarryFlag();
+    uint16_t GetValExpr();
+    void     SetValExpr(uint16_t value);
+    uint8_t  GetLenTIdx();
+    void     SetLenTIdx(uint8_t mode);
+    uint8_t  GetModWrdL();
+    void     SetModWrdL(uint8_t flags);
+  }  // namespace Asm
+}  // namespace EdAsmNg
+
+class ValidateRangeTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetErrorState();
+    EdAsmNg::Asm::ResetGOpAdrState();
+  }
+};
+
+//=================================================
+// ChkRng() Tests - Generic Range Checker
+//=================================================
+
+TEST_F(ValidateRangeTest, ChkRng_ValueInRange_ReturnsFalse) {
+  // Value = 0x50, Range = [0x00, 0xFF]
+  // Should return false (carry clear = in range)
+  bool outOfRange = EdAsmNg::Asm::ChkRng(0x50, 0x00, 0xFF);
+  EXPECT_FALSE(outOfRange);
+}
+
+TEST_F(ValidateRangeTest, ChkRng_ValueAtMinimum_ReturnsFalse) {
+  // Value = 0x00, Range = [0x00, 0x7F]
+  // Should return false (value equals minimum)
+  bool outOfRange = EdAsmNg::Asm::ChkRng(0x00, 0x00, 0x7F);
+  EXPECT_FALSE(outOfRange);
+}
+
+TEST_F(ValidateRangeTest, ChkRng_ValueAtMaximum_ReturnsFalse) {
+  // Value = 0x7F, Range = [0x00, 0x7F]
+  // Should return false (value equals maximum)
+  bool outOfRange = EdAsmNg::Asm::ChkRng(0x7F, 0x00, 0x7F);
+  EXPECT_FALSE(outOfRange);
+}
+
+TEST_F(ValidateRangeTest, ChkRng_ValueAboveRange_ReturnsTrue) {
+  // Value = 0xFF, Range = [0x00, 0x7F]
+  // Should return true (carry set = out of range)
+  bool outOfRange = EdAsmNg::Asm::ChkRng(0xFF, 0x00, 0x7F);
+  EXPECT_TRUE(outOfRange);
+}
+
+TEST_F(ValidateRangeTest, ChkRng_ValueBelowRange_ReturnsTrue) {
+  // Value = 0x10, Range = [0x20, 0x80]
+  // Should return true (below minimum)
+  bool outOfRange = EdAsmNg::Asm::ChkRng(0x10, 0x20, 0x80);
+  EXPECT_TRUE(outOfRange);
+}
+
+//=================================================
+// ValidateRange() Tests - Addressing Mode Validation
+//=================================================
+
+TEST_F(ValidateRangeTest, Immediate_AllowsAny8BitValue) {
+  // Immediate mode (LenTIdx = 2): Any 8-bit value is valid
+  EdAsmNg::Asm::SetLenTIdx(2);  // Immediate mode
+  EdAsmNg::Asm::SetModWrdL(0);  // Not a branch
+
+  // Test with various 8-bit values
+  EdAsmNg::Asm::SetValExpr(0x0000);
+  EdAsmNg::Asm::ValidateRange();
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+
+  EdAsmNg::Asm::SetValExpr(0x0080);
+  EdAsmNg::Asm::ValidateRange();
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+
+  EdAsmNg::Asm::SetValExpr(0x00FF);
+  EdAsmNg::Asm::ValidateRange();
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(ValidateRangeTest, Immediate_Allows16BitValue) {
+  // Immediate mode with 16-bit value (for 65C02 instructions)
+  EdAsmNg::Asm::SetLenTIdx(2);  // Immediate mode
+  EdAsmNg::Asm::SetModWrdL(0);  // Not a branch
+  EdAsmNg::Asm::SetValExpr(0x1234);
+
+  EdAsmNg::Asm::ValidateRange();
+
+  // Immediate mode allows any value, no error
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(ValidateRangeTest, ZeroPage_AcceptsValidRange) {
+  // Zero page mode (LenTIdx = 1): Must be 0-255
+  EdAsmNg::Asm::SetLenTIdx(1);  // Zero page mode
+  EdAsmNg::Asm::SetModWrdL(0);  // Not a branch
+
+  // Test values within zero page range
+  EdAsmNg::Asm::SetValExpr(0x0000);
+  EdAsmNg::Asm::ValidateRange();
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+
+  EdAsmNg::Asm::SetValExpr(0x0080);
+  EdAsmNg::Asm::ValidateRange();
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+
+  EdAsmNg::Asm::SetValExpr(0x00FF);
+  EdAsmNg::Asm::ValidateRange();
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(ValidateRangeTest, ZeroPage_RejectsAbove255) {
+  // Zero page mode with value >= $100 should register error
+  EdAsmNg::Asm::SetLenTIdx(1);       // Zero page mode
+  EdAsmNg::Asm::SetModWrdL(0);       // Not a branch
+  EdAsmNg::Asm::SetValExpr(0x0100);  // Just above zero page range
+
+  EdAsmNg::Asm::ValidateRange();
+
+  // Should have registered error 0x1C (zero page range error)
+  EXPECT_GT(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(ValidateRangeTest, ZeroPage_RejectsHighValues) {
+  // Zero page mode with high value
+  EdAsmNg::Asm::SetLenTIdx(1);       // Zero page mode
+  EdAsmNg::Asm::SetModWrdL(0);       // Not a branch
+  EdAsmNg::Asm::SetValExpr(0x1234);  // Way above zero page range
+
+  EdAsmNg::Asm::ValidateRange();
+
+  // Should have registered error
+  EXPECT_GT(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(ValidateRangeTest, Absolute_AcceptsAny16BitValue) {
+  // Absolute mode (LenTIdx = 0): Any 16-bit value is valid
+  EdAsmNg::Asm::SetLenTIdx(0);  // Absolute mode
+  EdAsmNg::Asm::SetModWrdL(0);  // Not a branch
+
+  // Test with various 16-bit values
+  EdAsmNg::Asm::SetValExpr(0x0000);
+  EdAsmNg::Asm::ValidateRange();
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+
+  EdAsmNg::Asm::SetValExpr(0x8000);
+  EdAsmNg::Asm::ValidateRange();
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+
+  EdAsmNg::Asm::SetValExpr(0xFFFF);
+  EdAsmNg::Asm::ValidateRange();
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(ValidateRangeTest, Branch_AcceptsSmallPositiveOffset) {
+  // Branch with small positive offset (within -128 to +127)
+  EdAsmNg::Asm::SetLenTIdx(0);       // Not used for branches
+  EdAsmNg::Asm::SetModWrdL(0x08);    // Branch flag (bit 3)
+  EdAsmNg::Asm::SetValExpr(0x001D);  // Offset = +29
+
+  EdAsmNg::Asm::ValidateRange();
+
+  // Should not register error
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(ValidateRangeTest, Branch_AcceptsSmallNegativeOffset) {
+  // Branch with small negative offset (within -128 to +127)
+  EdAsmNg::Asm::SetLenTIdx(0);       // Not used for branches
+  EdAsmNg::Asm::SetModWrdL(0x08);    // Branch flag (bit 3)
+  EdAsmNg::Asm::SetValExpr(0xFFCE);  // Offset = -50 (two's complement)
+
+  EdAsmNg::Asm::ValidateRange();
+
+  // Should not register error
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(ValidateRangeTest, Branch_RejectsLargePositiveOffset) {
+  // Branch with offset > +127 should register error
+  EdAsmNg::Asm::SetLenTIdx(0);       // Not used for branches
+  EdAsmNg::Asm::SetModWrdL(0x08);    // Branch flag (bit 3)
+  EdAsmNg::Asm::SetValExpr(0x00C8);  // Offset = +200 (out of range)
+
+  EdAsmNg::Asm::ValidateRange();
+
+  // Should have registered error 0x26 (branch range error)
+  EXPECT_GT(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(ValidateRangeTest, Branch_RejectsLargeNegativeOffset) {
+  // Branch with offset < -128 should register error
+  EdAsmNg::Asm::SetLenTIdx(0);       // Not used for branches
+  EdAsmNg::Asm::SetModWrdL(0x08);    // Branch flag (bit 3)
+  EdAsmNg::Asm::SetValExpr(0xFF00);  // Offset = -256 (out of range)
+
+  EdAsmNg::Asm::ValidateRange();
+
+  // Should have registered error 0x26 (branch range error)
+  EXPECT_GT(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(ValidateRangeTest, Branch_AcceptsEdgeCasePositive127) {
+  // Branch with offset = +127 (maximum positive)
+  EdAsmNg::Asm::SetLenTIdx(0);       // Not used for branches
+  EdAsmNg::Asm::SetModWrdL(0x08);    // Branch flag (bit 3)
+  EdAsmNg::Asm::SetValExpr(0x007F);  // Offset = +127
+
+  EdAsmNg::Asm::ValidateRange();
+
+  // Should not register error
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(ValidateRangeTest, Branch_AcceptsEdgeCaseNegative128) {
+  // Branch with offset = -128 (maximum negative)
+  EdAsmNg::Asm::SetLenTIdx(0);       // Not used for branches
+  EdAsmNg::Asm::SetModWrdL(0x08);    // Branch flag (bit 3)
+  EdAsmNg::Asm::SetValExpr(0xFF80);  // Offset = -128 (two's complement)
+
+  EdAsmNg::Asm::ValidateRange();
+
+  // Should not register error
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+}
