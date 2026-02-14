@@ -45,6 +45,7 @@
 #include <string>
 #include <string_view>
 
+#include "EdAsmNg/ei/interpreter.hpp"
 #include "EdAsmNg/ei/os.hpp"
 #include "EdAsmNg/ei/screen.hpp"
 

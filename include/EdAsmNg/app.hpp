@@ -5,6 +5,6 @@
 
 namespace EdAsmNg {
 
-std::string greet(std::string_view name = "World");
+  std::string greet(std::string_view name = "World");
 
 }  // namespace EdAsmNg

@@ -1,8 +1,10 @@
 #pragma once
 
-const char BEL = '\a';
-const char BS  = '\b';
-const char CR  = '\r';
+const char     BEL   = '\a';
+const char     BS    = '\b';
+const char     CR    = '\r';
+constexpr char FF    = '\f';
+constexpr char SPACE = ' ';
 
 // Initialize ncurses and color pair 1 (white on black). Throws on failure and
 // installs an automatic teardown at process exit.

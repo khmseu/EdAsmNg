@@ -5,8 +5,8 @@
 
 namespace EdAsmNg {
 
-std::string greet(std::string_view name) {
-  return std::string("Hello, ") + std::string(name) + "!";
-}
+  std::string greet(std::string_view name) {
+    return std::string("Hello, ") + std::string(name) + "!";
+  }
 
 }  // namespace EdAsmNg
