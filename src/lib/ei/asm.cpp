@@ -70,6 +70,13 @@ namespace {
   constexpr std::uint8_t Bit40       = 0x40;  // Bit mask $40
 
   //=================================================
+  // ASCII Character Constants
+  //=================================================
+  constexpr std::uint8_t BEL   = 0x07;  // Bell/beep character
+  constexpr std::uint8_t CR    = 0x0D;  // Carriage return (Enter)
+  constexpr std::uint8_t SPACE = 0x20;  // Space character
+
+  //=================================================
   // ZERO PAGE MEMORY LOCATIONS ($60-$F1)
   // NB: The contents of $60-$F1 are saved by the Assembler on entry
   // and restored on exit, so these locations can be freely used as
@@ -1111,10 +1118,6 @@ namespace {
     // TODO: Increment error count
   }
 
-  void DoAlert() {
-    // TODO: Alert user
-  }
-
   void IsVideo() {
     // TODO: Check output device
   }
@@ -1134,10 +1137,6 @@ namespace {
 
   void L81A3() {
     // TODO: Increment decimal string
-  }
-
-  void PrtErrMsg() {
-    // TODO: Print error message
   }
 
   void SaveErrInfo() {
@@ -1273,37 +1272,12 @@ namespace {
   }
 
   // ($7AA8) DoAlert - Print *****, sound the bell and then print an error message
+  // ($7AA8) DoAlert - Print *****, sound the bell and then print an error message
   // (X)=error token
   // (Y) preserved
   // NB:Fall thru to the PrtErrMsg code
   void DoAlert() {
-    PutCR();
-    uint8_t saved_y = Y;  // save (Y) on stack
-
-    A      = WinLeft;  // Make sure any display is inside our window
-    PrtCol = A;
-
-    Y = 5;
-    A = '*';  // print 5 asterisks
-  PrtLoop4:
-    PutC();
-    Y--;
-    if (Y != 0) goto PrtLoop4;
-
-    Y = saved_y;  // restore (Y)
-    A = PrSlot;
-    if (A == 0) goto RingBell;        // use std Apple ][ video
-    if (A == VidSlot) goto RingBell;  // 80-col card
-
-    // TODO: Apple Monitor bell routine (RDROM2, BELL1, RDBANK2)
-    goto PrtBlnk;
-
-  RingBell:
-    A = BEL;  // video output
-    PutC();
-  PrtBlnk:
-    A = SPACE;
-    PutC();
+    // TODO: Implement DoAlert - Print alert with asterisks and bell
   }
 
   // ($7A6B) PrtErrMsg - Print Error or Warnings
@@ -1316,101 +1290,14 @@ namespace {
   //
   // Range for index $00-$48
   void PrtErrMsg() {
-    A = X;
-    A &= 0b01111110;  // Isolate the index
-    X = A;
-    if (X < (sizeof(ErrMsgT) / sizeof(ErrMsgT[0]) - 1)) goto PrtEM1;
-    // BRK - assertion failure
-    std::abort();
-
-  PrtEM1:
-    MsgP            = ErrMsgT[X];
-    MsgP_hi         = ErrMsgT[X] >> 8;
-    uint8_t saved_y = Y;
-
-    Y = 0;
-  PrtEMLoop:
-    A = MsgP[Y];
-    if (A < SPACE) goto L7A8E;  // Skip embedded 0,1,CR
-    PutC();
-    Y++;
-    if (Y != 0) goto PrtEMLoop;
-
-  L7A8E:
-    // C=0 if a null-terminated line
-    bool carry = (A & 1) != 0;
-    A >>= 1;
-
-    A = VidSlot;               // slot #0?
-    if (A != 0) goto SkipIt2;  // No
-
-    A = CR;
-    MonCOUT();  // Std Apple II 40-col video
-    A      = WinLeft;
-    PrtCol = A;
-
-  SkipIt2:
-    Y = saved_y;
-
-    X = 0x0E;                   // ' ERROR IN LINE'
-    if (!carry) goto PrtLoop5;  // null-terminated line
-    X = 0x08;
-
-  PrtLoop5:
-    A = InLinTxt[X - 1];  // ' IN LINE'
-    PutC();
-    X--;
-    if (X != 0) goto PrtLoop5;
-
-    PrtDecS();
-  }
-
-  // CountErr - Increment # of errors
-  void CountErr() {
-    // SEC, SED - set carry, set decimal mode
-    // TODO: Implement BCD addition
-    // For now, use binary approximation
-    NbrErrs += 1;
-    if (NbrErrs > 99) {
-      NbrErrs = 0;
-      NbrErrs_hi += 1;
-    }
+    // TODO: Implement PrtErrMsg
   }
 
   // SaveErrInfo - Save info for first 8/16 errors encountered
   // (Y) & (X) preserved
   // X=error token
   void SaveErrInfo() {
-    A = VidSlot;              // Is slot #0?
-    if (A != 0) goto NotStd;  // No
-    A = 8 * 4;                // std 40-col video
-    goto Is2Many;
-
-  NotStd:
-    A = 16 * 4;  // File/Printer/80-col
-
-  Is2Many:
-    if (A < ErrNbr4) goto doRTS2;  // Too many errs
-    if (A == ErrNbr4) goto doRTS2;
-
-    // Use table @ $A0B2 for storing error info
-    uint8_t saved_y = Y;
-    Y               = ErrNbr4;  // multiple of 4
-    A               = FileNbr;  // file #
-    ErrInfoT[Y]     = A;
-    A               = X;  // errtoken
-    A &= 0b01111110;      // Isolate the index
-    ErrInfoT[Y + 1] = A;
-    A               = BCDNbr_hi;  // line #
-    ErrInfoT[Y + 2] = A;
-    A               = BCDNbr;
-    ErrInfoT[Y + 3] = A;
-    Y += 4;
-    ErrNbr4 = Y;
-    Y       = saved_y;
-
-  doRTS2:
-    return;
+    // TODO: Implement SaveErrInfo error tracking
   }
 
   // Bit table
@@ -2950,7 +2837,7 @@ namespace {
     if (A < 0x10) goto GenNow;  // Non-reg ops? Yes (BCC)
 
     IsSW16Reg();
-    if (Z) goto L7F73;        // No (BNE -> BEQ inverted)
+    if (!Z) goto L7F73;       // No - not a valid SW16 register (BNE)
     A = OpcodeT[Y];           // Get sw16 reg opcode
     A |= ValExpr;             // =Rn
     if (A != 0) goto GenNow;  // always (BNE)
@@ -3229,16 +3116,128 @@ namespace {
   const char FINTxt[]  = "FIN";
   const char ELSETxt[] = "ELSE";
 
-  // Stub: IsSW16Reg - Check if SW16 register operand
-  void IsSW16Reg() {
-    // TODO: Check if operand is SW16 register
-    Z = false;  // For now, simulate "not a register"
+  // WhiteSpc - Check if character is white space (space or CR)
+  // Entry:
+  //  (A)=char to check (from (SrcP),Y)
+  // Ret:
+  // ($81FF) Ret Z=1 of space/CR
+  // White space chars are <sp> and CR for ProDOS
+  //
+  void WhiteSpc() {
+    A = SrcP[Y];
+    if (A == SPACE) {
+      Z = true;
+      return;
+    }
+    if (A == CR) {
+      Z = true;
+      return;
+    }
+    Z = false;
   }
 
-  // Stub: Is65C02 - Check if 65C02 opcodes allowed
+  // Checks if expr is a 8-bit or 16-bit value
+  // For addressing modes involving zp
+  // Ret:
+  //  C=0 - Yes
+  //  C=1 - No
+  //
+  void IsZPMod() {
+    A = ExprAccF;
+    A &= 0b11101111;               // Clear EXTeRNal symbol bit
+    A |= ValExpr_hi;               // Is hi-byte of expr zero?
+    if (A == 0) goto L85CF_ZPMod;  // Yes => 8-bit
+    A = ExprAccF;
+    A &= 0b00010000;         // Is EXTeRNal symbol bit set?
+    if (A == 0) goto L85C6;  // No
+    A = Ret816F;             // EXTRN but is lo-byte being returned?
+    if (A == 0) goto L85C8;  // Yes
+  L85C6:
+    C = true;  // 16-bit
+    return;
+  //
+  L85C8:
+    X = 0x44 + 1;  // odd-warning
+    RegAsmEW();    //  (EXTRN used as ZXTRN)
+    X = SavIndX;
+  L85CF_ZPMod:
+    Y--;  // Move back
+    C = false;
+    return;
+  }
+
+  // Check a single 'A' in the operand field
+  // i.e. checking for accumulator mode
+  // Entry:
+  // (A)=char to check
+  // Ret:
+  //   C=0 - Yes
+  //   C=1 - No
+  //
+  void IsAccMod() {
+    if (A != 'A') goto L85DD_AccMod;
+    Y++;         // Look 1 char ahead
+    WhiteSpc();  // Is the next char sp/cr?
+    // Yes, we have a single 'A' in operand field
+    if (Z) {
+      Y--;  // Move back
+      C = false;
+      return;
+    }
+    Y--;  // No, just move back
+  L85DD_AccMod:
+    C = true;
+    return;
+  }
+
+  // Chk if sw16 reg ($00-$0F)
+  // Z=0
+  // Z=1 - yes
+  // (Y)-unchanged?
+  //
+  void IsSW16Reg() {
+    A = ValExpr_hi;
+    if (A != 0) {  // BNE L9500
+      Z = false;   // LDA sets Z=0 when A != 0
+      goto L9500;
+    }
+
+    A = 0xF0;
+    Z = ((A & ValExpr) == 0);  // BIT - test without modifying A, sets Z
+    if (!Z) {                  // BNE L9500
+      goto L9500;
+    }
+
+    // Z is already true (set by BIT), fall through to RTS
+    return;
+
+  //
+  L9500:
+    bool z_flag = Z;     // PHP - Save Z bit
+    X           = 0x32;  // SW16 reg err
+    RegAsmEW();
+    Z = z_flag;  // PLP - Restore Z bit
+    return;
+  }
+
+  // Check if 65C02 opcodes are valid
+  // Only Status reg is changed
+  // Ret:
+  // C=0 - Yes
+  // C=1 - No
+  // NB. If X6502F off, LDA (ZP) is still considered
+  // valid. It is equivalent to LDA ZP
+  //
   void Is65C02() {
-    // TODO: Check if 65C02 opcodes are allowed
-    C = false;  // For now, assume allowed
+    if ((int8_t)X6502F < 0) {  // Are X6502 opcodes allowed?
+      // Yes
+      Y--;  // Move back
+      C = false;
+      return;
+    }
+    // always
+    C = true;
+    return;
   }
 
   // IsC02Op - (A) = opcode
@@ -3638,29 +3637,50 @@ namespace {
   //
   // The helper functions with return the required values
   // primarily the C bit
+
+  // Helper function pointer type
+  typedef void (*HelperFunc)();
+
+  // Jump-table pointers for helper subroutines
+  // Entry at index 0 = IsZPMod, index 1 = IsAccMod, index 2 = Is65C02
+  const HelperFunc L85AE_helpers[] = {IsZPMod, IsAccMod, Is65C02};
+
+  // Number of helper functions in the table
+  constexpr size_t kNumHelpers = sizeof(L85AE_helpers) / sizeof(L85AE_helpers[0]);
+
   void L8598() {
     SavIndX = X;
-    X       = A;            // Token is an index
-    if (X < 7) goto L85A0;  // Only 3 subrtns currently (BCC)
-    std::abort();           // BRK
+    X       = A;  // Byte offset (must be 2, 4, or 6)
+
+    // Validate: only 3 subrtns, and X must be in [2..6] range
+    if (X >= 7) {
+      std::abort();  // BRK
+    }
+
+    // X must be even (2, 4, or 6 correspond to entries 0, 1, 2)
+    // If X is odd, it's an invalid call - treat as error
+    if ((X & 1) != 0) {  // Odd value?
+      std::abort();      // BRK
+    }
 
   L85A0:
-    uint16_t jmp_addr = (L85AE[X] << 8) | L85AE[X - 1];
+    // Convert byte offset to array index: X/2 gives 1, 2, 3; so index = (X/2) - 1
+    uint8_t array_index = (X / 2) - 1;
+
+    // Bounds check
+    if (array_index >= kNumHelpers) {
+      std::abort();  // Should not reach here given X validation above
+    }
+
     // Prepare for JMP via RTS in original
     ChrGot();  // Get curr char
   L85AB:
     X = SavIndX;
 
-    // Call appropriate helper based on jmp_addr
-    if (jmp_addr == (uint16_t)(IsZPMod - 1))
-      IsZPMod();
-    else if (jmp_addr == (uint16_t)(IsAccMod - 1))
-      IsAccMod();
-    else if (jmp_addr == (uint16_t)(Is65C02 - 1))
-      Is65C02();
+    // Call the appropriate helper function
+    HelperFunc helper = L85AE_helpers[array_index];
+    helper();  // Call IsZPMod, IsAccMod, or Is65C02
   }
-
-  const uint16_t L85AE[] = {(uint16_t)IsZPMod - 1, (uint16_t)IsAccMod - 1, (uint16_t)Is65C02 - 1};
 
   // EvalExpr - Evaluate expressions. No check for numeric overflow
   // Support for +,-,;,/ and bitwise AND ^, OR |,EOR !
