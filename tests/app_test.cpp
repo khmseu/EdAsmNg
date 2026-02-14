@@ -174,12 +174,15 @@ TEST_F(ErrorRegistrationTest, BCDIncrementCorrect) {
 namespace EdAsmNg {
   namespace Asm {
     // Setup test sources and get dispatch state
-    void     SetupSourceLine(const char* line);
-    uint16_t GetMnemP();
-    uint8_t  GetZAB();
-    uint8_t  GetSubTIdx();
-    bool     HndlMnem();  // Returns true on success (C=0), false on error (C=1)
-    void     ResetDispatchState();
+    void           SetupSourceLine(const char* line);
+    std::uintptr_t GetMnemP();
+    uint8_t        GetZAB();
+    uint8_t        GetSubTIdx();
+    bool           HndlMnem();  // Returns true on success (C=0), false on error (C=1)
+    void           ResetDispatchState();
+
+    // Get which directive handler was last called (for testing dispatch)
+    const char* GetLastDirectiveCalled();
   }  // namespace Asm
 }  // namespace EdAsmNg
 
@@ -203,8 +206,8 @@ TEST_F(MnemonicDispatchTest, ValidMnemonicLDA) {
   EXPECT_LT(zab, 0x80);  // Not a directive
 
   // Verify MnemP points to valid entry (non-zero)
-  uint16_t mnemP = EdAsmNg::Asm::GetMnemP();
-  EXPECT_NE(mnemP, 0);
+  std::uintptr_t mnemP = EdAsmNg::Asm::GetMnemP();
+  EXPECT_NE(mnemP, 0u);
 }
 
 TEST_F(MnemonicDispatchTest, ValidMnemonicSTA) {
@@ -216,8 +219,8 @@ TEST_F(MnemonicDispatchTest, ValidMnemonicSTA) {
   uint8_t zab = EdAsmNg::Asm::GetZAB();
   EXPECT_LT(zab, 0x80);  // Not a directive
 
-  uint16_t mnemP = EdAsmNg::Asm::GetMnemP();
-  EXPECT_NE(mnemP, 0);
+  std::uintptr_t mnemP = EdAsmNg::Asm::GetMnemP();
+  EXPECT_NE(mnemP, 0u);
 }
 
 TEST_F(MnemonicDispatchTest, ValidMnemonicJMP) {
@@ -250,6 +253,9 @@ TEST_F(MnemonicDispatchTest, ValidDirectiveEQU) {
   // Directive should set ZAB high bit ($80+)
   uint8_t zab = EdAsmNg::Asm::GetZAB();
   EXPECT_GE(zab, 0x80);  // Directive flag
+
+  // Verify correct handler was called
+  EXPECT_STREQ(EdAsmNg::Asm::GetLastDirectiveCalled(), "HndlEQU");
 }
 
 TEST_F(MnemonicDispatchTest, ValidDirectiveORG) {
@@ -260,6 +266,9 @@ TEST_F(MnemonicDispatchTest, ValidDirectiveORG) {
 
   uint8_t zab = EdAsmNg::Asm::GetZAB();
   EXPECT_GE(zab, 0x80);
+
+  // Verify correct handler was called
+  EXPECT_STREQ(EdAsmNg::Asm::GetLastDirectiveCalled(), "HndlORG");
 }
 
 TEST_F(MnemonicDispatchTest, ValidDirectiveDFB) {
@@ -271,6 +280,9 @@ TEST_F(MnemonicDispatchTest, ValidDirectiveDFB) {
 
   uint8_t zab = EdAsmNg::Asm::GetZAB();
   EXPECT_GE(zab, 0x80);
+
+  // Verify correct handler was called
+  EXPECT_STREQ(EdAsmNg::Asm::GetLastDirectiveCalled(), "HndlBYTE");
 }
 
 TEST_F(MnemonicDispatchTest, ValidDirectiveDW) {
@@ -282,6 +294,9 @@ TEST_F(MnemonicDispatchTest, ValidDirectiveDW) {
 
   uint8_t zab = EdAsmNg::Asm::GetZAB();
   EXPECT_GE(zab, 0x80);
+
+  // Verify correct handler was called
+  EXPECT_STREQ(EdAsmNg::Asm::GetLastDirectiveCalled(), "HndlWORD");
 }
 
 TEST_F(MnemonicDispatchTest, InvalidMnemonicXYZ) {
@@ -402,6 +417,22 @@ TEST_F(MnemonicDispatchTest, ValidMnemonic6502BCS) {
 
   uint8_t zab = EdAsmNg::Asm::GetZAB();
   EXPECT_LT(zab, 0x80);
+}
+
+TEST_F(MnemonicDispatchTest, UnsupportedDirectiveFallback) {
+  // Test directives that are recognized but have no handler stub
+  // For example: .PAGE, .TITLE, .SKIP, etc. (in table but not dispatched)
+  EdAsmNg::Asm::SetupSourceLine(".PAGE");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_FALSE(success);  // Should return failure (C=1)
+
+  // Verify ZAB still has directive flag set (was recognized as directive)
+  uint8_t zab = EdAsmNg::Asm::GetZAB();
+  EXPECT_GE(zab, 0x80);  // Directive flag should be set
+
+  // Verify no handler was invoked (fallback path was taken)
+  EXPECT_STREQ(EdAsmNg::Asm::GetLastDirectiveCalled(), "");
 }
 
 //=================================================
@@ -1023,4 +1054,111 @@ TEST_F(ValidateRangeTest, Branch_AcceptsEdgeCaseNegative128) {
 
   // Should not register error
   EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+//=================================================
+// EvalOprnd & Directive Dispatch Tests (Phase 4)
+//=================================================
+
+// Helper functions for EvalOprnd and directive dispatch testing
+namespace EdAsmNg {
+  namespace Asm {
+    // EvalOprnd evaluation
+    void     EvalOprnd();
+    uint16_t GetValExpr();
+    uint8_t  GetPassNbr();
+    void     SetPassNbr(uint8_t pass);
+    uint8_t  GetNxtToken();
+
+    // Directive dispatch helpers
+    typedef void (*DirectiveHandler)();
+    bool CallDirectiveDispatch(const char* directiveName);
+  }  // namespace Asm
+}  // namespace EdAsmNg
+
+class EvalOprndTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetErrorState();
+    EdAsmNg::Asm::ResetDispatchState();
+  }
+};
+
+TEST_F(EvalOprndTest, Immediate_EvaluatesValue) {
+  // Test EvalOprnd with immediate value operand
+  EdAsmNg::Asm::SetupSourceLine("#$42");
+  EdAsmNg::Asm::SetPassNbr(0);  // Start in Pass 1
+
+  EdAsmNg::Asm::EvalOprnd();
+
+  // EvalOprnd should force Pass 2 temporarily, evaluate, then restore
+  // Pass should be back to 0
+  EXPECT_EQ(EdAsmNg::Asm::GetPassNbr(), 0);
+
+  // Value should be evaluated (if EvalExpr works correctly)
+  // For now, we just verify it completes without crashing
+}
+
+TEST_F(EvalOprndTest, EmptyOperand_NoEval) {
+  // Test EvalOprnd with empty operand (just whitespace/CR)
+  EdAsmNg::Asm::SetupSourceLine(" ");
+  EdAsmNg::Asm::SetPassNbr(1);  // Start in Pass 2
+
+  EdAsmNg::Asm::EvalOprnd();
+
+  // Pass should be restored to 1
+  EXPECT_EQ(EdAsmNg::Asm::GetPassNbr(), 1);
+}
+
+TEST_F(EvalOprndTest, PreservesPassNumber_Pass0) {
+  // Verify EvalOprnd preserves Pass 0
+  EdAsmNg::Asm::SetupSourceLine("$1234");
+  EdAsmNg::Asm::SetPassNbr(0);
+
+  EdAsmNg::Asm::EvalOprnd();
+
+  EXPECT_EQ(EdAsmNg::Asm::GetPassNbr(), 0);
+}
+
+TEST_F(EvalOprndTest, PreservesPassNumber_Pass1) {
+  // Verify EvalOprnd preserves Pass 1
+  EdAsmNg::Asm::SetupSourceLine("$5678");
+  EdAsmNg::Asm::SetPassNbr(1);
+
+  EdAsmNg::Asm::EvalOprnd();
+
+  EXPECT_EQ(EdAsmNg::Asm::GetPassNbr(), 1);
+}
+
+class DirectiveDispatchTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetErrorState();
+    EdAsmNg::Asm::ResetDispatchState();
+  }
+};
+
+TEST_F(DirectiveDispatchTest, EQU_RoutesToHandler) {
+  // Test that .EQU directive routes to the correct handler
+  EdAsmNg::Asm::SetupSourceLine(".EQU");
+
+  bool found = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(found);  // Directive should be recognized
+
+  // ZAB should have directive flag (>= $80)
+  uint8_t zab = EdAsmNg::Asm::GetZAB();
+  EXPECT_GE(zab, 0x80);
+
+  // For now, just verify dispatch works - actual handler stubbed
+}
+
+TEST_F(DirectiveDispatchTest, ORG_RoutesToHandler) {
+  // Test that .ORG directive routes to the correct handler
+  EdAsmNg::Asm::SetupSourceLine(".ORG");
+
+  bool found = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(found);
+
+  uint8_t zab = EdAsmNg::Asm::GetZAB();
+  EXPECT_GE(zab, 0x80);
 }

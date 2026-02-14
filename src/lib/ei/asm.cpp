@@ -62,6 +62,18 @@ namespace {
   void GOpAdr();
   bool ChkRng(std::uint8_t value, std::uint8_t minVal, std::uint8_t maxVal);
   void ValidateRange();
+  void EvalExpr();
+  void EvalOprnd();
+
+  // Directive handler forward declarations
+  void DrtvDone();
+  void HndlEQU();
+  void HndlORG();
+  void HndlBYTE();
+  void HndlWORD();
+  void HndlBLOCK();
+  void HndlASCII();
+  void HndlDBYTE();
 
   // Extern array declarations (defined later in file)
   extern const std::uint8_t CharMap1[];
@@ -170,20 +182,20 @@ namespace {
 #define SrcP_at(idx) SrcP_byte(idx)
 
   // $80-$8F: File and Symbol Table Management
-  std::uint16_t FileLen;   // Current length of BIN/REL file (2 bytes: $81-$82)
-  std::uint16_t CurrORG;   // Current origin address from ORG directive
-  std::uint16_t SymP;      // Pointer to symbol name (2 bytes: $85-$86)
-  std::uint16_t MnemP;     // Pointer to mnemonic table entry (aliases SymP)
-  std::uint8_t  Delimitr;  // Delimiter character (aliases SymP)
-  std::uint8_t  DTEndCol;  // End column index of DateTime string
-  std::uint8_t  StrType;   // String type: 0=DCI (inverted last char), -1=ASC
-  std::uint8_t  DTCurIdx;  // Current index into DateTime string (aliases StrType)
-  std::uint16_t MemTop;    // Top of available memory (2 bytes: $87-$88)
-  std::uint32_t TotLines;  // Total line count (3 bytes: $89-$8B for large counts)
-  std::uint8_t  VidSlot;   // Video card slot number
-  std::uint8_t  SaveA;     // Saved Accumulator value
-  std::uint8_t  SaveY;     // Saved Y register value
-  std::uint8_t  SaveX;     // Saved X register value
+  std::uint16_t       FileLen;   // Current length of BIN/REL file (2 bytes: $81-$82)
+  std::uint16_t       CurrORG;   // Current origin address from ORG directive
+  std::uint16_t       SymP;      // Pointer to symbol name (2 bytes: $85-$86)
+  const std::uint8_t* MnemP;     // Pointer to mnemonic table entry (safe pointer type)
+  std::uint8_t        Delimitr;  // Delimiter character (aliases SymP)
+  std::uint8_t        DTEndCol;  // End column index of DateTime string
+  std::uint8_t        StrType;   // String type: 0=DCI (inverted last char), -1=ASC
+  std::uint8_t        DTCurIdx;  // Current index into DateTime string (aliases StrType)
+  std::uint16_t       MemTop;    // Top of available memory (2 bytes: $87-$88)
+  std::uint32_t       TotLines;  // Total line count (3 bytes: $89-$8B for large counts)
+  std::uint8_t        VidSlot;   // Video card slot number
+  std::uint8_t        SaveA;     // Saved Accumulator value
+  std::uint8_t        SaveY;     // Saved Y register value
+  std::uint8_t        SaveX;     // Saved X register value
 
   // High byte access macros for 16-bit values
 #define CurrORG_hi (reinterpret_cast<std::uint8_t*>(&CurrORG)[1])
@@ -2067,11 +2079,14 @@ namespace {
     SrcP_hi = A;
   }
 
+#if 0
   // Stub: HndlMnem - Handle mnemonic/pseudo opcode
+  // This is a duplicate stub - the real implementation is later in the file
   void HndlMnem() {
     // TODO: Parse and handle mnemonic
     C = true;  // For now, simulate error
   }
+#endif
 
   // Stub: HndlOpnd - Handle operand
   void HndlOpnd() {
@@ -3436,13 +3451,12 @@ namespace {
       const std::uint8_t* ptr = Tbl1stLet[X / 2];
       if (ptr == nullptr) goto L839C_nosubtbl;  // No such opcode/directive with this 1st letter
 
-      MnemP = reinterpret_cast<std::uintptr_t>(ptr);
+      MnemP = ptr;
 
     // L8359: Main character comparison loop
     L8359:
-      ChrGot();  // JSR ChrGot - Note: msb of char=0
-      const std::uint8_t* mnemP_ptr = reinterpret_cast<const std::uint8_t*>(MnemP);
-      A ^= mnemP_ptr[Y];               // EOR (MnemP),Y - Effectively comparing 7 bits
+      ChrGot();                        // JSR ChrGot - Note: msb of char=0
+      A ^= MnemP[Y];                   // EOR (MnemP),Y - Effectively comparing 7 bits
       uint8_t cmp_result = A;          // Save comparison result
       A <<= 1;                         // ASL - C=1 if last char of opcode was compared
       if (A != 0) goto L837E_nomatch;  // BNE L837E - No hit
@@ -3458,7 +3472,7 @@ namespace {
       if (!Z) goto L8386_advnext;  // BNE L8386 - no
 
       // Got a match! Load the flag byte.
-      A   = mnemP_ptr[Y];                     // LDA (MnemP),Y - Get 1st flag byte
+      A   = MnemP[Y];                         // LDA (MnemP),Y - Get 1st flag byte
       ZAB = A;                                // STA ZAB
       if ((int8_t)A >= 0) goto L837C_opcode;  // BPL L837C - Not a directive
 
@@ -3467,15 +3481,65 @@ namespace {
       // (ZAB) has the directive's only flag byte which may be modified
       // by the directive handler
       //
-      // For now, we'll just mark success and return
-      // (Full directive dispatch would use RTS trampoline)
+      // For Phase 4: Wire directive dispatch to handler stubs
+      // In the original 6502 code, this uses RTS trampoline. For C++,
+      // we dispatch based on the matched directive name.
+      //
       SavIndY = Y;  // STY SavIndY - Save index into Mnemonics table
-      Y++;
-      // Get RTS addr-1 (hibyte and lobyte)
-      // LDA (MnemP),Y / PHA / INY / LDA (MnemP),Y / PHA / LDY SavIndY / RTS
-      // For C++ translation: directive handlers would be called via function pointers
-      // For now, just mark as directive found
-      C = false;  // Success
+
+      // Identify which directive was matched by looking at the mnemonic text
+      // The mnemonic table entry starts at MnemP and we've matched up to position Y
+      // Let's extract the directive name to dispatch properly
+
+      // Simple dispatch based on second character (after the dot)
+      // This is a temporary solution for Phase 4 - handlers are stubs
+      uint8_t second_char = MnemP[1] & 0x7F;  // Char after '.'
+
+      // Dispatch to appropriate handler
+      if (second_char == 'E') {
+        // Could be .EQU
+        uint8_t third_char = MnemP[2] & 0x7F;
+        if (third_char == 'Q') {
+          HndlEQU();
+          return;
+        }
+      } else if (second_char == 'O') {
+        // Could be .ORG
+        uint8_t third_char = MnemP[2] & 0x7F;
+        if (third_char == 'R') {
+          HndlORG();
+          return;
+        }
+      } else if (second_char == 'B') {
+        // Could be .BYTE or .BLOCK
+        uint8_t third_char = MnemP[2] & 0x7F;
+        if (third_char == 'Y') {
+          HndlBYTE();
+          return;
+        } else if (third_char == 'L') {
+          HndlBLOCK();
+          return;
+        }
+      } else if (second_char == 'W') {
+        // .WORD
+        HndlWORD();
+        return;
+      } else if (second_char == 'A') {
+        // .ASCII
+        HndlASCII();
+        return;
+      } else if (second_char == 'D') {
+        // Could be .DBYTE
+        uint8_t third_char = MnemP[2] & 0x7F;
+        if (third_char == 'B') {
+          HndlDBYTE();
+          return;
+        }
+      }
+
+      // Fallback: Directive recognized but no handler implemented
+      // Register error and return failure
+      C = true;  // Failure - unsupported directive
       return;
 
     L837C_opcode:
@@ -3485,7 +3549,7 @@ namespace {
     //
     L837E_nomatch:
       // LDA (MnemP),Y - Skip rest of entry
-      A = mnemP_ptr[Y];
+      A = MnemP[Y];
       if ((int8_t)A < 0) goto L8385_endentry;  // BMI L8385 - Last byte of entry has msb=1
       Y++;
       goto L837E_nomatch;  // BNE L837E
@@ -3498,18 +3562,13 @@ namespace {
       Y++;
       Y++;
       // TYA, ADC MnemP, STA MnemP, BCC L8392, INC MnemP+1
-      A     = Y;
-      A     = static_cast<std::uint8_t>(A + (MnemP & 0xFF));
-      MnemP = (MnemP & 0xFF00) | A;
-      if (A < (Y + (MnemP & 0xFF))) {  // Carry occurred
-        MnemP += 0x100;                // INC MnemP+1
-      }
+      // Proper pointer addition: MnemP = MnemP + Y
+      MnemP += Y;
 
     L8392:
-      Y = 0;     // LDY #0 - Try next entry with
-      ChrGot();  // JSR ChrGot
-      const std::uint8_t* new_mnemP_ptr = reinterpret_cast<const std::uint8_t*>(MnemP);
-      A ^= new_mnemP_ptr[Y];   // EOR (MnemP),Y
+      Y = 0;                   // LDY #0 - Try next entry with
+      ChrGot();                // JSR ChrGot
+      A ^= MnemP[Y];           // EOR (MnemP),Y
       A <<= 1;                 // ASL
       if (A == 0) goto L8361;  // BEQ L8361 - the same first letter
 
@@ -4331,6 +4390,107 @@ namespace {
       A       = Accum_hi;
       A ^= ValExpr_hi;
       ValExpr_hi = A;
+    }
+
+    //=================================================
+    // Directive Handler Stubs (Phase 4)
+    // These are placeholder handlers for directive dispatch
+    // Full implementation will come in later phases
+    //=================================================
+
+    // Track last directive called for testing
+    const char* g_LastDirectiveCalled = nullptr;
+
+    // DrtvDone - Common return point for directive handlers
+    // (ASM3.S line ~542, label DrtvDone)
+    void DrtvDone() {
+      Y = 0;      // LDY #0
+      A = ZAB;    // LDA ZAB
+      C = false;  // CLC
+      // RTS
+    }
+
+    // Handler stubs for specific directives
+    // These will be implemented in later phases
+
+    // .EQU directive handler stub
+    void HndlEQU() {
+      g_LastDirectiveCalled = "HndlEQU";
+      // TODO: Implement EQU directive
+      // For now, just return via DrtvDone
+      DrtvDone();
+    }
+
+    // .ORG directive handler stub
+    void HndlORG() {
+      g_LastDirectiveCalled = "HndlORG";
+      // TODO: Implement ORG directive
+      // For now, just return via DrtvDone
+      DrtvDone();
+    }
+
+    // .BYTE/.DFB directive handler stub
+    void HndlBYTE() {
+      g_LastDirectiveCalled = "HndlBYTE";
+      // TODO: Implement BYTE directive
+      // For now, just return via DrtvDone
+      DrtvDone();
+    }
+
+    // .WORD/.DW directive handler stub
+    void HndlWORD() {
+      g_LastDirectiveCalled = "HndlWORD";
+      // TODO: Implement WORD directive
+      // For now, just return via DrtvDone
+      DrtvDone();
+    }
+
+    // .BLOCK/.DS directive handler stub
+    void HndlBLOCK() {
+      g_LastDirectiveCalled = "HndlBLOCK";
+      // TODO: Implement BLOCK directive
+      // For now, just return via DrtvDone
+      DrtvDone();
+    }
+
+    // .ASCII directive handler stub
+    void HndlASCII() {
+      g_LastDirectiveCalled = "HndlASCII";
+      // TODO: Implement ASCII directive
+      // For now, just return via DrtvDone
+      DrtvDone();
+    }
+
+    // .DBYTE/.DDB directive handler stub
+    void HndlDBYTE() {
+      g_LastDirectiveCalled = "HndlDBYTE";
+      // TODO: Implement DBYTE directive
+      // For now, just return via DrtvDone
+      DrtvDone();
+    }
+
+    //=================================================
+    // EvalOprnd - Evaluate operand expressions
+    // (ASM3.S line ~347, label EvalOprnd)
+    // This routine evaluates operand expressions FOR directives that need
+    // their operands evaluated as if in Pass 2, even during Pass 1
+    // Entry:
+    //   Source line positioned at operand field
+    // Exit:
+    //   PassNbr - restored to original value
+    //   (X) - error token (if any from EvalExpr)
+    //   C flag set appropriately by EvalExpr
+    //=================================================
+    void EvalOprnd() {
+      A                  = PassNbr;
+      uint8_t saved_pass = A;  // PHA - Save current pass number
+      A                  = 1;  // LDA #1 - Force Pass 2
+      PassNbr            = A;  // STA PassNbr
+      EvalExpr();              // JSR EvalExpr
+      X       = A;             // TAX - error token?
+      A       = saved_pass;    // PLA - Restore pass number
+      PassNbr = A;             // STA PassNbr
+      // RTS - return (with C flag set by EvalExpr)
     }
 
     //=================================================
@@ -5386,11 +5546,12 @@ namespace {
       static uint8_t* test_SrcP_ptr = nullptr;
 
       void ResetDispatchState() {
-        MnemP   = 0;
-        ZAB     = 0x80;
-        SubTIdx = 0;
-        MacroF  = 0;  // No macros for testing
-        Y       = 0;
+        MnemP                 = 0;
+        ZAB                   = 0x80;
+        SubTIdx               = 0;
+        MacroF                = 0;  // No macros for testing
+        Y                     = 0;
+        g_LastDirectiveCalled = nullptr;  // Reset directive tracking
         std::memset(test_src_buffer, 0, sizeof(test_src_buffer));
       }
 
@@ -5403,6 +5564,9 @@ namespace {
         std::memcpy(test_src_buffer, line, len);
         test_src_buffer[len] = CR;  // Add CR terminator
 
+        // Set g_test_src_buffer so SrcP_byte() uses it
+        g_test_src_buffer = test_src_buffer;
+
         // Set up SrcP to point to test buffer
         // In the original 6502 code, SrcP is a 16-bit pointer stored in zero page
         // For C++ testing, we'll use the SrcP macro which simulates array access
@@ -5412,8 +5576,8 @@ namespace {
         Y = 0;
       }
 
-      uint16_t GetMnemP() {
-        return MnemP;
+      std::uintptr_t GetMnemP() {
+        return reinterpret_cast<std::uintptr_t>(MnemP);
       }
 
       uint8_t GetZAB() {
@@ -5679,6 +5843,38 @@ namespace {
 
       void SetModWrdL(uint8_t flags) {
         ModWrdL = flags;
+      }
+
+      //=================================================
+      // Phase 4: EvalOprnd & Directive Dispatch Test Helpers
+      //=================================================
+
+      uint8_t GetPassNbr() {
+        return PassNbr;
+      }
+
+      void SetPassNbr(uint8_t pass) {
+        PassNbr = pass;
+      }
+
+      uint8_t GetNxtToken() {
+        return NxtToken;
+      }
+
+      void EvalOprnd() {
+        ::EvalOprnd();
+      }
+
+      const char* GetLastDirectiveCalled() {
+        return g_LastDirectiveCalled ? g_LastDirectiveCalled : "";
+      }
+
+      bool CallDirectiveDispatch(const char* directiveName) {
+        // Set up source line with directive name
+        SetupSourceLine(directiveName);
+
+        // Call HndlMnem to dispatch
+        return HndlMnem();
       }
 
     }  // namespace Asm
