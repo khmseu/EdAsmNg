@@ -520,3 +520,159 @@ TEST_F(StorBytTest, OutOfMemory_TriggersError) {
   // Assert error registered (error count should be > 0)
   EXPECT_GT(EdAsmNg::Asm::GetErrorCount(), 0);
 }
+
+//=================================================
+// GenMCode Tests (Phase 3b)
+//=================================================
+
+// Helper functions for GenMCode testing
+namespace EdAsmNg {
+  namespace Asm {
+    // GenMCode test helpers
+    void     SetLength(uint8_t length);
+    uint8_t  GetLength();
+    void     SetLenTIdx(uint8_t idx);
+    uint8_t  GetLenTIdx();
+    void     SetValExpr(uint16_t value);
+    uint16_t GetValExpr();
+    void     SetModWrdL(uint8_t value);
+    uint8_t  GetModWrdL();
+    void     SetRelExprF(uint8_t value);
+    uint8_t  GetRelExprF();
+    uint8_t  GetGMC(uint8_t index);
+    void     SetGMC(uint8_t index, uint8_t value);
+    uint8_t  GetGMCIdx();
+    void     GenMCode(uint8_t opcode);  // Generate machine code
+  }  // namespace Asm
+}  // namespace EdAsmNg
+
+class GenMCodeTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetErrorState();
+    EdAsmNg::Asm::InitObjMemory();
+    EdAsmNg::Asm::SetGenF(0x00);  // Memory mode, no suppression
+    EdAsmNg::Asm::SetObjPC(0x2000);
+    EdAsmNg::Asm::SetHighMem(0x9000);
+    EdAsmNg::Asm::SetVidSlot(0);
+    EdAsmNg::Asm::SetFileNbr(1);
+    EdAsmNg::Asm::SetBCDLineNumber(0x01, 0x00);
+    EdAsmNg::Asm::SetRelExprF(0x00);  // Default: absolute addressing
+    EdAsmNg::Asm::SetModWrdL(0x00);   // Default: no branch instruction
+  }
+};
+
+TEST_F(GenMCodeTest, Accumulator_GeneratesOneByte) {
+  // Accumulator addressing mode: ASL A (opcode 0x0A)
+  // Length = 1, addressing mode index = 10 (accumulator)
+  EdAsmNg::Asm::SetLength(1);
+  EdAsmNg::Asm::SetLenTIdx(10);  // Accumulator mode index
+  EdAsmNg::Asm::SetValExpr(0x0000);
+
+  // Generate machine code for ASL A
+  EdAsmNg::Asm::GenMCode(0x0A);
+
+  // Verify only opcode byte stored in GMC buffer
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(0), 0x0A);
+  EXPECT_EQ(EdAsmNg::Asm::GetGMCIdx(), 1);
+
+  // Verify Length still 1
+  EXPECT_EQ(EdAsmNg::Asm::GetLength(), 1);
+}
+
+TEST_F(GenMCodeTest, Immediate_GeneratesTwoBytes) {
+  // Immediate addressing mode: LDA #$42 (opcode 0xA9)
+  // Length = 2, addressing mode index = 2 (immediate)
+  EdAsmNg::Asm::SetLength(2);
+  EdAsmNg::Asm::SetLenTIdx(2);  // Immediate mode index
+  EdAsmNg::Asm::SetValExpr(0x0042);
+
+  // Generate machine code for LDA #$42
+  EdAsmNg::Asm::GenMCode(0xA9);
+
+  // Verify opcode and operand bytes in GMC buffer
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(0), 0xA9);  // Opcode
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(1), 0x42);  // Operand low byte
+  EXPECT_EQ(EdAsmNg::Asm::GetGMCIdx(), 2);   // Index advanced to 2
+
+  // Verify Length still 2
+  EXPECT_EQ(EdAsmNg::Asm::GetLength(), 2);
+}
+
+TEST_F(GenMCodeTest, ZeroPage_GeneratesTwoBytes) {
+  // Zero page addressing mode: LDA $34 (opcode 0xA5)
+  // Length = 2, addressing mode index = 1 (zero page)
+  EdAsmNg::Asm::SetLength(2);
+  EdAsmNg::Asm::SetLenTIdx(1);  // Zero page mode index
+  EdAsmNg::Asm::SetValExpr(0x0034);
+
+  // Generate machine code for LDA $34
+  EdAsmNg::Asm::GenMCode(0xA5);
+
+  // Verify opcode and zero page address in GMC buffer
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(0), 0xA5);  // Opcode
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(1), 0x34);  // Zero page address
+  EXPECT_EQ(EdAsmNg::Asm::GetGMCIdx(), 2);
+
+  // Verify Length still 2
+  EXPECT_EQ(EdAsmNg::Asm::GetLength(), 2);
+}
+
+TEST_F(GenMCodeTest, Absolute_GeneratesThreeBytes) {
+  // Absolute addressing mode: LDA $1234 (opcode 0xAD)
+  // Length = 3, addressing mode index = 0 (absolute)
+  EdAsmNg::Asm::SetLength(3);
+  EdAsmNg::Asm::SetLenTIdx(0);  // Absolute mode index
+  EdAsmNg::Asm::SetValExpr(0x1234);
+
+  // Generate machine code for LDA $1234
+  EdAsmNg::Asm::GenMCode(0xAD);
+
+  // Verify opcode and address bytes in GMC buffer (little-endian)
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(0), 0xAD);  // Opcode
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(1), 0x34);  // Low byte of address
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(2), 0x12);  // High byte of address
+  EXPECT_EQ(EdAsmNg::Asm::GetGMCIdx(), 3);
+
+  // Verify Length still 3
+  EXPECT_EQ(EdAsmNg::Asm::GetLength(), 3);
+}
+
+TEST_F(GenMCodeTest, IndexedX_GeneratesTwoBytes) {
+  // Zero page indexed X: LDA $12,X (opcode 0xB5)
+  // Length = 2, addressing mode index = 3 (zp,X)
+  EdAsmNg::Asm::SetLength(2);
+  EdAsmNg::Asm::SetLenTIdx(3);  // Zero page,X mode index
+  EdAsmNg::Asm::SetValExpr(0x0012);
+
+  // Generate machine code for LDA $12,X
+  EdAsmNg::Asm::GenMCode(0xB5);
+
+  // Verify opcode and zero page address in GMC buffer
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(0), 0xB5);  // Opcode
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(1), 0x12);  // Zero page address
+  EXPECT_EQ(EdAsmNg::Asm::GetGMCIdx(), 2);
+
+  // Verify Length still 2
+  EXPECT_EQ(EdAsmNg::Asm::GetLength(), 2);
+}
+
+TEST_F(GenMCodeTest, Branch_GeneratesTwoBytes) {
+  // Branch instruction: BNE $10 (opcode 0xD0, displacement +$10)
+  // Length = 2, ModWrdL bit 3 set (branch flag)
+  EdAsmNg::Asm::SetLength(2);
+  EdAsmNg::Asm::SetLenTIdx(0);       // Not used for branches
+  EdAsmNg::Asm::SetModWrdL(0x08);    // Branch instruction flag (bit 3)
+  EdAsmNg::Asm::SetValExpr(0x0010);  // Displacement
+
+  // Generate machine code for BNE
+  EdAsmNg::Asm::GenMCode(0xD0);
+
+  // Verify opcode and displacement in GMC buffer
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(0), 0xD0);  // Opcode
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(1), 0x10);  // Displacement
+  EXPECT_EQ(EdAsmNg::Asm::GetGMCIdx(), 2);
+
+  // Verify Length still 2
+  EXPECT_EQ(EdAsmNg::Asm::GetLength(), 2);
+}

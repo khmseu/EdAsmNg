@@ -5269,5 +5269,113 @@ namespace {
         g_test_obj_memory_enabled = true;
       }
 
+      //=================================================
+      // Phase 3b: GenMCode Test Helpers
+      //=================================================
+
+      void SetLength(uint8_t value) {
+        Length = value;
+      }
+
+      uint8_t GetLength() {
+        return Length;
+      }
+
+      void SetLenTIdx(uint8_t value) {
+        LenTIdx = value;
+      }
+
+      uint8_t GetLenTIdx() {
+        return LenTIdx;
+      }
+
+      void SetValExpr(uint16_t value) {
+        ValExpr_word = value;
+      }
+
+      uint16_t GetValExpr() {
+        return ValExpr_word;
+      }
+
+      void SetModWrdL(uint8_t value) {
+        ModWrdL = value;
+      }
+
+      uint8_t GetModWrdL() {
+        return ModWrdL;
+      }
+
+      void SetRelExprF(uint8_t value) {
+        RelExprF = value;
+      }
+
+      uint8_t GetRelExprF() {
+        return RelExprF;
+      }
+
+      uint8_t GetGMC(int index) {
+        if (index >= 0 && index < 4) {
+          return GMC[index];
+        }
+        return 0;
+      }
+
+      void SetGMC(uint8_t index, uint8_t value) {
+        if (index < 4) {
+          GMC[index] = value;
+        }
+      }
+
+      uint8_t GetGMCIdx() {
+        return GMCIdx;
+      }
+
+      // GenMCode - Generate Machine Code
+      // Extracted from GenNow section (lines 2553-2633)
+      // Populates the GMC buffer with opcode and operand bytes
+      // based on instruction length and addressing mode
+      void GenMCode(uint8_t opcode) {
+        // Store opcode in GMC[0]
+        X      = 0;
+        GMC[X] = opcode;
+        X++;
+        GMCIdx = X;
+
+        A = ModWrdL;
+        // BIT Bit08 - branch instr?
+        if ((A & 0x08) != 0) {
+          // Branch instructions
+          // Store displacement byte from ValExpr
+          GMC[X] = ValExpr;
+          X++;
+          GMCIdx = X;
+          return;
+        }
+
+        // Non-branch instructions
+        // Check if we need to store operand bytes
+        A = X;  // X=1 at this point
+        if (A >= Length) {
+          // Single byte instruction (accumulator mode, implied, etc.)
+          return;
+        }
+
+        // Store operand bytes from ValExpr (little-endian)
+        A      = ValExpr;
+        GMC[X] = A;
+        X++;
+
+        if (X >= Length) {
+          GMCIdx = X;
+          return;
+        }
+
+        // If 3-byte instruction, store high byte
+        A      = ValExpr_hi;
+        GMC[X] = A;
+        X++;
+        GMCIdx = X;
+      }
+
     }  // namespace Asm
   }  // namespace EdAsmNg
