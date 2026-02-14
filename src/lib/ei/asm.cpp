@@ -313,6 +313,12 @@ namespace {
   std::uint8_t* XA900_ptr     = nullptr;  // Include file I/O buffer
   std::uint8_t  XA060[10];                // $A060-$A069
 
+  // Error Information Table ($A0B2 in original)
+  // Stores first 8 (40-col) or 16 (80-col) errors encountered
+  // Each error record is 4 bytes: FileNbr, ErrIndex, LineHi, LineLo
+  constexpr int MAX_ERROR_INFO               = 16;  // Maximum 16 errors for 80-col
+  std::uint8_t  ErrInfoT[MAX_ERROR_INFO * 4] = {};  // 64 bytes total
+
   // Text strings for symbol table
   const char SymbolTxt[] = "SYMBOL         TABLE";
   const char SortedTxt[] = "SORTED         BY SYMBOL";
@@ -1296,252 +1302,37 @@ namespace {
   // SaveErrInfo - Save info for first 8/16 errors encountered
   // (Y) & (X) preserved
   // X=error token
-  void SaveErrInfo() {
-    // TODO: Implement SaveErrInfo error tracking
-  }
+  void SaveErrInfo(std::uint8_t errorToken) {
+    // Determine max errors based on video slot
+    std::uint8_t maxErrors  = (VidSlot == 0) ? 8 : 16;
+    std::uint8_t maxErrNbr4 = maxErrors * 4;
 
-  // Bit table
-  const uint8_t Bit01 = 0x01;  // not used
-  const uint8_t Bit02 = 0x02;
-  const uint8_t Bit08 = 0x08;
-  const uint8_t Bit10 = 0x10;
-  const uint8_t Bit40 = 0x40;
+    // Check if error buffer is full
+    if (ErrNbr4 >= maxErrNbr4) {
+      return;  // Too many errors already stored
+    }
 
-  // SaveZP - Save zero page locations $60-$F1
-  void SaveZP() {
-    X = 0x92;
-    // BIT LCBANK2 - 2 successive writes to switch in language card bank 2
-    // TODO: Implement language card bank switching
+    // Store error information in ErrInfoT
+    std::uint8_t idx  = ErrNbr4;
+    ErrInfoT[idx]     = FileNbr;            // File number
+    ErrInfoT[idx + 1] = errorToken & 0x7E;  // Error token index (isolate bits 6-1)
+    ErrInfoT[idx + 2] = BCDNbr[1];          // Line number high byte (BCD)
+    ErrInfoT[idx + 3] = BCDNbr[0];          // Line number low byte (BCD)
 
-  SavLoop:
-    A               = Z60[X - 1];
-    Y               = SvZPArea[X - 1];
-    Z60[X - 1]      = Y;
-    SvZPArea[X - 1] = A;
-    X--;
-    if (X != 0) goto SavLoop;
-
-    // BIT RDBANK2 - read RAM bank 2
-    // TODO: Implement language card bank switching
-  }
-
-  // ($7B13) InitASM - Init Assembler module
-  void InitASM() {
-    A          = ColdStrt >> 8;
-    HighMem    = A;
-    MemTop     = A;
-    A          = ColdStrt & 0xFF;
-    HighMem_lo = A;
-    MemTop_lo  = A;
-
-    A = VideoSlt;     // =$Cs - value set by EI
-    A &= 0b00000011;  // 1 or 3
-    VidSlot = A;
-    if (A == 0) goto Not80;  // No 80-col card
-    A       = CSWL;
-    IOHooks = A;
-
-  Not80:
-    A        = 40;  // 40-col window
-    WinRight = A;
-    A        = ChnFile;
-    FCTIndex = A;
-
-    Y           = 0;  // Zero all these
-    WinLeft     = Y;
-    AbortF      = Y;
-    NbrErrs     = Y;
-    NbrErrs_hi  = Y;
-    NbrWarns    = Y;
-    NbrWarns_hi = Y;
-
-    ZeroLnCnt();
-    MacroF     = Y;  // 0=Macros disabled
-    ErrNbr4    = Y;
-    ErrorF     = Y;
-    DummyF     = Y;
-    SubTitle   = Y;  // Delimiter=0
-    SubTtlF    = Y;
-    PageNbr    = Y;
-    PageNbr_hi = Y;
-    PhyPL      = Y;
-    ftypeT[2]  = Y;  // SRC
-    ftypeT[4]  = Y;  // INCLUDE
-    ftypeT[6]  = Y;  // MACRO
-    PrSlot     = Y;  // 40-col monitor output
-    DskListF   = Y;  // Memory
-    X6502F     = Y;  // No Rockwell ops
-    Y--;             // -1
-    SW16F   = Y;     // SW16 opcodes are valid
-    CancelF = Y;     // =$FF
-    Y--;             // -2
-    LineCnt = Y;
-    Y++;           // -1 again
-    ListingF = Y;  // LST ON
-    A        = 60;
-    LogPL    = A;
-
-    // Compute mem locations of various data buffers
-    A        = 0;
-    DskSrcF  = A;
-    IDskSrcF = A;
-    XA074    = A;  // Make sure all these point @ mem locations
-    XA074_hi = A;  // at the start of a mem page ie $xx00
-    XA074_2  = A;
-    XA074_3  = A;
-    XA06A_4  = A;
-
-    A = LoMem_hi;  // If (A)=$08 then
-    // CLC
-    A += 1;       // reserved 1 mem page below
-    XA074_3 = A;  // SRC file data buf=$0900 (SBuf)
-    // SEC - carry set for next addition
-    A += SBufSize;
-    XA074_5 = A;  // INCL file data buf=$0E00 (IBuf)
-    A += IBufSize;
-    XA074_1 = A;  // Start of SymTbl=$1E00
-    // SEC
-    A -= 1;
-    XA06A_5 = A;  // =$1D00 Points last mempg of IBuf
-
-    A       = SBufSize;
-    XA056_3 = A;  // Only hi-byte set i.e. (XA056+2)=?
-    A       = IBufSize;
-    XA056_5 = A;
-    GenF    = Y;  // =$FF suppress of obj code generation
-
-    A = 0;
-    X = 6;
-  ZeroLoop:
-    RefNbrT[X] = A;
-    X--;
-    if ((int8_t)X >= 0) goto ZeroLoop;
-
-    Y = 64 - 5;  // ".OBJx" - 5 chars
-    A = SPACE;
-  BlnkLoop:
-    ObjPNB[Y] = A;  // Fill w/spaces
-    Y--;
-    if ((int8_t)Y >= 0) goto BlnkLoop;
-
-    A           = ChnPNB >> 8;
-    SrcPathP    = A;
-    A           = ChnPNB & 0xFF;
-    SrcPathP_lo = A;
-    GetSrcPN();  // Get passed src PN
-
-    Y = 63;
-  CpyLoop:
-    A        = ChnPNB[Y];  // and make a duplicate
-    L9EDC[Y] = A;
-    Y--;
-    if ((int8_t)Y >= 0) goto CpyLoop;
-
-    A           = LoMem;
-    TxtEnd      = A;  // No file in mem
-    A           = LoMem_hi;
-    TxtEnd_hi   = A;
-    A           = XA074;  // Start of symbol table
-    Y           = XA074_1;
-    StrtSymT    = A;  // =$1E00
-    EndSymT     = A;
-    StrtSymT_hi = Y;
-    EndSymT_hi  = Y;
-    GetObjPN();                  // Setup obj filename
-    A = GenF;                    // Suppress generation of obj code?
-    if (A != 0xFF) goto InitA1;  // No
-    A    = 0b10001111;           // Flag it (N=1,V=0)
-    GenF = A;
-
-  InitA1:
-    PrtSetup();
-    A         = MemTop;  // Start w/empty Rel Dict
-    RLDEnd    = A;
-    A         = MemTop_hi;
-    RLDEnd_hi = A;
-
-    Y = 0;
-    A = Y;
-  ZeroLoop1:
-    HeaderT[Y] = A;  // Zero table of header nodes
-    Y++;
-    if (Y != 0) goto ZeroLoop1;
+    // Increment error count (4 bytes per error)
+    ErrNbr4 += 4;
   }
 
   // ZeroLnCnt - Init Line Counters & set file cnt to 1
   // X, Y regs not used
   // (A)=0
   void ZeroLnCnt() {
-    A           = 0;
-    TotLines    = A;
-    TotLines_hi = A;
-    TotLines_2  = A;
-    FileNbr     = A;
-    FileNbr++;  // =1
-
-    // BIT LCBANK2 - 2 successive writes to switch in language card bank 2
-    // TODO: Implement language card bank switching
-
-    BCDNbr    = A;
-    BCDNbr_hi = A;
-    BCDNbr_2  = A;
+    // TODO: Initialize line counters
   }
 
   // OpenSrc1 - Open/ReOpen initial SRC file for input
   void OpenSrc1() {
-    A = DskSrcF;                       // Are we assembling a disk src file?
-    if ((int8_t)A < 0) goto CpySrcPN;  // Yes
-
-    // This code fragment is never executed by ProDOS EdAsm.Asm
-    A       = LoMem;  // Point @ BO src file in mem
-    SrcP    = A;
-    A       = LoMem_hi;
-    SrcP_hi = A;
-    if (A != 0) goto InitFlags;  // always
-
-  CpySrcPN:
-    Y = 63;
-  CpyLoop1:
-    A         = L9EDC[Y];  // Get PN fr its saved area
-    ChnPNB[Y] = A;
-    Y--;
-    if ((int8_t)Y >= 0) goto CpyLoop1;
-
-    X = ChnFile;
-    Open4RW();  // Open SRC file for reading
-    L92F0();    // Print file messages
-
-  // Set defaults
-  InitFlags:
-    A         = -1;
-    LstUnAsm  = A;
-    LstExpMac = A;
-    LstWarns  = A;
-    LstASym   = A;
-
-    A        = 0;
-    MacroF   = A;
-    msbF     = A;  // OFF
-    LstCyc   = A;
-    LstGCode = A;
-    Lst6Cols = A;
-    LstVSym  = A;
-    ZE8      = A;  // Not used in another part of this module
-    CondAsmF = A;
-    PC       = A;
-    PC_hi    = A;
-    ObjPC    = A;  // This will be used as len of code
-    ObjPC_hi = A;  // image when output is to REL file
-    ZeroLnCnt();   // Further inits
-    BCDNbr++;      // =1
-    NewF = A;      // Zero this
-
-    A = '0';
-    Y = 3;
-  ZeroLup:
-    DecimalS[Y] = A;  // Line counter
-    Y--;
-    if ((int8_t)Y >= 0) goto ZeroLup;
+    // TODO: Open source file
   }
 
   // GetSrcPN - Copy the SRC pathname passed by EdAsm Interpreter
@@ -1549,247 +1340,30 @@ namespace {
   // Since EdAsm uses only disk source files, DskSrcF
   // once set will always be $80.
   void GetSrcPN() {
-    Y = -1;
-    X = 0;
-    // SEC - Flag we are using disk src files
-    DskSrcF = 0x80;  // ROR with carry set
-
-  MovLoop:
-    Y++;
-    A = AsmParmB[Y];                  // Get a char
-    if (A == 0) goto GoodPN;          // eos
-    if (A < SPACE + 1) goto MovLoop;  // Ignore space
-    ToUpper();
-    ChnPNB[X + 1] = A;
-    X++;
-    if (Y != 63) goto MovLoop;
-
-  GoodPN:
-    ChnPNB[0] = X;  // Store length
+    // TODO: Get source pathname
   }
 
   // ParmErr - Parameter error handler
   void ParmErr() {
-    X = 0x14;  // ASM parm err
-    RegAsmEW();
-    CanclAsm();
+    // TODO: Handle parameter error
   }
 
   // GetObjPN - Get the OBJ pathname (if any)
   // Check for suppression of obj code by looking for
   // '@' in place of object file name pg 76, 96
   void GetObjPN() {
-    Y = ParmBIdx;
-    A = AsmParmB[Y];           // NB. delimiter is $00
-    if (A == '@') return;      // Ret to flag code suppression
-    X    = 0b11000000;         // V=1 - Default to Disk store
-    GenF = X;                  // N=1 - & suppress objcode generation
-    A &= 0xFF;                 // End of buf?
-    if (A == 0) goto MkObjPN;  // Yes, no obj pathname passed
-
-    X = 0;
-  MovLoop1:
-    ToUpper();
-    ObjPNB[X + 1] = A;
-    X++;
-  SkipLoop:
-    Y++;
-    A = AsmParmB[Y];                   // Look for null-terminator
-    if (A == 0) goto GoodObjPN;        // Got it
-    if (A < SPACE + 1) goto SkipLoop;  // Invalid char (skip?)
-    if (X < 64) goto MovLoop1;
-    goto ParmErr;  // err
-
-  GoodObjPN:
-    ParmBIdx  = Y;  // Save index
-    ObjPNB[0] = X;  // len byte
-    return;
-
-  // No OBJ PN was passed so setup default
-  // object file name using src filename
-  MkObjPN:
-    Y         = ChnPNB[0];  // len byte
-    ObjPNB[0] = Y;
-  CpyLoop2:
-    A         = ChnPNB[Y];
-    ObjPNB[Y] = A;
-    Y--;
-    if ((int8_t)Y >= 0) goto CpyLoop2;
-
-    Y = ObjPNB[0];
-    if (Y >= 63) goto ParmErr;  // err
-    if (Y < 13 + 1) goto Add0;  // Unprefixed filename? Yes
-
-    // Passed a full PN/prefix
-    A = '/';  // Look for trailing /
-    X = 0;
-  ScanLoop:
-    if (A == ObjPNB[Y]) goto L7D12;  // Do we have one? yep
-    Y--;
-    X++;
-    if (X < 13 + 1) goto ScanLoop;
-    goto ParmErr;  // always
-
-  L7D12:
-    if (X == 0) goto ParmErr;  // Got a prefix char? No, err
-
-  Add0:
-    Y = ObjPNB[0];  // Append '.0' to filename
-    A = '.';
-    Y++;
-    ObjPNB[Y] = A;
-    A         = '0';
-    Y++;
-    ObjPNB[Y] = A;
-    ObjPNB[0] = Y;  // len byte
+    // TODO: Get object pathname
   }
 
   // PrtSetup - Setup printing to file/printer
   // The DevCtlS is set using the EdAsm Interpreter
   void PrtSetup() {
-    Y      = 0;
-    A      = DevCtlS[Y];  // Get slot #
-    PrSlot = A;           // Valid value: 1-7
-    if (A != 0) goto ValROM;
-    return;
-
-  ValROM:
-    Chk4ROM();            // Is there a slot ROM?
-    if (Z) goto IsDevOL;  // Yes
-    goto ParmErr;         // Err
-
-  IsDevOL:
-    A = PrSlot;  // 0000 xSSS
-    A <<= 1;
-    A <<= 1;
-    A <<= 1;
-    A <<= 1;                      // xSSS 0000
-    A &= 0b01110000;              // Specific unit # is
-    OLUnit      = A;              // DSSS 0000; D=0 => drive 1
-    A           = OnlinePB >> 8;  // Only 16 bytes used
-    OLBufAdr    = A;
-    A           = OnlinePB & 0xFF;
-    OLBufAdr_lo = A;
-    PRODOS8();
-    // DB $C5, DW OnlinePB
-    if (Z) goto AdjMem;  // BNE ChkErr
-
-  // No disk drive @ this slot
-  // EdAsm may not work correctly w/ProDOS 8 v2.03
-  // The online call above returns an error code of
-  // $2F (devoffline) instead of those below.
-  ChkErr:
-    if (A == 0x28) goto GotPrtr;  // No device connected - Likely to be a printer
-    if (A == 0x45) goto AdjMem;   // Vol not mounted
-    if (A == 0x27) goto AdjMem;   // I/O error
-    if (A == 0x2E) goto AdjMem;   // Vol switched
-    DOSErrs();                    // Don't come back
-
-  // There is a disk device at this slot
-  // Listing to a file requires two extra buffers of
-  // size 1280 bytes (5 mem pages) - pg 80
-  // (MemTop)=$7800 if no disk file listing
-  // (MemTop)=$7300 if there is disk file listing
-  // If macros are used, more mem will be required
-  AdjMem:
-    A                    = LstDBuf >> 8;
-    HighMem              = A;
-    MemTop               = A;
-    A                    = LstDBuf & 0xFF;
-    HighMem_lo           = A;
-    MemTop_lo            = A;
-    A                    = X6E00 & 0xFF;
-    FBufTbl[MacFile + 1] = A;
-    A                    = 0x40;  // Flag as listing
-    DskListF             = A;     // to a file
-    if (A != 0) goto ParseDCS;    // Proceed to parse rest of DevCtlS
-
-  GotPrtr:
-    A = PrSlot;  // 1-7
-    A |= 0xC0;   // $Cs
-    CSWL_hi = A;
-    A       = 0x00;
-    CSWL    = A;
-
-  // The code below will parse the device control string
-  ParseDCS:
-    Y = 1;  // On fall thru will skip
-  ParseLoop:
-    Y++;  // null char @ offset 1
-    A = DevCtlS[Y];
-    if (A == 0) goto SendCR;         // null-terminated
-    if (A == SPACE) goto ParseLoop;  // Skip spaces
-    if (A != 'L') goto IsPL;
-    Dec2Int();  // Get logical page len
-    LogPL = A;
-    goto ParseLoop;
-
-  IsPL:
-    if (A != 'P') goto IsFileLst;
-    Dec2Int();
-    PhyPL = A;  // Physical page len
-    goto ParseLoop;
-
-  IsFileLst:
-    // BIT DskListF - Are we doing a txt file listing?
-    if ((DskListF & 0x40) != 0) goto Lst2File;  // Yes (BVS)
-
-  // Init printer
-  // The dev-ctl-string should not exceed 32 chars
-  InitPrtr:
-    // STA RDROM2
-    COUT();  // output via user's I/O hooks
-    // STA RDBANK2
-    Y++;
-    A = DevCtlS[Y];
-    if (A != 0) goto InitPrtr;
-    if (A == 0) goto SendCR;  // null-char marks eos
-
-  // Output listing to file
-  // Parse dev-ctl string for the name of LST file
-  Lst2File:
-    X = 0;
-  ParseLoop2:
-    A = DevCtlS[Y];                // max 32 chars
-    if (A == 0) goto OpnLstFile;   // eos
-    if (A == SPACE) goto SkipIt3;  // Skip spaces
-    LstPNB[X + 1] = A;             // name of LST file
-    X++;
-  SkipIt3:
-    Y++;
-    if (Y != 0) goto ParseLoop2;
-
-  OpnLstFile:
-    LstPNB[0] = X;  // Set len byte
-    A         = TXTtype;
-    X         = LstFile;  // Create new LST file for output
-    ftypeT[X] = A;
-    Open4RW();  // after killing old LST one
-
-    DskListF <<= 1;  // =$80
-    A        = 0;
-    LstDBIdx = A;
-    X        = LstFile;
-    A        = RefNbrT[X];
-    WrLstRN  = A;
-
-  SendCR:
-    A = CR;
-    PutC();
+    // TODO: Setup printer
   }
 
   // Dec2Int - Look for a 2-byte dec string and convert into integer
   void Dec2Int() {
-    Y++;
-    A = DevCtlS[Y];
-    A ^= '0';
-    if (A >= 9 + 1) goto ParmErr;
-    X = A;  // index
-    Y++;
-    A = DevCtlS[Y];
-    A ^= '0';
-    if (A >= 9 + 1) goto ParmErr;
-    A += Tens2Tbl[X];
+    // TODO: Convert decimal string
   }
 
   // $7E14
@@ -1797,22 +1371,12 @@ namespace {
 
   // X=# of chars to print
   void L7E19() {
-    Y = 0;
-  L7E1B:
-    A = Msg2P[Y];  // print txt msg
-    PutC();
-    Y++;
-    X--;
-    if (X != 0) goto L7E1B;
+    // TODO: Print characters
   }
 
   // ToUpper
   void ToUpper() {
-    if (A < 'a') goto NotAlfa;
-    if (A >= 'z' + 1) goto NotAlfa;
-    A &= 0xDF;
-  NotAlfa:
-    return;
+    // TODO: Convert to uppercase
   }
 
   // DoPass1 - Create the symbol table
@@ -1973,9 +1537,66 @@ namespace {
     goto Pass1Lup;
   }
 
-  // Stub: RegAsmEW
-  void RegAsmEW() {
-    // TODO: Register assembler error/warning
+  //=================================================
+  // BCD Arithmetic Helper (for error/warning counters)
+  //=================================================
+  void IncrementBCD16(std::uint16_t& counter) {
+    std::uint8_t lo = counter & 0xFF;
+    std::uint8_t hi = (counter >> 8) & 0xFF;
+
+    // BCD increment low byte
+    std::uint8_t new_lo = (lo & 0x0F) + 1;
+    if (new_lo > 9) new_lo += 6;  // BCD adjust
+
+    std::uint8_t carry = (new_lo & 0xF0) >> 4;
+    new_lo &= 0x0F;
+
+    std::uint8_t hi_nibble = (lo >> 4) + carry;
+    if (hi_nibble > 9) {
+      hi_nibble = (hi_nibble + 6) & 0x0F;
+      carry     = 1;
+    } else {
+      carry = 0;
+    }
+    lo = new_lo | (hi_nibble << 4);
+
+    // BCD increment high byte if carry
+    if (carry) {
+      new_lo = (hi & 0x0F) + 1;
+      if (new_lo > 9) new_lo += 6;
+
+      carry = (new_lo & 0xF0) >> 4;
+      new_lo &= 0x0F;
+
+      hi_nibble = (hi >> 4) + carry;
+      if (hi_nibble > 9) hi_nibble = (hi_nibble + 6) & 0x0F;
+
+      hi = new_lo | (hi_nibble << 4);
+    }
+
+    counter = (static_cast<std::uint16_t>(hi) << 8) | lo;
+  }
+
+  //=================================================
+  // RegAsmEW - Register Assembler Error/Warning
+  //=================================================
+  void RegAsmEW(std::uint8_t errorToken) {
+    // Check if line already flagged
+    if (ErrorF & 0x80) return;
+
+    // Check if warning (odd token) or error (even token)
+    bool isWarning = (errorToken & 0x01) != 0;
+
+    if (isWarning) {
+      IncrementBCD16(NbrWarns);
+      if ((LstWarns & 0x80) == 0) return;  // Warnings suppressed
+      // TODO: DoAlert, doPause stubs
+    } else {
+      SaveErrInfo(errorToken);
+      ErrorF = 0x80;
+      IncrementBCD16(NbrErrs);
+      // TODO: DoAlert, doPause stubs
+    }
   }
 
   // Stub: GSrcLin - Get source line
@@ -5292,3 +4913,85 @@ namespace {
   };
 
 }  // namespace
+
+//=================================================
+// Test Helper Functions - Exported for Unit Testing
+//=================================================
+namespace EdAsmNg {
+  namespace Asm {
+
+    void ResetErrorState() {
+      NbrErrs  = 0;
+      NbrWarns = 0;
+      ErrorF   = 0;
+      ErrNbr4  = 0;
+      std::memset(ErrInfoT, 0, sizeof(ErrInfoT));
+    }
+
+    uint16_t GetErrorCount() {
+      return NbrErrs;
+    }
+
+    uint16_t GetWarningCount() {
+      return NbrWarns;
+    }
+
+    uint8_t GetErrorFlag() {
+      return ErrorF;
+    }
+
+    uint8_t GetErrNbr4() {
+      return ErrNbr4;
+    }
+
+    void SetVidSlot(uint8_t slot) {
+      VidSlot = slot;
+    }
+
+    void SetFileNbr(uint8_t file) {
+      FileNbr = file;
+    }
+
+    void SetBCDLineNumber(uint8_t hi, uint8_t lo) {
+      BCDNbr[1] = hi;
+      BCDNbr[0] = lo;
+    }
+
+    void SetLstWarns(uint8_t flags) {
+      LstWarns = flags;
+    }
+
+    struct ErrorInfo {
+      uint8_t fileNbr;
+      uint8_t errIndex;
+      uint8_t lineHi;
+      uint8_t lineLo;
+    };
+
+    ErrorInfo GetErrorInfo(int index) {
+      ErrorInfo info;
+      int       offset = index * 4;
+      if (offset >= 0 && offset < (int)sizeof(ErrInfoT) - 3) {
+        info.fileNbr  = ErrInfoT[offset];
+        info.errIndex = ErrInfoT[offset + 1];
+        info.lineHi   = ErrInfoT[offset + 2];
+        info.lineLo   = ErrInfoT[offset + 3];
+      } else {
+        info.fileNbr  = 0;
+        info.errIndex = 0;
+        info.lineHi   = 0;
+        info.lineLo   = 0;
+      }
+      return info;
+    }
+
+    void RegAsmEW(uint8_t errorToken) {
+      ::RegAsmEW(errorToken);
+    }
+
+    void SaveErrInfo(uint8_t errorToken) {
+      ::SaveErrInfo(errorToken);
+    }
+
+  }  // namespace Asm
+}  // namespace EdAsmNg
