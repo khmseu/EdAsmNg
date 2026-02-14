@@ -59,6 +59,7 @@ namespace {
   void ChrGot();
   void HashFn();
   void GAdrMod();
+  void GOpAdr();
 
   // Extern array declarations (defined later in file)
   extern const std::uint8_t CharMap1[];
@@ -3038,6 +3039,88 @@ namespace {
       ValExpr_hi = A;
     }
 
+    //=================================================
+    // GOpAdr - Get Operand Address
+    // Calculates the final operand address based on addressing mode
+    // Handles:
+    // - Branch relative addressing (calculates offset from PC)
+    // - Zero page mode (masks to low byte, checks for overflow)
+    // - Immediate mode (value as-is, never relocatable)
+    // - Absolute addressing (full 16-bit value)
+    // - Relocation flag management
+    //
+    // Input:
+    //   LenTIdx - Addressing mode index (from GAdrMod)
+    //   ValExpr - Expression value (from EvalExpr)
+    //   PC - Current program counter
+    //   ModWrdL - Mode word with branch flag (bit 3)
+    //   RelExprF - Relocation flag from expression evaluation
+    //
+    // Output:
+    //   ValExpr - Final operand address/value
+    //   RelExprF - Updated relocation flag
+    //   Error registered if invalid address range
+    //=================================================
+    void GOpAdr() {
+      // Check if this is a branch instruction
+      A = ModWrdL;
+      if ((A & 0x08) != 0) {  // BIT Bit08; BNE - Branch instruction?
+        // Yes, calculate relative displacement
+        CalcDisp();
+        return;
+      }
+
+      // Not a branch - check addressing mode via LenTIdx
+      A = LenTIdx;
+
+      // Immediate mode (index 2): Value used as-is, never relocatable
+      if (A == 2) {
+        // Immediate mode - value is literal, not an address
+        // Clear relocation flag since immediate values can't be relocated
+        RelExprF = 0;
+        return;
+      }
+
+      // Zero page mode (index 1): Only low byte, check for overflow
+      if (A == 1) {
+        // Check if high byte is set (value >= $100)
+        A = ValExpr_hi;
+        if (A != 0) {
+          // Out of zero page range - register error
+          X = 0x1C;  // Zero page range error
+          RegAsmEW(X);
+        }
+        // Mask to low byte only
+        ValExpr_hi = 0;
+        return;
+      }
+
+      // Zero page indexed modes (zp,X=3, zp,Y=11, (zp,X)=7, (zp),Y=6, (zp)=8)
+      // These also need zero page range checking
+      if (A == 3 || A == 6 || A == 7 || A == 8 || A == 11) {
+        // Check if high byte is set (value >= $100)
+        A = ValExpr_hi;
+        if (A != 0) {
+          // Out of zero page range - register error
+          X = 0x1C;  // Zero page range error
+          RegAsmEW(X);
+        }
+        // Mask to low byte only
+        ValExpr_hi = 0;
+        return;
+      }
+
+      // Absolute mode (index 0): Full 16-bit address
+      // Absolute indexed (abs,X=4, abs,Y=5, (abs)=9, (abs,X)=12)
+      // Accumulator mode (index 10): No operand address calculation needed
+      // All other modes: Use value as-is, preserve relocation flag
+
+      // For all other addressing modes, ValExpr is already set correctly
+      // by EvalExpr(), and RelExprF is already set if symbol is relocatable
+      // No additional processing needed
+      return;
+    }
+
     // Stub: ListCode - Print generated code
     void ListCode() {
       // TODO: List/print generated object code
@@ -5375,6 +5458,41 @@ namespace {
         GMC[X] = A;
         X++;
         GMCIdx = X;
+      }
+
+      //=================================================
+      // Phase 3c: GOpAdr Test Helpers
+      //=================================================
+
+      void ResetGOpAdrState() {
+        LenTIdx      = 0;
+        PC           = 0;
+        ValExpr_word = 0;
+        ModWrdL      = 0;
+        RelExprF     = 0;
+      }
+
+      void SetAddressingMode(uint8_t mode) {
+        LenTIdx = mode;
+      }
+
+      uint8_t GetAddressingMode() {
+        return LenTIdx;
+      }
+
+      void SetPC(uint16_t pc) {
+        PC = pc;
+      }
+
+      uint16_t GetPC() {
+        return PC;
+      }
+
+      // GOpAdr - Get Operand Address
+      // Calculates the final operand address based on addressing mode,
+      // handling relocation, zero page constraints, and branch offsets
+      void GOpAdr() {
+        ::GOpAdr();
       }
 
     }  // namespace Asm

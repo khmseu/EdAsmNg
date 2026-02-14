@@ -676,3 +676,115 @@ TEST_F(GenMCodeTest, Branch_GeneratesTwoBytes) {
   // Verify Length still 2
   EXPECT_EQ(EdAsmNg::Asm::GetLength(), 2);
 }
+
+//=================================================
+// Phase 3c: GOpAdr (Operand Address Resolution) Tests
+//=================================================
+
+// Helper functions to access GOpAdr internals for testing
+namespace EdAsmNg {
+  namespace Asm {
+    // Test helpers for GOpAdr
+    void     SetAddressingMode(uint8_t mode);  // Set LenTIdx
+    uint8_t  GetAddressingMode();              // Get LenTIdx
+    void     SetPC(uint16_t pc);               // Set program counter
+    uint16_t GetPC();                          // Get program counter
+    void     GOpAdr();                         // Calculate operand address
+    void     ResetGOpAdrState();
+  }  // namespace Asm
+}  // namespace EdAsmNg
+
+class GOpAdrTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetErrorState();
+    EdAsmNg::Asm::ResetGOpAdrState();
+  }
+};
+
+TEST_F(GOpAdrTest, Immediate_ReturnsValueAsIs) {
+  // Immediate mode: #$12
+  // LenTIdx = 2 (immediate addressing mode index)
+  // Expression value should be returned unchanged
+  EdAsmNg::Asm::SetAddressingMode(2);  // Immediate mode
+  EdAsmNg::Asm::SetValExpr(0x0012);
+
+  EdAsmNg::Asm::GOpAdr();
+
+  // In immediate mode, the value is used as-is
+  EXPECT_EQ(EdAsmNg::Asm::GetValExpr(), 0x0012);
+  EXPECT_EQ(EdAsmNg::Asm::GetRelExprF(), 0);  // Immediate is never relocatable
+}
+
+TEST_F(GOpAdrTest, ZeroPage_ReturnsLowByteOnly) {
+  // Zero page mode: $34 (with high byte set)
+  // LenTIdx = 1 (zero page addressing mode index)
+  // Only low byte should be retained
+  EdAsmNg::Asm::SetAddressingMode(1);  // Zero page mode
+  EdAsmNg::Asm::SetValExpr(0x1234);    // High byte should be masked off
+
+  EdAsmNg::Asm::GOpAdr();
+
+  // Zero page mode uses only low byte
+  EXPECT_EQ(EdAsmNg::Asm::GetValExpr(), 0x0034);
+}
+
+TEST_F(GOpAdrTest, Absolute_ReturnsFull16BitValue) {
+  // Absolute mode: $2000
+  // LenTIdx = 0 (absolute addressing mode index)
+  // Full 16-bit value should be preserved
+  EdAsmNg::Asm::SetAddressingMode(0);  // Absolute mode
+  EdAsmNg::Asm::SetValExpr(0x2000);
+
+  EdAsmNg::Asm::GOpAdr();
+
+  // Absolute mode uses full 16-bit address
+  EXPECT_EQ(EdAsmNg::Asm::GetValExpr(), 0x2000);
+}
+
+TEST_F(GOpAdrTest, Branch_CalculatesRelativeOffset) {
+  // Branch mode: BNE $201F (from PC=$2000)
+  // Branch instructions use relative addressing
+  // Offset = target - PC - 2 (instruction is 2 bytes)
+
+  // PC = $2000, target = $201F
+  // Offset = $201F - $2000 - 2 = $1D
+  EdAsmNg::Asm::SetPC(0x2000);
+  EdAsmNg::Asm::SetLength(2);          // Branch instructions are 2 bytes
+  EdAsmNg::Asm::SetModWrdL(0x08);      // Branch flag (bit 3)
+  EdAsmNg::Asm::SetValExpr(0x201F);    // Target address
+  EdAsmNg::Asm::SetAddressingMode(0);  // Not really used for branches
+
+  EdAsmNg::Asm::GOpAdr();
+
+  // Branch offset should be $1D
+  EXPECT_EQ(EdAsmNg::Asm::GetValExpr(), 0x001D);
+}
+
+TEST_F(GOpAdrTest, RelocatableSymbol_SetsRelocationFlag) {
+  // Symbol defined in different module (external symbol)
+  // RelExprF flag should already be set by EvalExpr
+  EdAsmNg::Asm::SetAddressingMode(0);  // Absolute mode
+  EdAsmNg::Asm::SetValExpr(0x3000);
+  EdAsmNg::Asm::SetRelExprF(0x20);  // Set relocatable flag
+
+  EdAsmNg::Asm::GOpAdr();
+
+  // Relocation flag should still be set
+  EXPECT_EQ(EdAsmNg::Asm::GetRelExprF(), 0x20);
+  EXPECT_EQ(EdAsmNg::Asm::GetValExpr(), 0x3000);
+}
+
+TEST_F(GOpAdrTest, ZeroPageOutOfRange_RegistersError) {
+  // Zero page mode with value >= $100 should register error
+  EdAsmNg::Asm::SetAddressingMode(1);  // Zero page mode
+  EdAsmNg::Asm::SetValExpr(0x0100);    // Out of zero page range
+
+  EdAsmNg::Asm::GOpAdr();
+
+  // Should have registered an error
+  EXPECT_GT(EdAsmNg::Asm::GetErrorCount(), 0);
+
+  // Value should be masked to low byte
+  EXPECT_EQ(EdAsmNg::Asm::GetValExpr(), 0x0000);
+}
