@@ -403,3 +403,120 @@ TEST_F(MnemonicDispatchTest, ValidMnemonic6502BCS) {
   uint8_t zab = EdAsmNg::Asm::GetZAB();
   EXPECT_LT(zab, 0x80);
 }
+
+//=================================================
+// StorByt Tests (Phase 3a)
+//=================================================
+
+// Helper functions for StorByt testing
+namespace EdAsmNg {
+  namespace Asm {
+    // StorByt test helpers
+    void     SetGenF(uint8_t value);
+    uint8_t  GetGenF();
+    void     SetObjPC(uint16_t value);
+    uint16_t GetObjPC();
+    void     SetHighMem(uint16_t value);
+    uint16_t GetHighMem();
+    void     StorByt(uint8_t byte);
+    uint8_t  ReadObjMemory(uint16_t addr);
+    void     WriteObjMemory(uint16_t addr, uint8_t value);
+    void     InitObjMemory();  // Initialize test memory buffer
+  }  // namespace Asm
+}  // namespace EdAsmNg
+
+class StorBytTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetErrorState();
+    EdAsmNg::Asm::InitObjMemory();
+    EdAsmNg::Asm::SetGenF(0x00);  // Default: memory mode, no suppression
+    EdAsmNg::Asm::SetVidSlot(0);
+    EdAsmNg::Asm::SetFileNbr(1);
+    EdAsmNg::Asm::SetBCDLineNumber(0x01, 0x00);
+  }
+};
+
+TEST_F(StorBytTest, SuppressedGeneration_NoWrite) {
+  // Set GenF = 0x80 (suppress bit set)
+  EdAsmNg::Asm::SetGenF(0x80);
+  EdAsmNg::Asm::SetObjPC(0x1000);
+  EdAsmNg::Asm::SetHighMem(0x9000);
+
+  // Write initial value to memory
+  EdAsmNg::Asm::WriteObjMemory(0x1000, 0xAA);
+
+  // Try to store 0xBB (should be suppressed)
+  EdAsmNg::Asm::StorByt(0xBB);
+
+  // Assert ObjPC unchanged
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x1000);
+
+  // Assert memory unchanged
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x1000), 0xAA);
+}
+
+TEST_F(StorBytTest, DiskMode_JumpsToWr1Byte) {
+  // Set GenF = 0x40 (disk bit set, suppress bit clear)
+  EdAsmNg::Asm::SetGenF(0x40);
+  EdAsmNg::Asm::SetObjPC(0x2000);
+  EdAsmNg::Asm::SetHighMem(0x9000);
+
+  // Call StorByt with disk mode
+  // Should call Wr1Byte (which is stubbed, so just verify no crash)
+  EdAsmNg::Asm::StorByt(0xCC);
+
+  // ObjPC should remain unchanged in disk mode (Wr1Byte handles that)
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x2000);
+}
+
+TEST_F(StorBytTest, MemoryMode_StoresAndIncrementsPC) {
+  // Set GenF = 0x00 (memory mode, no bits set)
+  EdAsmNg::Asm::SetGenF(0x00);
+  EdAsmNg::Asm::SetObjPC(0x2000);
+  EdAsmNg::Asm::SetHighMem(0x9000);
+
+  // Store byte
+  EdAsmNg::Asm::StorByt(0xDD);
+
+  // Assert memory contains the byte
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x2000), 0xDD);
+
+  // Assert ObjPC incremented
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x2001);
+}
+
+TEST_F(StorBytTest, IncrementObjPC_WithCarry) {
+  // Set GenF = 0x00 (memory mode)
+  EdAsmNg::Asm::SetGenF(0x00);
+  EdAsmNg::Asm::SetObjPC(0x20FF);  // Will overflow low byte
+  EdAsmNg::Asm::SetHighMem(0x9000);
+
+  // Store byte
+  EdAsmNg::Asm::StorByt(0xEE);
+
+  // Assert memory at 0x20FF contains the byte
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x20FF), 0xEE);
+
+  // Assert ObjPC incremented with carry to 0x2100
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x2100);
+}
+
+TEST_F(StorBytTest, OutOfMemory_TriggersError) {
+  // Set GenF = 0x00 (memory mode)
+  EdAsmNg::Asm::SetGenF(0x00);
+  EdAsmNg::Asm::SetObjPC(0x8FFF);
+  EdAsmNg::Asm::SetHighMem(0x9000);  // Boundary
+
+  // Store byte - ObjPC will increment to 0x9000, triggering error
+  EdAsmNg::Asm::StorByt(0xFF);
+
+  // Assert memory written at 0x8FFF
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x8FFF), 0xFF);
+
+  // Assert ObjPC incremented to 0x9000
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x9000);
+
+  // Assert error registered (error count should be > 0)
+  EXPECT_GT(EdAsmNg::Asm::GetErrorCount(), 0);
+}

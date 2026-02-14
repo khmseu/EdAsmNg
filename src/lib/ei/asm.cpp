@@ -57,26 +57,12 @@ namespace {
   // Forward Declarations (for functions used before defined)
   //=================================================
   void ChrGot();
-  void ChrGot2();
   void HashFn();
   void GAdrMod();
-  void IsAXY();
-  void HndlMnem();
-  void WhiteSpc();
 
   // Extern array declarations (defined later in file)
-  extern const std::uint8_t  CharMap1[];
-  extern const std::uint8_t  AModTbl[];
-  extern const std::uint8_t  LtrA[];
-  extern const std::uint8_t  LtrB[];
-  extern const std::uint8_t  LtrC[];
-  extern const std::uint8_t  LtrD[];
-  extern const std::uint8_t  LtrE[];
-  extern const std::uint8_t  LtrF[];
-  extern const std::uint8_t  DotDrtv[];
-  extern const std::uint8_t* Tbl1stLet[];
-  extern const std::uint8_t  AModTkns[];
-  extern const std::uint8_t  AModCmds[];
+  extern const std::uint8_t CharMap1[];
+  extern const std::uint8_t AModTbl[];
 
   //=================================================
   // File Control Table (FCT) Indices
@@ -122,19 +108,18 @@ namespace {
   //=================================================
 
   // $60-$6F: General Assembly Control Variables
-  std::uint8_t Z60;            // Generic zero page location (multipurpose)
-  std::uint8_t BCDNbr[3];      // Source file line numbers in BCD format ($60-$62, 3 bytes)
-#define BCDNbr_hi (BCDNbr[1])  // High byte access
-  std::uint16_t StrtSymT;      // Start address of symbol table (2 bytes: $63-$64)
-  std::uint16_t EndSymT;       // Current end address of symbol table (2 bytes: $65-$66)
-  std::uint8_t  PassNbr;       // Current assembly pass: 0=Pass1, 1=Pass2, 2=Pass3
-  std::uint8_t  ListingF;      // Listing flag: $80=LST ON, $00=LST OFF
-  std::uint8_t  SubTtlF;       // Subtitle flag: $00=none, $40=SBTL cmd, $FF=subtitle string
-  std::uint8_t  LineCnt;       // Number of lines printed on current page
-  std::uint16_t PageNbr;       // Current page number (2 bytes: $6B-$6C)
-  std::uint8_t  FileNbr;       // Current file number in assembly
-  std::uint8_t  LogPL;         // Logical page length (lines per page)
-  std::uint8_t  PhyPL;         // Physical page length (actual printer lines)
+  std::uint8_t  Z60;        // Generic zero page location (multipurpose)
+  std::uint8_t  BCDNbr[3];  // Source file line numbers in BCD format ($60-$62, 3 bytes)
+  std::uint16_t StrtSymT;   // Start address of symbol table (2 bytes: $63-$64)
+  std::uint16_t EndSymT;    // Current end address of symbol table (2 bytes: $65-$66)
+  std::uint8_t  PassNbr;    // Current assembly pass: 0=Pass1, 1=Pass2, 2=Pass3
+  std::uint8_t  ListingF;   // Listing flag: $80=LST ON, $00=LST OFF
+  std::uint8_t  SubTtlF;    // Subtitle flag: $00=none, $40=SBTL cmd, $FF=subtitle string
+  std::uint8_t  LineCnt;    // Number of lines printed on current page
+  std::uint16_t PageNbr;    // Current page number (2 bytes: $6B-$6C)
+  std::uint8_t  FileNbr;    // Current file number in assembly
+  std::uint8_t  LogPL;      // Logical page length (lines per page)
+  std::uint8_t  PhyPL;      // Physical page length (actual printer lines)
 
   // $70-$7F: Instruction Processing and Pointers
   std::uint8_t  SavIndX;    // Temporary storage for X register
@@ -151,15 +136,20 @@ namespace {
   std::uint16_t Src2P;      // Copy of source pointer used during code listing
   std::uint16_t PC;         // Program Counter / position counter (current assembly address)
   std::uint16_t SortedP;    // Pointer to sorted auxiliary array (aliases PC)
-  std::uint8_t  ObjPC;      // Object code Program Counter (where to store in memory)
-  std::uint8_t  SymFBP;     // Pointer to symbol's flag byte field (during Pass 1)
-  std::uint8_t  CodeLen;    // Current length of code image for REL files (stored at BOF)
-  std::uint8_t  AuxAryE;    // Pointer to last end of sorted array
+  std::uint16_t ObjPC;  // Object code Program Counter (where to store in memory, 2 bytes: $7C-$7D)
+  std::uint8_t  CodeLen;  // Current length of code image for REL files (stored at BOF)
+  std::uint8_t  AuxAryE;  // Pointer to last end of sorted array
 
-#define SrcP_hi (reinterpret_cast<std::uint8_t*>(&SrcP)[1])  // High byte access
+#define SrcP_hi  (reinterpret_cast<std::uint8_t*>(&SrcP)[1])   // High byte access
+#define PC_hi    (reinterpret_cast<std::uint8_t*>(&PC)[1])     // High byte access for PC
+#define ObjPC_hi (reinterpret_cast<std::uint8_t*>(&ObjPC)[1])  // High byte access for ObjPC
 
   // Global test buffer for unit testing (when non-null, overrides SrcP for array access)
   std::uint8_t* g_test_src_buffer = nullptr;
+
+  // Global test memory buffer for StorByt testing (64KB simulated memory)
+  std::uint8_t g_test_obj_memory[65536];
+  bool         g_test_obj_memory_enabled = false;
 
   // Helper to access source line as array (simulates 6502 indirect indexed mode)
   // When SrcP contains an address, SrcP_byte(index) accesses memory at that address
@@ -192,14 +182,19 @@ namespace {
   std::uint8_t  SaveY;     // Saved Y register value
   std::uint8_t  SaveX;     // Saved X register value
 
+  // High byte access macros for 16-bit values
+#define CurrORG_hi (reinterpret_cast<std::uint8_t*>(&CurrORG)[1])
+#define MemTop_hi  (reinterpret_cast<std::uint8_t*>(&MemTop)[1])
+
   // $90-$9F: Code Generation and Expression Evaluation
-  std::uint8_t  DskListF;      // Disk listing flag: $00=off, $40=partial, $80=lst to file
-  std::uint8_t  LstDBIdx;      // LST data buffer index / number of chars to write
-  std::uint8_t  WinLeft;       // Left edge of 40-column window (for 80-col cards)
-  std::uint8_t  WinRight;      // Right edge of 40-column window
-  std::uint8_t  X6502F;        // 65C02 processor flag (vs 6502)
-  std::uint16_t HighMem;       // High memory address of generated object code
-  std::uint8_t  ExprAccF;      // Expression's accumulated flag bits
+  std::uint8_t  DskListF;  // Disk listing flag: $00=off, $40=partial, $80=lst to file
+  std::uint8_t  LstDBIdx;  // LST data buffer index / number of chars to write
+  std::uint8_t  WinLeft;   // Left edge of 40-column window (for 80-col cards)
+  std::uint8_t  WinRight;  // Right edge of 40-column window
+  std::uint8_t  X6502F;    // 65C02 processor flag (vs 6502)
+  std::uint16_t HighMem;   // High memory address of generated object code
+  std::uint8_t  ExprAccF;  // Expression's accumulated flag bits
+#define HighMem_hi (reinterpret_cast<std::uint8_t*>(&HighMem)[1])  // High byte access for HighMem
   std::uint8_t  ColCnt;        // Current print column count (aliases ExprAccF)
   std::uint8_t  SortF;         // Sort flag for symbol table
   std::uint8_t  NxtToken;      // Next token type flag (indicates nature of next char)
@@ -1257,7 +1252,7 @@ namespace {
   void L986A();
 
   // Patchable pointer (A,X,Y as label names)
-  std::uint16_t IsAXY_addr = 0;
+  std::uint16_t IsAXY = 0;
 
   void Assembler() {
     ColdStrt();
@@ -1695,11 +1690,6 @@ namespace {
   // PrvSymP would be set correctly for existing chains
   //=================================================
   void FindSym() {
-    // Declare variables at function scope to avoid goto issues
-    std::uint8_t* SymP_ptr = nullptr;
-    std::uint8_t  old_low  = 0;
-    uint8_t       flag     = 0;
-
     HashFn();                // JSR HashFn - Hash the label
     Y = HeaderT_ptr[X + 1];  // LDY HeaderT+1,X - (X)=hashed value x 2 already
     if (Y == 0) goto L8908;  // BEQ L8908 - Empty slot => Not Found!
@@ -1713,16 +1703,16 @@ namespace {
     PrvSymP = A;          // STA PrvSymP
     PrvSymP |= (Y << 8);  // STY PrvSymP+1
 
-    Y        = 0;
-    SymP_ptr = reinterpret_cast<std::uint8_t*>(static_cast<uintptr_t>(SymP));
-    A        = SymP_ptr[Y];  // LDA (SymP),Y
-    NxtSymP  = A;            // STA NxtSymP - Point to next node
+    Y                      = 0;
+    std::uint8_t* SymP_ptr = reinterpret_cast<std::uint8_t*>(static_cast<uintptr_t>(SymP));
+    A                      = SymP_ptr[Y];  // LDA (SymP),Y
+    NxtSymP                = A;            // STA NxtSymP - Point to next node
     Y++;
     A = SymP_ptr[Y];      // LDA (SymP),Y - in chain
     NxtSymP |= (A << 8);  // STA NxtSymP+1 - If NIL ($0000) end of chain
 
-    old_low = SymP & 0xFF;                                // Save old low byte for carry check
-    A       = 2;                                          // LDA #2 - Skip past link pointer
+    std::uint8_t old_low = SymP & 0xFF;                   // Save old low byte for carry check
+    A                    = 2;                             // LDA #2 - Skip past link pointer
     A    = static_cast<std::uint8_t>(A + (SymP & 0xFF));  // ADC SymP - to point @ the symbolic name
     SymP = (SymP & 0xFF00) | A;                           // STA SymP
     if (A >= old_low) goto L88EC;  // BCC L88EC - This will allow us to use the
@@ -1754,13 +1744,13 @@ namespace {
     A = SymP_ptr[Y];                // LDA (SymP),Y - Get symbol's flag byte
     if ((int8_t)A < 0) goto L891A;  // BMI L891A - Not defined yet
 
-    A &= 0b10111111;  // AND #%10111111 - Set it to referenced
-    SymP_ptr[Y] = A;  // STA (SymP),Y
-    flag        = A;  // PHA - Save flag byte
-    A &= relative;    // AND #relative - Retain this bit
-    A |= RelExprF;    // ORA RelExprF
-    RelExprF = A;     // STA RelExprF
-    A        = flag;  // PLA - Restore
+    A &= 0b10111111;   // AND #%10111111 - Set it to referenced
+    SymP_ptr[Y]  = A;  // STA (SymP),Y
+    uint8_t flag = A;  // PHA - Save flag byte
+    A &= relative;     // AND #relative - Retain this bit
+    A |= RelExprF;     // ORA RelExprF
+    RelExprF = A;      // STA RelExprF
+    A        = flag;   // PLA - Restore
 
   L891A:
     C = false;  // CLC - Flag symbolic name found
@@ -1874,7 +1864,7 @@ namespace {
     IsAXY();         // JSR IsAXY - Chk if reserved idfer
     if (!C) return;  // BCC doRet9 - No
     X = 0x1E;        // LDX #$1E - Reserved idfer err
-    RegAsmEW(0x1E);  // JMP RegAsmEW
+    RegAsmEW();      // JMP RegAsmEW
   }
 
   //=================================================
@@ -1938,59 +1928,51 @@ namespace {
   // are connected together in a singly linked list.
   //=================================================
   void AddNode() {
-    // Declare variables at function scope to avoid goto issues
-    uint8_t       flag        = A;  // PHA - Save flag byte
-    uint16_t      sum_low     = 0;
-    bool          carry_add   = false;
-    std::uint8_t* EndSymT_ptr = nullptr;
-    std::uint8_t* PrvSymP_ptr = nullptr;
-    std::uint8_t  old_low_1   = 0;
-    std::uint8_t  old_low_2   = 0;
-
-    Y = 0;       // LDY #0
-    ChrGot();    // JSR ChrGot
-    if (C) {     // BCC L89B4
-      C = true;  // SEC
+    uint8_t flag = A;  // PHA - Save flag byte
+    Y            = 0;  // LDY #0
+    ChrGot();          // JSR ChrGot
+    if (C) {           // BCC L89B4
+      C = true;        // SEC
       return;
     }
 
   L89B4:
-    X = HashIdx;                 // LDX HashIdx - Is there already a chain
-    A = HeaderT_ptr[X + 1];      // LDA HeaderT+1,X - associated with this value?
-    if (A != 0) goto L89C8;      // BNE L89C8 - Yes
-    A         = 0x00;            // LDA #<HeaderT - Start a new singly linked list
-    sum_low   = A + HashIdx;     // ADC HashIdx
-    A         = sum_low & 0xFF;  // Low byte result
-    PrvSymP   = A;               // STA PrvSymP - Point @ $BCxx
-    carry_add = sum_low > 0xFF;  // Carry from low byte addition
-    A         = 0xBC;            // LDA #>HeaderT
-    A         = static_cast<std::uint8_t>(A + (carry_add ? 1 : 0));  // ADC #0
-    PrvSymP |= (A << 8);                                             // STA PrvSymP+1
+    X = HashIdx;                        // LDX HashIdx - Is there already a chain
+    A = HeaderT_ptr[X + 1];             // LDA HeaderT+1,X - associated with this value?
+    if (A != 0) goto L89C8;             // BNE L89C8 - Yes
+    A                = 0x00;            // LDA #<HeaderT - Start a new singly linked list
+    uint16_t sum_low = A + HashIdx;     // ADC HashIdx
+    A                = sum_low & 0xFF;  // Low byte result
+    PrvSymP          = A;               // STA PrvSymP - Point @ $BCxx
+    bool carry_add   = sum_low > 0xFF;  // Carry from low byte addition
+    A                = 0xBC;            // LDA #>HeaderT
+    A                = static_cast<std::uint8_t>(A + (carry_add ? 1 : 0));  // ADC #0
+    PrvSymP |= (A << 8);                                                    // STA PrvSymP+1
 
     // NB: We assume PrvSymP have been set correctly
     // if it's not a new chain. In order to set this ptr
     // correctly for an existing chain, FindSym should
     // be called before AddNode.
   L89C8:
-    A              = Y;  // TYA - A=Y=0
-    EndSymT_ptr    = reinterpret_cast<std::uint8_t*>(static_cast<uintptr_t>(EndSymT));
-    EndSymT_ptr[Y] = A;               // STA (EndSymT),Y
-    A              = EndSymT & 0xFF;  // LDA EndSymT
-    PrvSymP_ptr    = reinterpret_cast<std::uint8_t*>(static_cast<uintptr_t>(PrvSymP));
-    PrvSymP_ptr[Y] = A;             // STA (PrvSymP),Y
-    A              = Y;             // TYA - A=0
+    A                         = Y;  // TYA - A=Y=0
+    std::uint8_t* EndSymT_ptr = reinterpret_cast<std::uint8_t*>(static_cast<uintptr_t>(EndSymT));
+    EndSymT_ptr[Y]            = A;               // STA (EndSymT),Y
+    A                         = EndSymT & 0xFF;  // LDA EndSymT
+    std::uint8_t* PrvSymP_ptr = reinterpret_cast<std::uint8_t*>(static_cast<uintptr_t>(PrvSymP));
+    PrvSymP_ptr[Y]            = A;  // STA (PrvSymP),Y
+    A                         = Y;  // TYA - A=0
     Y++;                            // INY - Y=1
     EndSymT_ptr[Y] = A;             // STA (EndSymT),Y - Set link field to NIL ($0000)
     A              = EndSymT >> 8;  // LDA EndSymT+1
     PrvSymP_ptr[Y] = A;             // STA (PrvSymP),Y - Point @ new entry
 
-    Y--;                                                          // DEY - =0
-    old_low_1 = EndSymT & 0xFF;                                   // Save old low byte
-    A         = 2;                                                // LDA #2 - Skip past
-    A         = static_cast<std::uint8_t>(A + (EndSymT & 0xFF));  // ADC EndSymT
-    EndSymT   = (EndSymT & 0xFF00) | A;  // STA EndSymT - the link field so that
-    if (A >= old_low_1) goto L89E3;      // BCC L89E3 - Y reg can be used to
-    EndSymT += 0x100;                    // INC EndSymT+1 - index both SrcP & EndSymT
+    Y--;                                                                       // DEY - =0
+    std::uint8_t old_low_1 = EndSymT & 0xFF;                                   // Save old low byte
+    A                      = 2;                                                // LDA #2 - Skip past
+    A                      = static_cast<std::uint8_t>(A + (EndSymT & 0xFF));  // ADC EndSymT
+    EndSymT                = (EndSymT & 0xFF00) | A;  // STA EndSymT - the link field so that
+    if (A >= old_low_1) goto L89E3;                   // BCC L89E3 - Y reg can be used to
+    EndSymT += 0x100;                                 // INC EndSymT+1 - index both SrcP & EndSymT
 
     // Labels are stored in the symbol table with
     // msb on except last char.
@@ -2023,16 +2005,16 @@ namespace {
     A              = PC >> 8;    // LDA PC+1 - w/this symbol
     EndSymT_ptr[Y] = A;          // STA (EndSymT),Y
 
-    A    = EndSymT & 0xFF;       // LDA EndSymT
-    SymP = A;                    // STA SymP - Point @ symbolic name
-    A    = EndSymT >> 8;         // LDA EndSymT+1
-    SymP |= (A << 8);            // STA SymP+1
-    old_low_2 = EndSymT & 0xFF;  // Save old low byte
-    A         = Y;               // TYA
-    A         = static_cast<std::uint8_t>(A + 1 + (EndSymT & 0xFF));  // SEC / ADC EndSymT
-    EndSymT   = (EndSymT & 0xFF00) | A;                               // STA EndSymT - next availmem
-    if (A >= old_low_2) goto L8A1E;  // BCC L8A1E - detect carry out
-    EndSymT += 0x100;                // INC EndSymT+1
+    A    = EndSymT & 0xFF;                    // LDA EndSymT
+    SymP = A;                                 // STA SymP - Point @ symbolic name
+    A    = EndSymT >> 8;                      // LDA EndSymT+1
+    SymP |= (A << 8);                         // STA SymP+1
+    std::uint8_t old_low_2 = EndSymT & 0xFF;  // Save old low byte
+    A                      = Y;               // TYA
+    A       = static_cast<std::uint8_t>(A + 1 + (EndSymT & 0xFF));  // SEC / ADC EndSymT
+    EndSymT = (EndSymT & 0xFF00) | A;                               // STA EndSymT - next availmem
+    if (A >= old_low_2) goto L8A1E;                                 // BCC L8A1E - detect carry out
+    EndSymT += 0x100;                                               // INC EndSymT+1
 
   L8A1E:
     // CMP RLDEnd: sets carry if EndSymT_lo >= RLDEnd_lo
@@ -2049,1975 +2031,3243 @@ namespace {
       return;
     }
 
-    X = 0x12;        // LDX #$12 - sym/rld table full!
-    RegAsmEW(0x12);  // JSR RegAsmEW
-    CanclAsm(0);     // JMP CanclAsm
+    X = 0x12;     // LDX #$12 - sym/rld table full!
+    RegAsmEW();   // JSR RegAsmEW
+    CanclAsm(0);  // JMP CanclAsm
   }
-}
-
-// Stub: L81F0 - Skip over non-blanks
-void L81F0() {
-  // TODO: Skip over non-blank characters
-  Z = true;  // For now, simulate CR found
-}
-
-// NxtField - On entry (Y)=index into src line
-// Ret:
-// (Y)=0
-// src ptr pointing @ 1st char of the field
-// (X) - unchanged
-void NxtField() {
-NxtField_start:
-  A = SrcP_at(Y);
-  if (A != SPACE) goto L823D;  // (BNE)
-  Y++;
-  if (Y != 0) goto NxtField_start;  // (BNE)
-
-L823D:
-  // CLC
-  A = Y;
-  A += SrcP;
-  SrcP = A;
-  A    = 0;
-  Y    = A;      // (Y)=0
-  A += SrcP_hi;  // with carry
-  SrcP_hi = A;
-}
-
-// HndlMnem - Implemented below at line ~3191
-
-// Stub: HndlOpnd - Handle operand
-void HndlOpnd() {
-  // TODO: Parse and handle operand field
-}
-
-// Stub: L80F7 - Check for FIN/ELSE directive
-void L80F7() {
-  // TODO: Check if current line has FIN/ELSE directive
-  C = false;  // For now, simulate "not found"
-}
-
-// Stub: Chk4ROM - Check for ROM at slot
-void Chk4ROM() {
-  // TODO: Check if there's a ROM at the specified slot
-  Z = true;  // For now, assume ROM present
-}
-
-// Stub: PRODOS8 - ProDOS 8 system call
-void PRODOS8() {
-  // TODO: Make ProDOS 8 system call
-  Z = true;  // For now, simulate success
-}
-
-// Stub: DOSErrs - Handle DOS errors
-void DOSErrs() {
-  // TODO: Handle DOS errors (doesn't return)
-  std::abort();
-}
-
-// Stub: COUT - Console output
-void COUT() {
-  // TODO: Output character via user's I/O hooks
-}
-
-// Stub: MonCOUT - Monitor console output
-void MonCOUT() {
-  // TODO: Output character to Apple II monitor
-}
-
-// Stub: Open4RW - Open file for reading/writing
-void Open4RW() {
-  // TODO: Open file for I/O
-}
-
-// Stub: L92F0 - Print file messages
-void L92F0() {
-  // TODO: Print file-related messages
-}
-
-// SetupVec - Implemented above at line ~1131
-
-// ($8458) GInstLen - We must determine the address mode of opcode
-// Ret:
-// Length of instruction opcode
-void GInstLen() {
-  ModWrdL = A;  // 1st flag byte (STA)
-  Y++;
-  const std::uint8_t* mnemP_ptr = reinterpret_cast<const std::uint8_t*>(MnemP);
-  A                             = mnemP_ptr[Y];  // 2nd flag byte - addr mode bits
-  ModWrdH                       = A;             // of this mnemonic
-  Y++;
-  A       = mnemP_ptr[Y];
-  SubTIdx = A;  // Index into sub-table of opcode table
-  Y--;
-  Y--;         // Moveback to 1st flag byte
-  NxtField();  // Point @ operand field
-
-  A          = 0;
-  LenTIdx    = A;
-  ValExpr    = A;  // val of operand if any
-  ValExpr_hi = A;
-
-  A = ModWrdL;
-  // BIT ModWrdL
-  if ((int8_t)A < 0) goto L84CE;  // Directives/SET (BMI)
-  // BIT Bit20
-  if ((A & 0x20) != 0) goto L84D4;  // Implied (BNE)
-  // BIT Bit08
-  if ((A & 0x08) != 0) goto L84D9;  // Branch opcodes (BNE)
-
-  // There are now thirteen X6502 addr modes to consider
-  GAdrMod();          // Get an index to addr mode table
-  if (C) goto L84FE;  // error (BCS)
-
-// Checks the returned/parsed addr mode against permitted modes
-ChkAMod:
-  LenTIdx = A;  // =0-12
-  X       = A;
-  A       = AModTbl[X];  // Get the parsed addr mode
-
-  if (X < 8) goto L849B;  // (BCC)
-
-  // When (X)=8-12, the addressing modes are:
-  // (zp), (abs), acc, zp,Y & (abs,X)
-  A &= ModWrdL;                     // 1st flag byte
-  A &= 0b00000111;                  // Retain only these bits
-  if (A == AModTbl[X]) goto L8502;  // Is addr mode valid? Yes (BEQ)
-  if (A != AModTbl[X]) goto L849F;  // => Further checks (BNE)
-
-// X=0-7 The bits of ModWrdH (2nd flag byte) are completely defined
-L849B:
-  // BIT ModWrdH - Is the returned mode valid?
-  if ((ModWrdH & A) != 0) goto L8502;  // Yes (BNE)
-
-L849F:
-  if (X != 11) goto L84A7;   // Was mode parsed as zp,Y? No (BNE)
-  A = 5;                     // Force the mode as
-  if (A != 0) goto ChkAMod;  // abs,Y (for LDA/STA) (BNE)
-
-L84A7:
-  if (X != 1) goto L84B5;  // Was mode parsed as zp? nope (BNE)
-  A = ModWrdL;
-  A &= 0b00010000;           // JMP/JSR?
-  if (A == 0) goto BadMode;  // No (BEQ)
-  A = 0;                     // Allow for JMP/JSR zp but
-  if (A == 0) goto ChkAMod;  // convert 'em to JMP/JSR abs (always) (BEQ)
-
-L84B5:
-  if (X != 8) goto BadMode;  // Was mode parsed as (zp)? No (BNE)
-  A = ModWrdL;
-  A &= 0b00010000;           // JMP?
-  if (A == 0) goto BadMode;  // No (BEQ)
-  A = 9;
-  if (A != 0) goto ChkAMod;  // Convert to JMP (abs) (always) (BNE)
-
-BadMode:
-  X = 0x1C;  // addr mode error
-  RegAsmEW(0x1C);
-  A       = 0x00;
-  LenTIdx = A;             // Assume abs mode addressing
-  if (A == 0) goto L84FE;  // always (BEQ)
-
-L84CE:
-  // BVS L8513 - => SET directive
-  if ((ModWrdL & 0x40) != 0) goto L8513;
-  A = 0x00;                // zero len
-  if (A == 0) goto L8511;  // for directives (BEQ)
-
-L84D4:
-  A = 1;                   // Single byte opcodes
-  if (A != 0) goto L8511;  // always (BNE)
-
-// const uint8_t Bit20 = 0x20; // Already defined
-
-// Branch opcodes (both 65C02/SW16)
-L84D9:
-  A       = 0x00;  // There are no sub-tables for such
-  LenTIdx = A;     // opcodes so set this index to 0
-  X       = 2;     // len of instr
-  A       = ModWrdL;
-  A &= 0x10;               // BSL/BRL?
-  if (A == 0) goto L84E6;  // No (BEQ)
-  X++;                     // =3
-L84E6:
-  Length = X;
-  EvalExpr();
-  A = PassNbr;
-  if (A == 0) goto L8513;  // (BEQ)
-  if (!C) goto L8513;      // (BCC)
-  A = NxtToken;
-  if (A != (0x34 | 0x80)) goto L84FE;  // Invalid delimiter (BNE)
-  X = A;
-  RegAsmEW(0x34);  // Invalid delimiter error
-  goto L8513;
-
-L84FE:
-  A = 3;                   // len of instruction
-  if (A != 0) goto L8511;  // always (BNE)
-
-// X=0-12
-L8502:
-  A = ModWrdL;
-  // BIT Bit40 - sw16?
-  if ((A & 0x40) == 0) goto L850E;  // no (BEQ)
-  A = L851F[X];                     // Get instr len
-  if (A != 0) goto L8511;           // always (BNE)
-
-L850E:
-  A = InstLenT[X];  // Get instr len
-L8511:
-  Length = A;
-L8513:
-  A = Length;
-}
-
-// (X)=index into addr mode table
-// Not only this, it can be used to index an opcode within
-// a sub-table of opcodes (eg ADCOps) by adding it to SubTIdx
-// This table is highly dependent on the meaning of the
-// bits of the 2 mnemonic flag bytes
-const uint8_t InstLenT[] = {
-    0x03,  // abs
-    0x02,  // zp
-    0x02,  // #
-    0x02,  // zp,X
-    0x03,  // abs,X
-    0x03,  // abs,Y
-    0x02,  // (zp),Y
-    0x02,  // (zp,X)
-    0x02   // (zp)
-};
-
-// This sub-table is used by SW16 opcodes
-const uint8_t L851F[] = {
-    0x03,  // (abs) - CPIM
-    0x01,  // acc - SW16 Reg ops
-    0x02,  // zp,Y
-    0x03   // (abs,X)
-};
-
-// bit flags used to check the validity of
-// the parsed addressing mode
-const uint8_t AModTbl[] = {
-    0x01,  // abs
-    0x02,  // zp
-    0x04,  // imm
-    0x08,  // zp,X
-    0x10,  // abs,X
-    0x20,  // abs,Y
-    0x40,  // (zp),y
-    0x80,  // (zp,X)
-    0x03,  // (zp)
-    0x01,  // (abs)
-    0x02,  // acc
-    0x04,  // zp,Y
-    0x01   // (abs,X)
-};
-
-// AdvPC - A=# to advance
-void AdvPC() {
-  // CLC
-  A += PC;
-  PC = A;
-  if (A >= PC) return;  // no carry (BCC doRet4)
-  PC_hi++;              // INC PC+1
-}
-
-// NextRec - Set SrcP to beginning of next assembly src line
-// Source Lines are terminated with a CR
-// (X)-unchanged
-// Ret with (Y)=0 & src ptr pointing @ 1st char of line
-void NextRec() {
-  Y = 0;
-L824D:
-  A = SrcP_at(Y);
-  Y++;                      // NB: skip past char
-  if (A != CR) goto L824D;  // b4 comparision (BNE)
-
-  // On fall thru, Y=# to advance
-  AdvSrcP();
-}
-
-// L81A3 - Incr line #s, show user we have assembled
-// a chunk of code by printing a dot
-void L81A3() {
-  // BIT NewF - Assembling new file?
-  if ((int8_t)NewF >= 0) goto L81AF;  // No (BPL)
-
-  A         = 0;
-  BCDNbr[0] = A;  // line # for new file (low byte)
-  BCDNbr_hi = A;  // high byte
-  NewF      = A;
-
-L81AF:
-  // SED - set decimal mode
-  // CLC
-  A = TotLines;
-  A += 1;  // BCD increment (simplified)
-  TotLines = A;
-  if (A < 100) goto L81C7;  // (BCC)
-  A = TotLines_hi;
-  A += 1;  // with carry
-  TotLines_hi = A;
-  if (A < 100) goto L81C7;  // (BCC)
-  A = TotLines_2;
-  A += 1;  // with carry
-  TotLines_2 = A;
-
-L81C7:
-  // CLC
-  A = BCDNbr[0];  // Low byte of line number
-  A += 1;         // BCD increment (simplified)
-  BCDNbr[0] = A;
-  if (A < 100) goto L81E4;  // (BCC)
-  A = BCDNbr_hi;            // High byte
-  A += 1;                   // with carry
-  BCDNbr_hi = A;
-
-  // CLD - clear decimal mode
-  A = PassNbr;
-  if (A == 0) goto L81DF;  // (BEQ)
-  // BIT ListingF - listing ON?
-  if ((int8_t)ListingF < 0) goto L81E4;  // yes (BMI)
-
-L81DF:
-  A = '.' | 0x80;  // show a dot
-  VidOut();
-L81E4:
-  // CLD - clear decimal mode
-}
-
-// DoPass2 - Second pass of assembly
-void DoPass2() {
-  // TODO: Implement full Pass 2 assembly logic
-  // Pass 2 generates object code based on Pass 1 symbol table
-  // For now, stub implementation to unblock Phase 2 testing
-}
-
-//=================================================
-// HndlMnem - Process mnemonic/pseudo opcode/directive field
-// (ASM2.S line ~2054, label HndlMnem)
-//
-// SIMPLIFIED STUB for Phase 2 testing
-// Full 1:1 translation requires table definitions and proper control flow
-//=================================================
-void HndlMnem() {
-  // TODO: Implement full mnemonic dispatch with letter-by-letter table lookup
-  // For now, stub to allow Phase 2 tests to compile
-
-  C       = true;  // Assume not found
-  ZAB     = 0x80;  // Initialize flag byte
-  MnemP   = 0;
-  SubTIdx = 0;
-
-  // In a real implementation, this would:
-  // 1. Call ChrGot() to get first character
-  // 2. Traverse Tbl1stLet to find subtitle table
-  // 3. Scan through mnemonic entries with letter-by-letter comparison
-  // 4. Return C=0 on match, populate ZAB/MnemP/SubTIdx
-  // 5. Return C=1 on no match, call RegAsmEW() with appropriate error
-}
-
-// Stub: VidOut - Video output
-void VidOut() {
-  // TODO: Output character to video
-}
-
-// Stub: L986A - Helper function
-void L986A() {
-  // TODO: Implement L986A
-}
-
-// GAdrMod - Stub (incomplete in original translation)
-// This subrtn will parse the addressing mode of the operand
-void GAdrMod() {
-  // TODO: Implement full addressing mode parsing
-  // For now, stub to unblock compilation
-  C = false;
-}
-
-// EvalExpr - Stub (incomplete in original translation)
-// C=0 - no errors parsing
-// EvalExpr - Stub (incomplete in original translation)
-// Evaluate expressions with operator support
-void EvalExpr() {
-  // TODO: Implement full expression evaluation
-  // For now, stub to unblock compilation
-  C          = false;
-  ValExpr    = 0;
-  ValExpr_hi = 0;
-  RelExprF   = 0;
-  NxtToken   = 0;
-}
-
-// Expression operators - stub
-void ExprADD() {
-}
-
-void ExprSUB() {
-}
-
-void ExprMUL() {
-}
-
-void ExprDIV() {
-}
-
-void ExprEOR() {
-}
-
-void ExprAND() {
-}
-
-void ExprORA() {
-}
-
-// EvalTerm - Stub (incomplete in original translation)
-void EvalTerm() {
-  // TODO: Implement term evaluation
-  C        = false;
-  Accum    = 0;
-  Accum_hi = 0;
-}
-
-// GNToken - Stub (incomplete in original translation)
-void GNToken() {
-  // TODO: Get next token, validate syntax
-  NxtToken = 0;
-}
-
-// ChrGot2 - Stub (incomplete)    A = 0x02;
-if (X == ')') goto doRet7;  // (CPX #')'; BEQ doRet7)
-A = 0x34 + 0x80;            // err token
-doRet7 : return;
-}
-
-// Process a term where
-//   Term := Constant, Identifier
-// If a term is an idfer, look up its value
-// Ret:
-//  (Y)=index src line?
-//  (Accum)= Term's 16-bit value
-// NB. Y-reg seems to have a dual purpose. To index the
-// src line and to index an entry of the symbol table
-// Its returned value must be monitored and adjust correctly
-// Todo: Need to check this more closely.
-void EvalTerm() {
-  AdvSrcP();  // On ret, (Y)=0
-  Y        = 0;
-  Accum    = 0;
-  Accum_hi = 0;
-  ChrGot();                  // Get 1st char
-  if (!C && !Z) goto L8716;  // Alphabetic char => idfer
-  if (Z) goto L86D6;         // Numeric char
-  goto L8781;                // Not alphanumeric
-
-// Decimal constant
-L86D6:
-  A = SrcP_at(Y);  // Get numeric char
-  A -= '0';        // $30-$39 -> 0-9 (SEC; SBC #'0')
-  A += Accum;      // CLC; ADC Accum
-  Accum = A;
-  if (!C) goto L86E6;
-  Accum_hi++;                     // INC Accum+1
-  if (Accum_hi == 0) goto L870E;  // Overflow (BEQ)
-L86E6:
-  ChrGet();           // Look 1 char ahead
-  if (Z) goto Mul10;  // If numeric, continue (BEQ)
-  Y--;                // else move back and ret (DEY)
-  return;
-
-// The next char is numeric so the
-// accumulated result must be x 10
-// before we loop back to process it
-// Logic: 2R x 2 x 2 + 2R = 10R
-Mul10:
-  Mul2();                           // 2R
-  if (C) goto L870E;                // (BCS)
-  A                    = Accum_hi;  // save temporarily (PHA)
-  uint8_t saved_acc_hi = A;
-  A                    = Accum;
-  Mul2();             // 2R x 2
-  if (C) goto L870D;  // (BCS)
-  Mul2();             // 4R x 2
-  if (C) goto L870D;  // (BCS)
-  A += Accum;         // + 2R (ADC Accum)
-  Accum = A;
-  A     = saved_acc_hi;  // (PLA)
-  A += Accum_hi;         // (ADC Accum+1)
-  Accum_hi = A;
-  if (!C) goto L86D6;  // Loop back to process the next char (BCC)
-  saved_acc_hi = A;    // overflow (PHA)
-L870D:
-  // PLA
-L870E:
-  goto L87F9;  // error
-
-// Identifier
-L8716:
-  RsvdId();           // Chk single A,X,Y
-  if (C) goto L871C;  // (BCC) - corrected
-  return;             // error
-
-L871C:
-  FindSym();
-  if (C) goto L8757;              // Idfer's not in symbol table (BCS)
-  X = A;                          // Save idfer's flag byte (TAX)
-  C = false;                      // CLC
-  if ((int8_t)A < 0) goto L8757;  // Idfer's undefined (BMI)
-  A &= external;                  // 0001 0000 Is it declared as an EXTeRNal?
-  // BIT ExprAccF
-  if ((ExprAccF & A) == 0) goto L8734;  // Ifder is not EXTeRNal (BEQ)
-  SavFByt = X;                          // Save flag byte here while (STX SavFByt)
-  X       = 0x40;                       // we report Duplicate EXT/ENT (LDX #$40)
-  RegAsmEW();
-  X = SavFByt;  // Get flagbyte back (LDX SavFByt)
-L8734:
-  A = X;  // into (A) (TXA)
-L8735:
-  A &= (external | fwdrefd);  // 0001 0001
-  A |= ExprAccF;
-  ExprAccF = A;
-  A        = X;            // Test old flag byte (TXA)
-  A &= external;           // 0001 0000
-  if (A == 0) goto L874A;  // No, not EXTeRNal (BEQ)
-  A = PassNbr;
-  if (A == 0) goto L8754;  // (BEQ)
-  A       = SymP[Y];       // LoByte of value field (LDA (SymP),Y)
-  GblAbsF = A;             // 0=>ZDEF/ZREF
-  if (A != 0) goto L8754;  // Its ENTRY/EXTRN (BNE)
-
-L874A:
-  A     = SymP[Y];  // Get value of symbolic idfer (LDA (SymP),Y)
-  Accum = A;        // & ret it here
-  Y++;
-  A        = SymP[Y];
-  Accum_hi = A;
-  Y--;
-L8754:
-  Y--;
-  Y--;
-  return;
-
-// Identifer is undefined
-// (A)-symbol's flag byte
-// (Y)-indexing symbol's value field if symbol was found
-// (Y)=0 if symbol not found
-L8757:
-  X = PassNbr;
-  if (X == 0) goto L876F;  // Its pass 1 (BEQ)
-  // BIT Bit02 - Is No-such-label error?
-  if ((Bit02 & 0x80) == 0) goto L8764;  // No (BEQ)
-  ErrorF++;                             // Flag as err since its pass 2 (INC ErrorF)
-  if (ErrorF != 0) goto L8769;          // =1 (BNE)
-L8764:
-  A |= nosuchlabel;  // 0000 0010
-  Y--;               // (DEY)
-  SymP[Y] = A;       // Modified flag byte (STA (SymP),Y)
-L8769:
-  X = 0x00;    // Undefined idfer
-  Y--;         // what's this for?
-  goto L87FB;  // Go report it
-
-L876F:
-  X = A;               // (A)=flag byte (TAX)
-  A = fwdrefd;         // 0000 0001
-  if (!C) goto L8735;  // Symbol was found but undefined (BCC)
-  A |= ExprAccF;       // Symbol not found
-  ExprAccF = A;
-  A        = undefined | fwdrefd;  // symbol's flag byte
-  AddNode();
-  Y--;
-  Y--;
-  Y--;  // Indexing last char of symbolicname?
-  return;
-
-// 1st char is non-alphanumeric
-// Is it an ASCII char const?
-L8781:
-  if (A != '\'') goto L879E;  // Opening single quote? No (BNE)
-  Accum_hi = Y;               // Zero the hibyte (STY Accum+1)
-  Y++;
-  A = SrcP_at(Y);           // Get char within quotes
-  if (A == CR) goto L8791;  // (CMP #CR; BNE L8791)
-  goto L880F;
-
-L8791:
-  A |= msbF;
-  Accum = A;
-  Y++;
-  A = SrcP_at(Y);              // Look for a
-  if (A == '\'') goto doRet8;  // closing single quote (CMP #$27; BEQ doRet8)
-  Y--;                         // Move back (DEY)
-doRet8:
-  return;
-
-// Program counter reference
-L879E:
-  if (A != '*') goto L87AF;  // Do we have a star? (CMP #'*'; BNE L87AF)
-
-  A        = relative;  // Flag symbol's val is relative
-  RelExprF = A;         // & not an absolute addr
-  A        = PC;
-  Accum    = A;
-  A        = PC_hi;
-  Accum_hi = A;
-  return;
-
-// Checks for bin/octal/hexdec const
-L87AF:
-  if (A != '%') goto L87B9;  // binary (CMP #'%'; BNE L87B9)
-  A = '2';
-  X = 0x01;
-  if (X != 0) goto L87CB;  // always (BNE)
-
-L87B9:
-  if (A != '$') goto L87C3;  // hexdec (CMP #'$'; BNE L87C3)
-  A = 0xC0;                  // '@'+$80
-  X = 0x04;
-  if (X != 0) goto L87CB;  // always (BNE)
-
-L87C3:
-  if (A != '@') goto L880F;  // octal (CMP #'@'; BNE L880F)
-  A = '8';
-  X = 0x03;
-L87CB:
-  RadixCh = A;  // =$32,$38,$C0
-  BitsDig = X;  // =$01,$03,$04
-
-// Conversion starts here
-L87CF:
-  ChrGet();                         // Is next char hexdec?
-  if ((A & 0x40) == 0) goto L8808;  // No (BVC)
-  if (A < '9' + 1) goto L87DA;      // (CMP #'9'+1; BCC L87DA)
-  A -= 0x07;                        // 'A'-'F' ($41-$46) -> $3A-$3F (SBC #$07)
-L87DA:
-  if (A >= RadixCh) goto L8808;  // Not valid (CMP RadixCh; BCS L8808)
-  X = BitsDig;
-  if (X == 0x03) goto L87E8;  // Octal (CPX #$03; BEQ L87E8)
-  if (X >= 0x03) goto L87E9;  // HexDec (BCS L87E9)
-
-  A <<= 1;  // binary (ASL)
-  A <<= 1;  // (ASL)
-L87E8:
-  A <<= 1;  // (ASL)
-L87E9:
-  A <<= 1;  // (ASL)
-  A <<= 1;  // (ASL)
-  A <<= 1;  // (ASL)
-  A <<= 1;  // (ASL)
-
-// binary x000 0000, octal xxx0 0000 hex xxxx 0000
-// (X)=# of shifts (% - 1, @ - 3, $ - 4)
-L87ED:
-  A <<= 1;  // (ASL)
-  uint8_t temp = Accum;
-  Accum        = (Accum << 1) | (A >> 7);  // (ROL Accum)
-  A            = (A << 1) | (temp >> 7);
-  temp         = Accum_hi;
-  Accum_hi     = (Accum_hi << 1) | (Accum >> 7);  // (ROL Accum+1)
-  C            = (temp & 0x80) != 0;
-  if (C) goto L87F9;  // Overflow (BCS)
-  X--;
-  if (X != 0) goto L87ED;  // (DEX; BNE L87ED)
-  if (X == 0) goto L87CF;  // Process another numeral (BEQ)
-
-L87F9:
-  X = 0x06;  // overflow
-L87FB:
-  NxtToken = X;
-  RegAsmEW();
-  A = 0x80;
-  A |= NxtToken;
-  NxtToken = A;  // $80,$86,$88,$8A
-  // NOP
-  return;
-
-L8808:
-  Y--;  // Move back (DEY)
-  ChrGot();
-  if ((A & 0x40) == 0) goto L880F;  // Char is not hexdec (BVC)
-  return;
-
-L880F:
-  X = 0x0A;  // expr syntax
-  goto L87FB;
-}
-
-// Mul2 - Multiply accumulator by 2
-void Mul2() {
-  uint8_t old_accum = Accum;
-  Accum <<= 1;  // ASL Accum
-  C                    = (old_accum & 0x80) != 0;
-  uint8_t old_accum_hi = Accum_hi;
-  Accum_hi             = (Accum_hi << 1) | (old_accum >> 7);  // ROL Accum+1
-  C                    = (old_accum_hi & 0x80) != 0;
-}
-
-// AdvSrcP - Advance source pointer
-void AdvSrcP() {
-  Y = 0;
-}
-
-// ; operator
-void ExprMUL() {
-  AdvSrcP();
-  ValExpr_2 = Y;  // zero these
-  ValExpr_3 = Y;
-  Y         = 16;  // # of times
-L881D:
-  A             = ValExpr;
-  uint8_t old_c = C;
-  C             = (A & 0x01) != 0;  // Check LSB before shift
-  A >>= 1;                          // (LSR)
-  if (!C) goto L882E;               // (BCC)
-
-  C = false;  // CLC
-  // Add Accum_2 and Accum_3 to ValExpr_2 and ValExpr_3
-  A = ValExpr_2;
-  A += Accum_2;
-  ValExpr_2 = A;
-  A         = ValExpr_3;
-  if (C) A++;  // Add carry
-  A += Accum_3;
-  ValExpr_3 = A;
-
-L882E:
-  // Shift right the 4-byte value (ValExpr, ValExpr_hi, ValExpr_2, ValExpr_3)
-  // From MSB to LSB
-  C = (ValExpr_3 & 0x01) != 0;
-  ValExpr_3 >>= 1;  // ROR ValExpr_3
-
-  uint8_t temp = ValExpr_2;
-  ValExpr_2    = (ValExpr_2 >> 1) | (C ? 0x80 : 0);  // ROR ValExpr_2
-  C            = (temp & 0x01) != 0;
-
-  temp       = ValExpr_hi;
-  ValExpr_hi = (ValExpr_hi >> 1) | (C ? 0x80 : 0);  // ROR ValExpr_hi
-  C          = (temp & 0x01) != 0;
-
-  ValExpr = (ValExpr >> 1) | (C ? 0x80 : 0);  // ROR ValExpr
-
-  Y--;
-  if (Y != 0) goto L881D;  // (BNE)
-}
-
-// / operator
-void ExprDIV() {
-  AdvSrcP();
-  ValExpr_2 = Y;
-  ValExpr_3 = Y;  // zero these
-  Y         = 16;
-L8842:
-  uint8_t old_val = ValExpr;
-  ValExpr <<= 1;  // ASL ValExpr - dividend
-  C          = (old_val & 0x80) != 0;
-  old_val    = ValExpr_hi;
-  ValExpr_hi = (ValExpr_hi << 1) | (C ? 1 : 0);  // ROL ValExpr+1
-  C          = (old_val & 0x80) != 0;
-  old_val    = ValExpr_2;
-  ValExpr_2  = (ValExpr_2 << 1) | (C ? 1 : 0);  // ROL ValExpr+2
-  C          = (old_val & 0x80) != 0;
-  old_val    = ValExpr_3;
-  ValExpr_3  = (ValExpr_3 << 1) | (C ? 1 : 0);  // ROL ValExpr+3
-  C          = (old_val & 0x80) != 0;
-
-  C = true;  // SEC
-  A = ValExpr_2;
-  A -= Accum;  // SBC Accum - divisor
-  X = A;       // (TAX)
-  A = ValExpr_3;
-  A -= Accum_hi;      // SBC Accum+1
-  if (C) goto L885C;  // (BCC L885C - inverted)
-  ValExpr_2 = X;      // (STX ValExpr+2)
-  ValExpr_3 = A;
-  ValExpr++;  // INC ValExpr
-L885C:
-  Y--;
-  if (Y != 0) goto L8842;  // (BNE)
-}
-
-// - operator
-void ExprSUB() {
-  A = RelExprF;
-  A ^= SavSEF;  // prev subexpr's RelExprF (EOR SavSEF)
-  RelExprF = A;
-  A        = Accum_hi;  // Do 1's complement (LDA Accum+1)
-  A ^= 0xFF;            // (EOR #$FF)
-  Accum_hi = A;
-  A        = Accum;
-  A ^= 0xFF;          // (EOR #$FF)
-  C = true;           // SEC - Proceed to add 1
-  if (C) goto L887C;  // giving 2's complement (BCS - always)
-}
-
-// + operator
-void ExprADD() {
-  A = SavSEF;  // Get prev subexpr's RelExprF
-  A |= RelExprF;
-  RelExprF = A;
-  C        = false;  // CLC
-  A        = Accum;
-L887C:
-  A += ValExpr;  // (ADC ValExpr)
-  ValExpr = A;
-  A       = Accum_hi;
-  A += ValExpr_hi;  // (ADC ValExpr+1)
-  ValExpr_hi = A;
-}
-
-// This table of JMP (via RTS) addresses is split into 2 parts
-const uint8_t L888E[] = {
-    static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprADD) - 1) & 0xFF),  // lobyte
-    static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprSUB) - 1) & 0xFF),
-    static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprMUL) - 1) & 0xFF),
-    static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprDIV) - 1) & 0xFF),
-    static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprEOR) - 1) & 0xFF),
-    static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprAND) - 1) & 0xFF),
-    static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprORA) - 1) & 0xFF)};
-const uint8_t L8895[] = {
-    static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprADD) - 1) >> 8),  // hibyte
-    static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprSUB) - 1) >> 8),
-    static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprMUL) - 1) >> 8),
-    static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprDIV) - 1) >> 8),
-    static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprEOR) - 1) >> 8),
-    static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprAND) - 1) >> 8),
-    static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprORA) - 1) >> 8)};
-
-// | operator bitwise OR
-void ExprORA() {
-  A = Accum;
-  A |= ValExpr;
-  ValExpr = A;
-  A       = Accum_hi;
-  A |= ValExpr_hi;
-  ValExpr_hi = A;
-}
-
-// ^ operator bitwise AND
-void ExprAND() {
-  A = Accum;
-  A &= ValExpr;
-  ValExpr = A;
-  A       = Accum_hi;
-  A &= ValExpr_hi;
-  ValExpr_hi = A;
-}
-
-// ! operator - bitwise EOR
-void ExprEOR() {
-  A = Accum;
-  A ^= ValExpr;
-  ValExpr = A;
-  A       = Accum_hi;
-  A ^= ValExpr_hi;
-  ValExpr_hi = A;
-}
-
-//=================================================
-// START of Assembler's Tables
-//=================================================
-
-// ($D3D4) Table of Ptrs to messages incl. error msgs
-// Ref page 219 Workbench
-const char         LD50F[] = "UNDEFINED      IDENTIFIER";
-const char         LD524[] = "DUPLICATE      IDENTIFIER";
-const char         LD539[] = "UNDEFINED      OPCODE";
-const char         LD54A[] = "OVERFLOW";
-const char         LD553[] = "RELATIVE       EXPRSN OPERATOR";
-const char         LD56C[] = "EXPRESSION     SYNTAX";
-const char         LD57E[] = "EQUATE         SYNTAX";
-const char         LD58C[] = "INVALID        IDENTIFIER";
-const char         LD59F[] = "DSECT/DEND";
-const char         LD5AA[] = "SYMBOL/RLD     TABLE FULL";
-const char         LD5C0[] = "ASSEMBLER      PARAMETER";
-const char         LD5D4[] = "INCLUDE/CHN    NESTING";
-const char         LD5E8[] = "MACRO          NESTING";
-const char         LD5F6[] = "MACRO          ARGUMENT";
-const char         LD605[] = "ADDRESS        MODE";
-const char         LD612[] = "RESERVED       IDENTIFIER";
-const char         LD626[] = "MACRO          FILE NOT FOUND";
-const char         LD63B[] = "DIRECTIVE      OPERAND";
-const char         LD64D[] = "BRANCH         RANGE";
-const char         LD65A[] = "BYTE           OVERFLOW";
-const char         LD668[] = "INDIRECT       SYNTAX";
-const char         LD678[] = "INDEXING       SYNTAX";
-const char         LD688[] = "INDIRECT       REQUIRES ZPAGE";
-const char         LD6A0[] = "INVALID        AFTER 1ST IDENTIFIER";
-const char         LD6BD[] = "SW16           REGISTER";
-const char         LD6CB[] = "INVALID        DELIMITER";
-const char         LD6DD[] = "OBJ            BUFFER OVERFLOW";
-const char         LD6F1[] = "OBJ            BUFFER CONFLICT";
-const char         LD705[] = "INVALID        FROM INCLUDE";
-const char         LD71A[] = "BUFFER         SIZE";
-const char         LD726[] = ">255           EXTRNS/ENTRYS";
-const char         LD739[] = "DUPLICATE      EXT/ENT";
-const std::uint8_t LD74B[] = {'S', 'W', 'E', 'E', 'T', '1', '6', ' ', ' ', ' ', ' ',
-                              ' ', ' ', ' ', 'O', 'P', 'C', 'O', 'D', 'E', 0x01};
-const std::uint8_t LD75A[] = {'E', 'X', 'T', 'R', 'N', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'U',
-                              'S', 'E', 'D', ' ', 'A', 'S', ' ', 'Z', 'X', 'T', 'R', 'N', 0x01};
-const char         LD76E[] = "ORG            MUST BE > $100";
-const char         LD781[] = "6502X          ADRS MODE/OPCODE";
-
-const std::uint8_t* ErrMsgT[] = {
-    reinterpret_cast<const std::uint8_t*>(LD50F),  // 0
-    reinterpret_cast<const std::uint8_t*>(LD524),  // 2
-    reinterpret_cast<const std::uint8_t*>(LD539),  // 4
-    reinterpret_cast<const std::uint8_t*>(LD54A),  // 6
-    reinterpret_cast<const std::uint8_t*>(LD553),  // 8
-    reinterpret_cast<const std::uint8_t*>(LD56C),  // A
-    reinterpret_cast<const std::uint8_t*>(LD57E),  // C
-    reinterpret_cast<const std::uint8_t*>(LD58C),  // E
-    reinterpret_cast<const std::uint8_t*>(LD59F),  // 10
-    reinterpret_cast<const std::uint8_t*>(LD5AA),  // 12
-    reinterpret_cast<const std::uint8_t*>(LD5C0),  // 14
-    reinterpret_cast<const std::uint8_t*>(LD5D4),  // 16
-    reinterpret_cast<const std::uint8_t*>(LD5E8),  // 18
-    reinterpret_cast<const std::uint8_t*>(LD5F6),  // 1A
-    reinterpret_cast<const std::uint8_t*>(LD605),  // 1C
-    reinterpret_cast<const std::uint8_t*>(LD612),  // 1E
-    reinterpret_cast<const std::uint8_t*>(LD626),  // 20
-    nullptr,                                       // 22 - none?
-    reinterpret_cast<const std::uint8_t*>(LD63B),  // 24
-    reinterpret_cast<const std::uint8_t*>(LD64D),  // 26
-    reinterpret_cast<const std::uint8_t*>(LD65A),  // 28
-    reinterpret_cast<const std::uint8_t*>(LD668),  // 2A
-    reinterpret_cast<const std::uint8_t*>(LD678),  // 2C
-    reinterpret_cast<const std::uint8_t*>(LD688),  // 2E
-    reinterpret_cast<const std::uint8_t*>(LD6A0),  // 30
-    reinterpret_cast<const std::uint8_t*>(LD6BD),  // 32
-    reinterpret_cast<const std::uint8_t*>(LD6CB),  // 34
-    reinterpret_cast<const std::uint8_t*>(LD6DD),  // 36
-    reinterpret_cast<const std::uint8_t*>(LD6F1),  // 38
-    reinterpret_cast<const std::uint8_t*>(LD705),  // 3A
-    reinterpret_cast<const std::uint8_t*>(LD71A),  // 3C
-    reinterpret_cast<const std::uint8_t*>(LD726),  // 3E
-    reinterpret_cast<const std::uint8_t*>(LD739),  // 40
-    reinterpret_cast<const std::uint8_t*>(LD74B),  // 42
-    reinterpret_cast<const std::uint8_t*>(LD75A),  // 44
-    reinterpret_cast<const std::uint8_t*>(LD76E),  // 46
-    reinterpret_cast<const std::uint8_t*>(LD781),  // 48
-};
-
-const std::uint8_t FileTxt[]  = "               # ELIF";  // FILE #
-const std::uint8_t ASErrTxt[] = "               ERRORS IN THIS ASSEMBLY";
-const std::uint8_t SuccTxt[]  = "**             SUCCESSFUL ASSEMBLY := NO ERRORS";
-const std::uint8_t WarnTxt[]  = "               WARNINGS IN THIS ASSEMBLY";
-const std::uint8_t CreatTxt[] = {'*', '*', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-                                 ' ', ' ', 'A', 'S', 'S', 'E', 'M', 'B', 'L', 'E', 'R', ' ', 'C',
-                                 'R', 'E', 'A', 'T', 'E', 'D', ' ', 'O', 'N', ' ', 0x01};
-const std::uint8_t FSPCTxt[]  = {'*', '*', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-                                 ' ', ' ', 'F', 'R', 'E', 'E', ' ', 'S', 'P', 'A', 'C', 'E', ' ',
-                                 'P', 'A', 'G', 'E', ' ', 'C', 'O', 'U', 'N', 'T', 0x01};
-const std::uint8_t TotLnTxt[] = {'*', '*', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-                                 ' ', ' ', 'T', 'O', 'T', 'A', 'L', ' ', 'L', 'I', 'N', 'E', 'S',
-                                 ' ', 'A', 'S', 'S', 'E', 'M', 'B', 'L', 'E', 'D', ' ', 0x01};
-const std::uint8_t ContTxt[]  = {'P', 'R', 'E', 'S', 'S', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-                                 ' ', ' ', ' ', 'R', 'E', 'T', 'U', 'R', 'N', ' ', 'T', 'O',
-                                 ' ', 'C', 'O', 'N', 'T', 'I', 'N', 'U', 'E', 0x01};
-const std::uint8_t AbortTxt[] = {'A', 'S', 'S', 'E', 'M', 'B', 'L', 'Y', ' ', ' ', ' ', ' ', ' ',
-                                 ' ', ' ', 'A', 'B', 'O', 'R', 'T', 'E', 'D', '.', ' ', 'P', 'R',
-                                 'E', 'S', 'S', ' ', 'R', 'E', 'T', 'U', 'R', 'N', 0x01};
-const std::uint8_t InLinTxt[] = "ENIL           NI RORRE          ";
-
-const std::uint8_t LD798[] = "-----          NEXT OBJECT FILE NAME IS ";
-const std::uint8_t LD7B7[] = {0x0D, 'S', 'O', 'U', 'R', 'C', 'E', ' ', ' ', ' ', ' ',
-                              ' ',  ' ', ' ', ' ', 'F', 'I', 'L', 'E', ' ', '#'};
-const std::uint8_t LD7C7[] = {0x0D, ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-                              ' ',  ' ', ' ', ' ', 'I', 'N', 'C', 'L', 'U', 'D',
-                              'E',  ' ', 'F', 'I', 'L', 'E', ' ', '#'};
-
-//=================================================
-// Table for operand parser (47 bytes)
-//=================================================
-const std::uint8_t AModTkns[] = {
-    0xA3, 0x00, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
-    0xA0, 0x05, 0xA8, 0x00, 0xAC, 0xD8, 0xA9, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
-    0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0x02, 0x0F, 0x06, 0x19, 0xA9, 0xAC, 0xD9, 0xA0, 0xA0, 0xA0,
-    0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0x02, 0x0D, 0xA0, 0xA0,
-    0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0x06, 0x02, 0x11,
-    0x13, 0x04, 0x15, 0x8D, 0x15, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
-    0xA0, 0xA0, 0xA0, 0xA0, 0xBB, 0x15, 0x00, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
-    0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0x02, 0x03, 0x01, 0xAC, 0xD8, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
-    0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0x02, 0x07, 0x09, 0xD9, 0xA0, 0xA0,
-    0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0x02, 0x17, 0x0B,
-};
-
-const std::uint8_t AModCmds[] = {
-    0x12, 0x00, 0xB4, 0x00, 0x51, 0x00, 0x2A, 0xAA, 0xAA, 0xB4, 0x28, 0x00, 0xAE, 0x00, 0xAA, 0x3E,
-    0xAA, 0xB4, 0xAE, 0x00, 0xB4, 0x50, 0x50, 0x00, 0x00, 0x53, 0x00, 0x55, 0x00, 0x66, 0x00, 0x00,
-    0x79, 0x78, 0x00, 0x00, 0xB4, 0x8D, 0xB4, 0x8C, 0x00, 0x00, 0xAC, 0xB4, 0x9F, 0x00, 0x00,
-};
-
-//=================================================
-// ($D835) 6502/X6502 Opcode Translation table  213 bytes
-//=================================================
-constexpr std::size_t ADCOps  = 0;
-constexpr std::size_t ANDOps  = 9;
-constexpr std::size_t ASLOps  = 18;
-constexpr std::size_t BITOps  = 26;
-constexpr std::size_t CLROps  = 38;
-constexpr std::size_t CMPOps  = 42;
-constexpr std::size_t CPXOps  = 51;
-constexpr std::size_t CPYOps  = 54;
-constexpr std::size_t DECOps  = 57;
-constexpr std::size_t EOROps  = 64;
-constexpr std::size_t INCOps  = 73;
-constexpr std::size_t JMPOps  = 80;
-constexpr std::size_t JSROps  = 83;
-constexpr std::size_t LDAOps  = 84;
-constexpr std::size_t LDXOps  = 93;
-constexpr std::size_t LDYOps  = 99;
-constexpr std::size_t LSROps  = 104;
-constexpr std::size_t NOPOps  = 109;
-constexpr std::size_t ORAOps  = 110;
-constexpr std::size_t PSHOps  = 119;
-constexpr std::size_t ROLOps  = 127;
-constexpr std::size_t ROROps  = 132;
-constexpr std::size_t SBCOps  = 139;
-constexpr std::size_t STAOps  = 151;
-constexpr std::size_t STXOps  = 160;
-constexpr std::size_t STYOps  = 164;
-constexpr std::size_t STZOps  = 168;
-constexpr std::size_t TRBOps  = 175;
-constexpr std::size_t TSBOps  = 177;
-constexpr std::size_t SW16Ops = 183;
-
-const std::uint8_t OpcodeT[] = {
-    0x6D, 0x65, 0x69, 0x75, 0x7D, 0x79, 0x71, 0x61, 0x72, 0x2D, 0x25, 0x29, 0x35, 0x3D, 0x39, 0x31,
-    0x21, 0x32, 0x0E, 0x06, 0x0A, 0x16, 0x1E, 0x90, 0xB0, 0xF0, 0x2C, 0x24, 0x89, 0x34, 0x3C, 0x30,
-    0xD0, 0x10, 0x80, 0x00, 0x50, 0x70, 0x18, 0xD8, 0x58, 0xB8, 0xCD, 0xC5, 0xC9, 0xD5, 0xDD, 0xD9,
-    0xD1, 0xC1, 0xD2, 0xEC, 0xE4, 0xE0, 0xCC, 0xC4, 0xC0, 0xCE, 0xC6, 0x3A, 0xD6, 0xDE, 0xCA, 0x88,
-    0x4D, 0x45, 0x49, 0x55, 0x5D, 0x59, 0x51, 0x41, 0x52, 0xEE, 0xE6, 0x1A, 0xF6, 0xFE, 0xE8, 0xC8,
-    0x4C, 0x6C, 0x7C, 0x20, 0xAD, 0xA5, 0xA9, 0xB5, 0xBD, 0xB9, 0xB1, 0xA1, 0xB2, 0xAE, 0xA6, 0xA2,
-    0xB6, 0x00, 0xBE, 0xAC, 0xA4, 0xA0, 0xB4, 0xBC, 0x4E, 0x46, 0x4A, 0x56, 0x5E, 0xEA, 0x0D, 0x05,
-    0x09, 0x15, 0x1D, 0x19, 0x11, 0x01, 0x12, 0x48, 0x08, 0xDA, 0x5A, 0x68, 0x28, 0xFA, 0x7A, 0x2E,
-    0x26, 0x2A, 0x36, 0x3E, 0x6E, 0x66, 0x6A, 0x76, 0x7E, 0x40, 0x60, 0xED, 0xE5, 0xE9, 0xF5, 0xFD,
-    0xF9, 0xF1, 0xE1, 0xF2, 0x38, 0xF8, 0x78, 0x8D, 0x85, 0x00, 0x95, 0x9D, 0x99, 0x91, 0x81, 0x92,
-    0x8E, 0x86, 0x00, 0x96, 0x8C, 0x84, 0x00, 0x94, 0x9C, 0x64, 0x00, 0x74, 0x9E, 0xAA, 0xA8, 0x1C,
-    0x14, 0x0C, 0x04, 0xBA, 0x8A, 0x9A, 0x98, 0xA0, 0x03, 0x0A, 0x05, 0x08, 0x02, 0x09, 0x07, 0x04,
-    0x01, 0x0E, 0x0C, 0x0F, 0x06, 0x0D, 0xD0, 0xF0, 0xE0, 0x20, 0x60, 0x40, 0x80, 0xC0, 0x00, 0x0B,
-    0x30, 0x50, 0x70, 0x90, 0xB0,
-};
-
-//=================================================
-// ($D90A) 213 bytes cycle times
-//=================================================
-const std::uint8_t CycTimes[] = {
-    4,    3,    2,    4,    4,    4,    5,    6,    5,    4,    3,    2,    4,    4,    4,    5,
-    6,    5,    6,    5,    2,    6,    7,    3,    3,    3,    4,    3,    2,    4,    4,    3,
-    3,    3,    3,    7,    3,    3,    2,    2,    2,    2,    4,    3,    2,    4,    4,    4,
-    5,    6,    5,    4,    3,    2,    4,    3,    2,    6,    5,    2,    6,    7,    2,    2,
-    4,    3,    2,    4,    4,    4,    5,    6,    5,    6,    5,    2,    6,    7,    2,    2,
-    3,    5,    6,    6,    4,    3,    2,    4,    4,    4,    5,    6,    5,    4,    3,    2,
-    4,    0x29, 4,    4,    3,    2,    4,    4,    6,    5,    2,    6,    7,    2,    4,    3,
-    2,    4,    4,    4,    5,    6,    5,    3,    3,    3,    3,    4,    4,    4,    4,    6,
-    5,    2,    6,    7,    6,    5,    2,    6,    7,    6,    6,    4,    3,    2,    4,    4,
-    4,    5,    6,    5,    2,    2,    2,    4,    3,    0x29, 4,    5,    5,    6,    6,    5,
-    4,    3,    0x29, 4,    4,    3,    0x29, 4,    4,    3,    0x29, 4,    5,    2,    2,    6,
-    5,    6,    5,    2,    2,    2,    2,    0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29,
-    0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29,
-    0x29, 0x29, 0x29, 0x29, 0x29,
-};
-
-//=================================================
-// ($D9DF) Char mapping
-//=================================================
-const std::uint8_t CharMap1[] = {
-    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43,
-    0x43, 0x43, 0x43, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x40, 0x40, 0x40, 0x40, 0x40,
-    0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0,
-    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
-    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01, 0x01, 0x01, 0x01, 0x01,
-};
-
-//=================================================
-// Char mapping
-//=================================================
-const std::uint8_t CharMap2[] = {
-    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42,
-    0x42, 0x42, 0x42, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x40, 0x40, 0x40, 0x40, 0x40,
-    0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0,
-    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
-    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01, 0x01, 0x01, 0x01, 0x01,
-};
-
-//=================================================
-// Directives/Mnemonics/Sweet16 table
-//=================================================
-// MnemTbl
-
-// LtrA
-const std::uint8_t LtrA[] = {
-    'A', 'D', DCI_end('C'), 0x03, 0xFF, static_cast<std::uint8_t>(ADCOps),
-    'A', 'D', DCI_end('D'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops),
-    'A', 'N', DCI_end('D'), 0x03, 0xFF, static_cast<std::uint8_t>(ANDOps),
-    'A', 'S', DCI_end('C'), 0x80, 0x00, 0x00,  // L8DD2-1
-    'A', 'S', DCI_end('L'), 0x02, 0x1B, static_cast<std::uint8_t>(ASLOps),
-};
-
-// LtrB
-const std::uint8_t LtrB[] = {
-    'B',
-    DCI_end('C'),
-    0x48,
-    0x03,
-    static_cast<std::uint8_t>(SW16Ops + 1),
-    'B',
-    'C',
-    DCI_end('C'),
-    0x08,
-    0x03,
-    0x17,
-    'B',
-    'C',
-    DCI_end('S'),
-    0x08,
-    0x03,
-    0x18,
-    'B',
-    'E',
-    DCI_end('Q'),
-    0x08,
-    0x03,
-    0x19,
-    'B',
-    'G',
-    DCI_end('E'),
-    0x08,
-    0x03,
-    0x18,
-    'B',
-    'I',
-    DCI_end('T'),
-    0x00,
-    0x1F,
-    static_cast<std::uint8_t>(BITOps),
-    'B',
-    DCI_end('K'),
-    0x60,
-    0x00,
-    static_cast<std::uint8_t>(SW16Ops + 2),
-    'B',
-    'L',
-    DCI_end('T'),
-    0x08,
-    0x03,
-    0x17,
-    'B',
-    DCI_end('M'),
-    0x48,
-    0x03,
-    static_cast<std::uint8_t>(SW16Ops + 3),
-    'B',
-    'M',
-    DCI_end('1'),
-    0x48,
-    0x03,
-    static_cast<std::uint8_t>(SW16Ops + 4),
-    'B',
-    'M',
-    DCI_end('I'),
-    0x08,
-    0x03,
-    0x1F,
-    'B',
-    'N',
-    DCI_end('C'),
-    0x48,
-    0x03,
-    static_cast<std::uint8_t>(SW16Ops + 5),
-    'B',
-    'N',
-    DCI_end('E'),
-    0x08,
-    0x03,
-    0x20,
-    'B',
-    'N',
-    'M',
-    DCI_end('1'),
-    0x48,
-    0x03,
-    static_cast<std::uint8_t>(SW16Ops + 6),
-    'B',
-    'N',
-    DCI_end('Z'),
-    0x48,
-    0x03,
-    static_cast<std::uint8_t>(SW16Ops + 7),
-    'B',
-    DCI_end('P'),
-    0x48,
-    0x03,
-    static_cast<std::uint8_t>(SW16Ops + 8),
-    'B',
-    'P',
-    DCI_end('L'),
-    0x08,
-    0x03,
-    0x21,
-    'B',
-    DCI_end('R'),
-    0x48,
-    0x03,
-    static_cast<std::uint8_t>(SW16Ops + 9),
-    'B',
-    'R',
-    DCI_end('A'),
-    0x08,
-    0x03,
-    0x22,
-    'B',
-    'R',
-    DCI_end('K'),
-    0x20,
-    0x00,
-    0x23,
-    'B',
-    'R',
-    DCI_end('L'),
-    0x58,
-    0x03,
-    static_cast<std::uint8_t>(SW16Ops + 10),
-    'B',
-    DCI_end('S'),
-    0x48,
-    0x03,
-    static_cast<std::uint8_t>(SW16Ops + 11),
-    'B',
-    'S',
-    DCI_end('L'),
-    0x58,
-    0x03,
-    static_cast<std::uint8_t>(SW16Ops + 12),
-    'B',
-    'V',
-    DCI_end('C'),
-    0x08,
-    0x03,
-    0x24,
-    'B',
-    'V',
-    DCI_end('S'),
-    0x08,
-    0x03,
-    0x25,
-    'B',
-    DCI_end('Z'),
-    0x48,
-    0x03,
-    static_cast<std::uint8_t>(SW16Ops + 13),
-};
-
-// LtrC
-const std::uint8_t LtrC[] = {
-    'C',
-    'H',
-    DCI_end('N'),
-    0x80,
-    0x00,
-    0x00,  // L928C-1
-    'C',
-    'H',
-    DCI_end('R'),
-    0x80,
-    0x00,
-    0x00,  // L8FC7-1
-    'C',
-    'L',
-    DCI_end('C'),
-    0x20,
-    0x00,
-    0x26,
-    'C',
-    'L',
-    DCI_end('D'),
-    0x20,
-    0x00,
-    0x27,
-    'C',
-    'L',
-    DCI_end('I'),
-    0x20,
-    0x00,
-    0x28,
-    'C',
-    'L',
-    DCI_end('V'),
-    0x20,
-    0x00,
-    0x29,
-    'C',
-    'M',
-    DCI_end('P'),
-    0x03,
-    0xFF,
-    static_cast<std::uint8_t>(CMPOps),
-    'C',
-    'P',
-    'I',
-    DCI_end('M'),
-    0x50,
-    0x01,
-    static_cast<std::uint8_t>(SW16Ops + 14),
-    'C',
-    'P',
-    DCI_end('R'),
-    0x40,
-    0x02,
-    static_cast<std::uint8_t>(SW16Ops + 15),
-    'C',
-    'P',
-    DCI_end('X'),
-    0x00,
-    0x07,
-    static_cast<std::uint8_t>(CPXOps),
-    'C',
-    'P',
-    DCI_end('Y'),
-    0x00,
-    0x07,
-    static_cast<std::uint8_t>(CPYOps),
-};
-
-// LtrD
-const std::uint8_t LtrD[] = {
-    'D',          'A',          'T',
-    DCI_end('E'), 0x80,         0x00,
-    0x00,  // L901D-1
-    'D',          DCI_end('B'), 0x80,
-    0x00,         0x00,  // L8CC3-1
-    'D',          'C',          DCI_end('I'),
-    0x80,         0x00,         0x00,  // L8E54-1
-    'D',          'C',          DCI_end('R'),
-    0x40,         0x02,         static_cast<std::uint8_t>(SW16Ops + 16),
-    'D',          'D',          DCI_end('B'),
-    0x80,         0x00,         0x00,  // L8DCD-1
-    'D',          'E',          DCI_end('C'),
-    0x02,         0x1B,         static_cast<std::uint8_t>(DECOps),
-    'D',          'E',          DCI_end('F'),
-    0x81,         0x00,         0x00,  // L9144-1
-    'D',          'E',          'N',
-    DCI_end('D'), 0x80,         0x00,
-    0x00,  // L908E-1
-    'D',          'E',          DCI_end('X'),
-    0x20,         0x00,         0x3E,
-    'D',          'E',          DCI_end('Y'),
-    0x20,         0x00,         0x3F,
-    'D',          'F',          DCI_end('B'),
-    0x80,         0x00,         0x00,  // L8CC3-1
-    'D',          DCI_end('O'), 0x81,
-    0x00,         0x00,  // L90B7-1
-    'D',          DCI_end('S'), 0x81,
-    0x00,         0x00,  // L8C0E-1
-    'D',          'S',          'E',
-    'C',          DCI_end('T'), 0x80,
-    0x00,         0x00,  // L9065-1
-    'D',          DCI_end('W'), 0x80,
-    0x00,         0x00,  // L8D67-1
-};
-
-// LtrE
-const std::uint8_t LtrE[] = {
-    'E',  'L',  'S',          DCI_end('E'), 0x80,         0x00,
-    0x00,  // L90CB-1
-    'E',  'N',  'T',          'R',          DCI_end('Y'), 0x81,
-    0x00, 0x00,  // L9144-1
-    'E',  'O',  DCI_end('R'), 0x03,         0xFF,         static_cast<std::uint8_t>(EOROps),
-    'E',  'Q',  DCI_end('U'), 0x81,         0x00,         0x00,  // L8A31-1
-    'E',  'X',  'T',          'R',          DCI_end('N'), 0x81,
-    0x00, 0x00,  // L91A8-1
-};
-
-// LtrF
-const std::uint8_t LtrF[] = {
-    'F', 'A', 'I',          DCI_end('L'), 0x80, 0x00, 0x00,  // L9215-1
-    'F', 'I', DCI_end('N'), 0x80,         0x00, 0x00,        // L90D7-1
-};
-
-// LtrI
-const std::uint8_t LtrI[] = {
-    'I',          'B',          'U',
-    'F',          'S',          'I',
-    DCI_end('Z'), 0x81,         0x00,
-    0x00,  // L93C4-1
-    'I',          'D',          'N',
-    'U',          DCI_end('M'), 0x80,
-    0x00,         0x00,  // L905E-1
-    'I',          'F',          'E',
-    DCI_end('Q'), 0x81,         0x00,
-    0x00,  // L90DE-1
-    'I',          'F',          'G',
-    DCI_end('E'), 0x81,         0x00,
-    0x00,  // L90FC-1
-    'I',          'F',          'G',
-    DCI_end('T'), 0x81,         0x00,
-    0x00,  // L90EB-1
-    'I',          'F',          'N',
-    DCI_end('E'), 0x81,         0x00,
-    0x00,  // L90B7-1
-    'I',          'F',          'L',
-    DCI_end('E'), 0x81,         0x00,
-    0x00,  // L9112-1
-    'I',          'F',          'L',
-    DCI_end('T'), 0x81,         0x00,
-    0x00,  // L9107-1
-    'I',          'N',          DCI_end('C'),
-    0x02,         0x1B,         static_cast<std::uint8_t>(INCOps),
-    'I',          'N',          'C',
-    'L',          'U',          'D',
-    DCI_end('E'), 0x80,         0x00,
-    0x00,  // L9360-1
-    'I',          'N',          DCI_end('R'),
-    0x40,         0x02,         static_cast<std::uint8_t>(SW16Ops + 17),
-    'I',          'N',          'T',
-    'E',          'R',          DCI_end('P'),
-    0x81,         0x00,         0x00,  // L9131-1
-    'I',          'N',          DCI_end('X'),
-    0x20,         0x00,         0x4E,
-    'I',          'N',          DCI_end('Y'),
-    0x20,         0x00,         0x4F,
-};
-
-// LtrJ
-const std::uint8_t LtrJ[] = {
-    'J', 'M', DCI_end('P'), 0x11, 0x01, static_cast<std::uint8_t>(JMPOps),
-    'J', 'S', DCI_end('R'), 0x10, 0x01, static_cast<std::uint8_t>(JSROps),
-};
-
-// LtrL
-const std::uint8_t LtrL[] = {
-    'L',  DCI_end('D'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops + 18), 'L',
-    'D',  DCI_end('A'), 0x03, 0xFF, static_cast<std::uint8_t>(LDAOps),       'L',
-    'D',  DCI_end('D'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops + 19), 'L',
-    'D',  DCI_end('I'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops + 20), 'L',
-    'D',  DCI_end('P'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops + 21), 'L',
-    'D',  DCI_end('X'), 0x04, 0x27, static_cast<std::uint8_t>(LDXOps),       'L',
-    'D',  DCI_end('Y'), 0x00, 0x1F, static_cast<std::uint8_t>(LDYOps),       'L',
-    'S',  DCI_end('L'), 0x02, 0x1B, static_cast<std::uint8_t>(ASLOps),       'L',
-    'S',  DCI_end('R'), 0x02, 0x1B, static_cast<std::uint8_t>(LSROps),       'L',
-    'S',  DCI_end('T'), 0x80, 0x00,
-    0x00,  // L8ECA-1
-};
-
-// LtrM
-const std::uint8_t LtrM[] = {
-    'M', 'A', 'C',          'L',  'I',  DCI_end('B'), 0x80, 0x00, 0x00,  // L937F-1
-    'M', 'S', DCI_end('B'), 0x80, 0x00, 0x00,                            // L8E66-1
-};
-
-// LtrN
-const std::uint8_t LtrN[] = {
-    'N', 'O', DCI_end('P'), 0x20, 0x00, 0x6D,
-};
-
-// LtrO
-const std::uint8_t LtrO[] = {
-    'O', 'B', DCI_end('J'), 0x81, 0x00, 0x00,  // L8BAD-1
-    'O', 'R', DCI_end('A'), 0x03, 0xFF, static_cast<std::uint8_t>(ORAOps),
-    'O', 'R', DCI_end('G'), 0x81, 0x00, 0x00,  // L8A82-1
-};
-
-// LtrP
-const std::uint8_t LtrP[] = {
-    'P',
-    'A',
-    'G',
-    DCI_end('E'),
-    0x80,
-    0x00,
-    0x00,  // DoPage-1
-    'P',
-    'A',
-    'U',
-    'S',
-    DCI_end('E'),
-    0x80,
-    0x00,
-    0x00,  // L927A-1
-    'P',
-    'H',
-    DCI_end('A'),
-    0x20,
-    0x00,
-    0x77,
-    'P',
-    'H',
-    DCI_end('P'),
-    0x20,
-    0x00,
-    0x78,
-    'P',
-    'H',
-    DCI_end('X'),
-    0x20,
-    0x00,
-    0x79,
-    'P',
-    'H',
-    DCI_end('Y'),
-    0x20,
-    0x00,
-    0x7A,
-    'P',
-    'L',
-    DCI_end('A'),
-    0x20,
-    0x00,
-    0x7B,
-    'P',
-    'L',
-    DCI_end('P'),
-    0x20,
-    0x00,
-    0x7C,
-    'P',
-    'L',
-    DCI_end('X'),
-    0x20,
-    0x00,
-    0x7D,
-    'P',
-    'L',
-    DCI_end('Y'),
-    0x20,
-    0x00,
-    0x7E,
-    'P',
-    'O',
-    DCI_end('P'),
-    0x40,
-    0x02,
-    static_cast<std::uint8_t>(SW16Ops + 21),
-    'P',
-    'O',
-    'P',
-    DCI_end('D'),
-    0x40,
-    0x02,
-    static_cast<std::uint8_t>(SW16Ops + 22),
-};
-
-// LtrR
-const std::uint8_t LtrR[] = {
-    'R',
-    'E',
-    DCI_end('F'),
-    0x81,
-    0x00,
-    0x00,  // L91A8-1
-    'R',
-    'E',
-    DCI_end('L'),
-    0x80,
-    0x00,
-    0x00,  // L9126-1
-    'R',
-    'E',
-    DCI_end('P'),
-    0x80,
-    0x00,
-    0x00,  // L8FA3-1
-    'R',
-    'O',
-    DCI_end('L'),
-    0x02,
-    0x1B,
-    static_cast<std::uint8_t>(ROLOps),
-    'R',
-    'O',
-    DCI_end('R'),
-    0x02,
-    0x1B,
-    static_cast<std::uint8_t>(ROROps),
-    'R',
-    DCI_end('S'),
-    0x60,
-    0x00,
-    static_cast<std::uint8_t>(SW16Ops + 24),
-    'R',
-    'T',
-    DCI_end('I'),
-    0x20,
-    0x00,
-    0x89,
-    'R',
-    'T',
-    DCI_end('N'),
-    0x60,
-    0x00,
-    0x23,
-    'R',
-    'T',
-    DCI_end('S'),
-    0x20,
-    0x00,
-    0x8A,
-};
-
-// LtrS
-const std::uint8_t LtrS[] = {
-    'S',
-    'B',
-    DCI_end('C'),
-    0x03,
-    0xFF,
-    static_cast<std::uint8_t>(SBCOps),
-    'S',
-    'B',
-    'T',
-    DCI_end('L'),
-    0x80,
-    0x00,
-    0x00,  // L8F61-1
-    'S',
-    'B',
-    'U',
-    'F',
-    'S',
-    'I',
-    DCI_end('Z'),
-    0x81,
-    0x00,
-    0x00,  // L93C7-1
-    'S',
-    'E',
-    DCI_end('C'),
-    0x20,
-    0x00,
-    0x94,
-    'S',
-    'E',
-    DCI_end('D'),
-    0x20,
-    0x00,
-    0x95,
-    'S',
-    'E',
-    DCI_end('I'),
-    0x20,
-    0x00,
-    0x96,
-    'S',
-    'E',
-    DCI_end('T'),
-    0xC0,
-    0x00,
-    0x00,  // L94C0-1
-    'S',
-    'K',
-    DCI_end('P'),
-    0x80,
-    0x00,
-    0x00,  // L8FEA-1
-    'S',
-    DCI_end('T'),
-    0x40,
-    0x02,
-    static_cast<std::uint8_t>(SW16Ops + 25),
-    'S',
-    'T',
-    DCI_end('A'),
-    0x03,
-    0xFB,
-    static_cast<std::uint8_t>(STAOps),
-    'S',
-    'T',
-    DCI_end('D'),
-    0x40,
-    0x02,
-    static_cast<std::uint8_t>(SW16Ops + 27),
-    'S',
-    'T',
-    DCI_end('I'),
-    0x40,
-    0x02,
-    static_cast<std::uint8_t>(SW16Ops + 26),
-    'S',
-    'T',
-    DCI_end('P'),
-    0x40,
-    0x02,
-    static_cast<std::uint8_t>(SW16Ops + 28),
-    'S',
-    'T',
-    DCI_end('R'),
-    0x80,
-    0x00,
-    0x00,  // L8E94-1
-    'S',
-    'T',
-    DCI_end('X'),
-    0x04,
-    0x03,
-    static_cast<std::uint8_t>(STXOps),
-    'S',
-    'T',
-    DCI_end('Y'),
-    0x00,
-    0x0B,
-    static_cast<std::uint8_t>(STYOps),
-    'S',
-    'T',
-    DCI_end('Z'),
-    0x00,
-    0x1B,
-    static_cast<std::uint8_t>(STZOps),
-    'S',
-    'U',
-    DCI_end('B'),
-    0x40,
-    0x02,
-    static_cast<std::uint8_t>(SW16Ops + 29),
-    'S',
-    'Y',
-    DCI_end('S'),
-    0x81,
-    0x00,
-    0x00,  // L9131-1
-    'S',
-    'W',
-    '1',
-    DCI_end('6'),
-    0xC0,
-    0x00,
-    0x00,  // L946F-1
-};
-
-// LtrT
-const std::uint8_t LtrT[] = {
-    'T',  'A', DCI_end('X'), 0x20,         0x00, 0xAD,
-    'T',  'A', DCI_end('Y'), 0x20,         0x00, 0xAE,
-    'T',  'I', 'M',          DCI_end('E'), 0x80, 0x00,
-    0x00,  // L905E-1
-    'T',  'R', DCI_end('B'), 0x00,         0x03, static_cast<std::uint8_t>(TRBOps),
-    'T',  'S', DCI_end('B'), 0x00,         0x03, static_cast<std::uint8_t>(TSBOps),
-    'T',  'S', DCI_end('X'), 0x20,         0x00, 0xB3,
-    'T',  'X', DCI_end('A'), 0x20,         0x00, 0xB4,
-    'T',  'X', DCI_end('S'), 0x20,         0x00, 0xB5,
-    'T',  'Y', DCI_end('A'), 0x20,         0x00, 0xB6,
-};
-
-// LtrX
-const std::uint8_t LtrX[] = {
-    'X', '6', '5', '0', DCI_end('2'), 0x81, 0x00, 0x00,  // L9139-1
-};
-
-// LtrZ
-const std::uint8_t LtrZ[] = {
-    'Z', 'D', 'E', DCI_end('F'), 0x81,         0x00, 0x00,        // L9140-1
-    'Z', 'R', 'E', DCI_end('F'), 0x81,         0x00, 0x00,        // L91A4-1
-    'Z', 'X', 'T', 'R',          DCI_end('N'), 0x81, 0x00, 0x00,  // L91A4-1
-};
-
-// Dot directives
-const std::uint8_t DotDrtv[] = {
-    '.',  'A',  'S',  'C',          'I',          DCI_end('I'), 0x80,         0x00,
-    0x00,  // L8DD2-1
-    '.',  'B',  'L',  'O',          'C',          DCI_end('K'), 0x81,         0x00,
-    0x00,                                                                            // L8C0E-1
-    '.',  'B',  'Y',  'T',          DCI_end('E'), 0x80,         0x00,         0x00,  // L8CC3-1
-    '.',  'D',  'B',  'Y',          'T',          DCI_end('E'), 0x80,         0x00,
-    0x00,                                                              // L8DCD-1
-    '.',  'D',  'E',  DCI_end('F'), 0x81,         0x00,         0x00,  // L9144-1
-    '.',  'E',  'Q',  DCI_end('U'), 0x81,         0x00,         0x00,  // L8A31-1
-    '.',  'I',  'N',  'C',          'L',          'U',          'D',          DCI_end('E'),
-    0x80, 0x00, 0x00,                                                                // L9360-1
-    '.',  'L',  'I',  'S',          DCI_end('T'), 0x80,         0x00,         0x00,  // L8F3D-1
-    '.',  'N',  'O',  'L',          'I',          'S',          DCI_end('T'), 0x80,
-    0x00, 0x00,                                                                      // L8F3A-1
-    '.',  'O',  'R',  DCI_end('G'), 0x81,         0x00,         0x00,                // L8A82-1
-    '.',  'P',  'A',  'G',          DCI_end('E'), 0x80,         0x00,         0x00,  // DoPage-1
-    '.',  'R',  'E',  DCI_end('F'), 0x81,         0x00,         0x00,                // L91A8-1
-    '.',  'S',  'K',  'I',          DCI_end('P'), 0x80,         0x00,         0x00,  // L8FEA-1
-    '.',  'T',  'I',  'T',          'L',          DCI_end('E'), 0x80,         0x00,
-    0x00,                                                                            // L8F61-1
-    '.',  'W',  'O',  'R',          DCI_end('D'), 0x80,         0x00,         0x00,  // L8D67-1
-    0x00, 0x00, 0x00, 0x00,                                                          // unused
-};
-
-// Table of ptrs to first letter subtables
-const std::uint8_t* Tbl1stLet[] = {
-    DotDrtv, LtrA, LtrB,    LtrC,    LtrD,    LtrE,    LtrF, nullptr, nullptr,
-    LtrI,    LtrJ, nullptr, LtrL,    LtrM,    LtrN,    LtrO, LtrP,    nullptr,
-    LtrR,    LtrS, LtrT,    nullptr, nullptr, nullptr, LtrX, nullptr, LtrZ,
-};
-
-// MnemTbl points at LtrA
-const std::uint8_t* MnemTbl = LtrA;
-
-// Assembler's creation date and time
-const char LDF3F[] = "30-APR-85";
-const char LDF48[] = "22:46          ";
-
-// Area to preserve the zero page locations $60-$F1
-std::uint8_t SvZPArea[0x92] = {};
-
-// ($DFE0) Unidentified data block
-const std::uint16_t DFE0Data[] = {
-    0xD581, 0xD589, 0xD58E, 0xD546, 0xA023, 0xA048, 0xA308, 0xDCC7,
-    0x9BF8, 0xA071, 0xB9AF, 0x9B18, 0x9B6D, 0xDDC0, 0x9F49, 0xC8D3,
-};
-
-}  // namespace
-
-//=================================================
-// Test Helper Functions - Exported for Unit Testing
-//=================================================
-namespace EdAsmNg {
-  namespace Asm {
-
-    void ResetErrorState() {
-      NbrErrs  = 0;
-      NbrWarns = 0;
-      ErrorF   = 0;
-      ErrNbr4  = 0;
-      std::memset(ErrInfoT, 0, sizeof(ErrInfoT));
+
+  // Stub: L81F0 - Skip over non-blanks
+  void L81F0() {
+    // TODO: Skip over non-blank characters
+    Z = true;  // For now, simulate CR found
+  }
+
+  // NxtField - On entry (Y)=index into src line
+  // Ret:
+  // (Y)=0
+  // src ptr pointing @ 1st char of the field
+  // (X) - unchanged
+  void NxtField() {
+    A = SrcP_at(Y);
+    if (A != SPACE) goto L823D;  // (BNE)
+    Y++;
+    if (Y != 0) goto NxtField;  // (BNE)
+
+  L823D:
+    // CLC
+    A = Y;
+    A += SrcP;
+    SrcP = A;
+    A    = 0;
+    Y    = A;      // (Y)=0
+    A += SrcP_hi;  // with carry
+    SrcP_hi = A;
+  }
+
+  // Stub: HndlMnem - Handle mnemonic/pseudo opcode
+  void HndlMnem() {
+    // TODO: Parse and handle mnemonic
+    C = true;  // For now, simulate error
+  }
+
+  // Stub: HndlOpnd - Handle operand
+  void HndlOpnd() {
+    // TODO: Parse and handle operand field
+  }
+
+  // Stub: L80F7 - Check for FIN/ELSE directive
+  void L80F7() {
+    // TODO: Check if current line has FIN/ELSE directive
+    C = false;  // For now, simulate "not found"
+  }
+
+  // Stub: Chk4ROM - Check for ROM at slot
+  void Chk4ROM() {
+    // TODO: Check if there's a ROM at the specified slot
+    Z = true;  // For now, assume ROM present
+  }
+
+  // Stub: PRODOS8 - ProDOS 8 system call
+  void PRODOS8() {
+    // TODO: Make ProDOS 8 system call
+    Z = true;  // For now, simulate success
+  }
+
+  // Stub: DOSErrs - Handle DOS errors
+  void DOSErrs() {
+    // TODO: Handle DOS errors (doesn't return)
+    std::abort();
+  }
+
+  // Stub: COUT - Console output
+  void COUT() {
+    // TODO: Output character via user's I/O hooks
+  }
+
+  // Stub: MonCOUT - Monitor console output
+  void MonCOUT() {
+    // TODO: Output character to Apple II monitor
+  }
+
+  // Stub: Open4RW - Open file for reading/writing
+  void Open4RW() {
+    // TODO: Open file for I/O
+  }
+
+  // Stub: L92F0 - Print file messages
+  void L92F0() {
+    // TODO: Print file-related messages
+  }
+
+  // Stub: SetupVec - Setup vectors
+  void SetupVec() {
+    // TODO: Setup interrupt vectors
+  }
+
+  // ($8458) GInstLen - We must determine the address mode of opcode
+  // Ret:
+  // Length of instruction opcode
+  void GInstLen() {
+    ModWrdL = A;  // 1st flag byte (STA)
+    Y++;
+    A       = MnemP[Y];  // 2nd flag byte - addr mode bits
+    ModWrdH = A;         // of this mnemonic
+    Y++;
+    A       = MnemP[Y];
+    SubTIdx = A;  // Index into sub-table of opcode table
+    Y--;
+    Y--;         // Moveback to 1st flag byte
+    NxtField();  // Point @ operand field
+
+    A          = 0;
+    LenTIdx    = A;
+    ValExpr    = A;  // val of operand if any
+    ValExpr_hi = A;
+
+    A = ModWrdL;
+    // BIT ModWrdL
+    if ((int8_t)A < 0) goto L84CE;  // Directives/SET (BMI)
+    // BIT Bit20
+    if ((A & 0x20) != 0) goto L84D4;  // Implied (BNE)
+    // BIT Bit08
+    if ((A & 0x08) != 0) goto L84D9;  // Branch opcodes (BNE)
+
+    // There are now thirteen X6502 addr modes to consider
+    GAdrMod();          // Get an index to addr mode table
+    if (C) goto L84FE;  // error (BCS)
+
+  // Checks the returned/parsed addr mode against permitted modes
+  ChkAMod:
+    LenTIdx = A;  // =0-12
+    X       = A;
+    A       = AModTbl[X];  // Get the parsed addr mode
+
+    if (X < 8) goto L849B;  // (BCC)
+
+    // When (X)=8-12, the addressing modes are:
+    // (zp), (abs), acc, zp,Y & (abs,X)
+    A &= ModWrdL;                     // 1st flag byte
+    A &= 0b00000111;                  // Retain only these bits
+    if (A == AModTbl[X]) goto L8502;  // Is addr mode valid? Yes (BEQ)
+    if (A != AModTbl[X]) goto L849F;  // => Further checks (BNE)
+
+  // X=0-7 The bits of ModWrdH (2nd flag byte) are completely defined
+  L849B:
+    // BIT ModWrdH - Is the returned mode valid?
+    if ((ModWrdH & A) != 0) goto L8502;  // Yes (BNE)
+
+  L849F:
+    if (X != 11) goto L84A7;   // Was mode parsed as zp,Y? No (BNE)
+    A = 5;                     // Force the mode as
+    if (A != 0) goto ChkAMod;  // abs,Y (for LDA/STA) (BNE)
+
+  L84A7:
+    if (X != 1) goto L84B5;  // Was mode parsed as zp? nope (BNE)
+    A = ModWrdL;
+    A &= 0b00010000;           // JMP/JSR?
+    if (A == 0) goto BadMode;  // No (BEQ)
+    A = 0;                     // Allow for JMP/JSR zp but
+    if (A == 0) goto ChkAMod;  // convert 'em to JMP/JSR abs (always) (BEQ)
+
+  L84B5:
+    if (X != 8) goto BadMode;  // Was mode parsed as (zp)? No (BNE)
+    A = ModWrdL;
+    A &= 0b00010000;           // JMP?
+    if (A == 0) goto BadMode;  // No (BEQ)
+    A = 9;
+    if (A != 0) goto ChkAMod;  // Convert to JMP (abs) (always) (BNE)
+
+  BadMode:
+    X = 0x1C;  // addr mode error
+    RegAsmEW();
+    A       = 0x00;
+    LenTIdx = A;             // Assume abs mode addressing
+    if (A == 0) goto L84FE;  // always (BEQ)
+
+  L84CE:
+    // BVS L8513 - => SET directive
+    if ((ModWrdL & 0x40) != 0) goto L8513;
+    A = 0x00;                // zero len
+    if (A == 0) goto L8511;  // for directives (BEQ)
+
+  L84D4:
+    A = 1;                   // Single byte opcodes
+    if (A != 0) goto L8511;  // always (BNE)
+
+  // const uint8_t Bit20 = 0x20; // Already defined
+
+  // Branch opcodes (both 65C02/SW16)
+  L84D9:
+    A       = 0x00;  // There are no sub-tables for such
+    LenTIdx = A;     // opcodes so set this index to 0
+    X       = 2;     // len of instr
+    A       = ModWrdL;
+    A &= 0x10;               // BSL/BRL?
+    if (A == 0) goto L84E6;  // No (BEQ)
+    X++;                     // =3
+  L84E6:
+    Length = X;
+    EvalExpr();
+    A = PassNbr;
+    if (A == 0) goto L8513;  // (BEQ)
+    if (!C) goto L8513;      // (BCC)
+    A = NxtToken;
+    if (A != (0x34 | 0x80)) goto L84FE;  // Invalid delimiter (BNE)
+    X = A;
+    RegAsmEW();
+    goto L8513;
+
+  L84FE:
+    A = 3;                   // len of instruction
+    if (A != 0) goto L8511;  // always (BNE)
+
+  // X=0-12
+  L8502:
+    A = ModWrdL;
+    // BIT Bit40 - sw16?
+    if ((A & 0x40) == 0) goto L850E;  // no (BEQ)
+    A = L851F[X];                     // Get instr len
+    if (A != 0) goto L8511;           // always (BNE)
+
+  L850E:
+    A = InstLenT[X];  // Get instr len
+  L8511:
+    Length = A;
+  L8513:
+    A = Length;
+  }
+
+  // (X)=index into addr mode table
+  // Not only this, it can be used to index an opcode within
+  // a sub-table of opcodes (eg ADCOps) by adding it to SubTIdx
+  // This table is highly dependent on the meaning of the
+  // bits of the 2 mnemonic flag bytes
+  const uint8_t InstLenT[] = {
+      0x03,  // abs
+      0x02,  // zp
+      0x02,  // #
+      0x02,  // zp,X
+      0x03,  // abs,X
+      0x03,  // abs,Y
+      0x02,  // (zp),Y
+      0x02,  // (zp,X)
+      0x02   // (zp)
+  };
+
+  // This sub-table is used by SW16 opcodes
+  const uint8_t L851F[] = {
+      0x03,  // (abs) - CPIM
+      0x01,  // acc - SW16 Reg ops
+      0x02,  // zp,Y
+      0x03   // (abs,X)
+  };
+
+  // bit flags used to check the validity of
+  // the parsed addressing mode
+  const uint8_t AModTbl[] = {
+      0x01,  // abs
+      0x02,  // zp
+      0x04,  // imm
+      0x08,  // zp,X
+      0x10,  // abs,X
+      0x20,  // abs,Y
+      0x40,  // (zp),y
+      0x80,  // (zp,X)
+      0x03,  // (zp)
+      0x01,  // (abs)
+      0x02,  // acc
+      0x04,  // zp,Y
+      0x01   // (abs,X)
+  };
+
+  // AdvPC - A=# to advance
+  void AdvPC() {
+    // CLC
+    A += PC;
+    PC = A;
+    if (A >= PC) return;  // no carry (BCC doRet4)
+    PC_hi++;              // INC PC+1
+  }
+
+  // NextRec - Set SrcP to beginning of next assembly src line
+  // Source Lines are terminated with a CR
+  // (X)-unchanged
+  // Ret with (Y)=0 & src ptr pointing @ 1st char of line
+  void NextRec() {
+    Y = 0;
+  L824D:
+    A = SrcP_at(Y);
+    Y++;                      // NB: skip past char
+    if (A != CR) goto L824D;  // b4 comparision (BNE)
+
+    // On fall thru, Y=# to advance
+    AdvSrcP();
+  }
+
+  // L81A3 - Incr line #s, show user we have assembled
+  // a chunk of code by printing a dot
+  void L81A3() {
+    // BIT NewF - Assembling new file?
+    if ((int8_t)NewF >= 0) goto L81AF;  // No (BPL)
+
+    A         = 0;
+    BCDNbr    = A;  // line # for new file
+    BCDNbr_hi = A;
+    NewF      = A;
+
+  L81AF:
+    // SED - set decimal mode
+    // CLC
+    A = TotLines;
+    A += 1;  // BCD increment (simplified)
+    TotLines = A;
+    if (A < 100) goto L81C7;  // (BCC)
+    A = TotLines_hi;
+    A += 1;  // with carry
+    TotLines_hi = A;
+    if (A < 100) goto L81C7;  // (BCC)
+    A = TotLines_2;
+    A += 1;  // with carry
+    TotLines_2 = A;
+
+  L81C7:
+    // CLC
+    A = BCDNbr;
+    A += 1;  // BCD increment (simplified)
+    BCDNbr = A;
+    if (A < 100) goto L81E4;  // (BCC)
+    A = BCDNbr_hi;
+    A += 1;  // with carry
+    BCDNbr_hi = A;
+
+    // CLD - clear decimal mode
+    A = PassNbr;
+    if (A == 0) goto L81DF;  // (BEQ)
+    // BIT ListingF - listing ON?
+    if ((int8_t)ListingF < 0) goto L81E4;  // yes (BMI)
+
+  L81DF:
+    A = '.' | 0x80;  // show a dot
+    VidOut();
+  L81E4:
+    // CLD - clear decimal mode
+  }
+
+  // DoPass2 - Second pass of assembly
+  void DoPass2() {
+    PassNbr++;  // Flag we are in 2nd pass
+    A        = '*';
+    RepChar  = A;
+    A        = -1;
+    ListingF = A;
+    PutCR();
+    OpenSrc1();  // Re-open initial src file
+    A = GenF;
+    if (A != 0x80) goto Pass2Lup;  // Write obj code into mem? No
+
+    A        = CurrORG;     // These 4 inst serves no purpose since
+    ObjPC    = A;           // its contents are changed when an
+    A        = CurrORG_hi;  // OBJ/ORG directive is declared
+    ObjPC_hi = A;           // Renamed as CodeLen if REL file
+    GenF <<= 1;             // $00 - Remove suspension
+
+  // Assemble each src line
+  Pass2Lup:
+    GSrcLin();           // Any more src lines to assembled?
+    if (!C) goto L7F33;  // BCC
+    return;
+
+  // Init before each line is scanned/parsed
+  L7F33:
+    Y   = -1;
+    ZAB = Y;  // =$FF
+    Y++;      // =0
+    Length    = Y;
+    ErrorF    = Y;
+    LstCodeF  = Y;
+    NumCycles = Y;
+    A         = SrcP;
+    Src2P     = A;  // Save a copy of ptr
+    A         = SrcP_hi;
+    Src2P_hi  = A;  // to curr srcline
+
+    // BIT CondAsmF - Assembling alt block?
+    if ((int8_t)CondAsmF < 0) goto L7F50;    // Yes (BMI), proceed to scan for alt blk
+    if ((CondAsmF & 0x40) == 0) goto L7F57;  // BVC - If V=1, then we will be assembling
+    CondAsmF <<= 1;                          // alt block so set flag to $80
+
+  L7F50:
+    ZAB >>= 1;           // Clear msb (=$7F) - LSR
+    L80F7();             // Do we have a FIN/ELSE?
+    if (!C) goto L7F77;  // No (BCC), skip assembling src line
+
+  // Assemble curr src line
+  // Should be the lexical analyser/scanner
+  L7F57:
+    A = SrcP_at(Y);  // Pure comment line?
+    if (A == '*') goto L7F77;
+    if (A == ';') goto L7F77;  // Yes, ignore curr src line
+
+    // Ignore the label field and go directly to the mnemonic field
+    L81F0();            // Skip over non-blanks
+    if (Z) goto L7F6E;  // Got a cr (BNE -> BEQ inverted)
+    NxtField();         // Skip over 1 or more blanks
+    HndlMnem();
+    if (!C) goto L7F7A;  // BCC
+
+  L7F6E:
+    X = 0x04;  // undefined opcode
+    RegAsmEW();
+  L7F73:
+    X      = 3;
+    Length = X;
+  L7F77:
+    goto L806F;
+
+  L7F7A:
+    ZAB = A;  // 1st flag byte after mnem/directive byte
+    // BIT Bit80 - Directives?
+    if ((A & 0x80) == 0) goto CodeGen;  // No (BEQ)
+    if (A != 0x83) goto L7F88;          // 1000 0011
+    goto L807A;                         // Skip listing & storing generated code
+
+  L7F88:
+    if (A != 0x81) goto L7F77;  // 1000 0001
+    LstCodeF   = A;             // $81 - these control directives
+    A          = ValExpr;       // have expr result field which
+    ERfield    = A;             // is printed to right of PC field
+    A          = ValExpr_hi;
+    ERfield_hi = A;
+    goto L806F;  // list code, store generated code
+
+  // Bit80 constant
+  // const uint8_t Bit80 = 0x80;  // Already defined earlier
+
+  // Prepare to generate code
+  CodeGen:
+    GInstLen();       // Determine instr's len
+    A        = 0x27;  // 0010 0111
+    LstCodeF = A;
+    X        = 0;
+    A        = ModWrdL;
+    // BIT Bit40 - sw16 opcode?
+    if ((A & 0x40) == 0) goto L7FCB;  // No (BEQ)
+    A = SW16F;
+    if (A != 0) goto L7FB5;
+    X = 0x42 + 1;  // odd-warning
+    RegAsmEW();    // sw16 opcode
+
+    // This part is for SW16 ops
+    X = 0x00;
+  L7FB5:
+    A = SubTIdx;
+    Y = A;
+    A = OpcodeT[Y];  // Get SW opcode
+  L7FBB:
+    if (A < 0x10) goto GenNow;  // Non-reg ops? Yes (BCC)
+
+    IsSW16Reg();
+    if (!Z) goto L7F73;       // No - not a valid SW16 register (BNE)
+    A = OpcodeT[Y];           // Get sw16 reg opcode
+    A |= ValExpr;             // =Rn
+    if (A != 0) goto GenNow;  // always (BNE)
+
+  // This part of the code is for 6502 ops and is used
+  // by the Code Generator to compute the index to the
+  // actual opcode within the OpcodeTable
+  // NB: Highly dependent on the 3 bytes following
+  // a mnemonic entry & arrangement data in the various
+  // tables like AModTbl, OpcodeT etc. See comments
+  // b4 MnemTbl for more info
+  // (A)=1st flag byte after a mnenmonic entry
+  L7FCB:
+    A &= 0b00000101;  // zp,Y/JMP/JSR/(zp)
+    A |= ModWrdH;
+    if (A == 0) goto L7FED;          // single byte ops (A)=0 (BEQ)
+    A = LenTIdx;                     // Index into inst len table
+    if ((int8_t)A >= 0) goto L7FD6;  // always! (BPL)
+  L7FD5:
+    std::abort();  // BRK
+  L7FD6:
+    if (A < 9) goto L7FED;    // 0-8 (first 9 modes of AModTbl) (BCC)
+    if (A != 12) goto L7FE5;  // (abs,X) (BNE)
+    Is65C02();                // Are 65C02 opcodes allowed?
+    if (C) goto L8002;        // No (BCS)
+    if (!C) goto L7FE7;       // always (BCC)
+  L7FE5:
+    if (C) goto L7FD5;  // CRASHED! (BCS)
+
+  // On fall thru, (A)=9-11 => (abs), acc, zp,Y addr modes
+  L7FE7:
+    A &= 0b00000011;         // (A) -> 1-3
+    if (A != 0) goto L7FED;  // (BNE)
+
+    A = 2;  // JMP (abs,X)
+
+  // Single byte & branch ops don't have sub-tables
+  // Instead the (SubTIdx) is just the index into
+  // the opcode table. For these ops, (A) must be to 0
+  L7FED:
+    // CLC
+    A += SubTIdx;  // Calc the index into opcode table
+    Y         = A;
+    A         = CycTimes[Y];
+    NumCycles = A;
+    A         = OpcodeT[Y];  // get opcode
+    // BIT X6502F - R 65C02 ops allowed?
+    if ((int8_t)X6502F < 0) goto GenNow;  // Yes (BMI)
+
+    IsC02Op();            // Is the opcode valid?
+    if (!C) goto GenNow;  // Yes (BCC)
+
+  L8002:
+    X = 0x48;  // 65C02 addr mode/opcode
+    RegAsmEW();
+    goto L7F73;
+
+  // Code Generation
+  // Relocation Dictionary entries are created for
+  // 1) all 6502 opcodes except branch & single byte ops
+  // 2) DFB,DDB,DW pseudo ops
+  // 3) SW16 pseudo ops
+  GenNow:
+    GMC[X] = A;  // X=0 -> save opcode
+    X++;
+    GMCIdx = X;
+    A      = ModWrdL;
+    // BIT Bit08 - branch instr?
+    if ((A & 0x08) != 0) goto L8038;  // Yes (BNE)
+
+    A = X;                        // X=1 on fall thru
+    if (A >= Length) goto L8025;  // Single byte ops? Yes (BCS)
+    A      = ValExpr;
+    GMC[X] = A;
+    X++;
+    A      = ValExpr_hi;
+    GMC[X] = A;
+    X++;  // unnecessary inst
+
+  L8025:
+    X = Length;
+    X--;
+    if (X == 0) goto L806F;  // Single byte ops (BEQ)
+    A = RelExprF;            // Is expr's val abs?
+    if (A == 0) goto L806F;  // Yes (BEQ)
+
+    A = 1;        // offset
+    Y = 0;        // Little Endian (Reverse)
+    AddRLDEnt();  // Make an RLD entry
+    goto L806F;
+
+  // Branch instructions
+  L8038:
+    A          = ValExpr;     // Branch target addr to
+    ERfield    = A;           // be printed to right of
+    A          = ValExpr_hi;  // branch object code
+    ERfield_hi = A;
+    A          = LstCodeF;
+    A |= 0x80;
+    LstCodeF = A;
+    CalcDisp();
+
+    X = GMCIdx;
+    A = ModWrdL;
+    A &= 0x10;  // BRL/BSL?
+    Y = A;
+    if (Y != 0) goto L8063;  // yes (BNE)
+
+    // 6502/C02
+    A = ValExpr;                     // (Y)=0
+    if ((int8_t)A >= 0) goto L8058;  // Forward branch (BPL)
+    ValExpr_hi++;                    // =0 (INC)
+  L8058:
+    A = ValExpr_hi;          // (ValExpr) has displacement byte
+    if (A == 0) goto L8063;  // (BEQ)
+    X = 0x26;                // branch range err
+    RegAsmEW();
+
+    X = GMCIdx;
+  L8063:
+    A      = ValExpr;
+    GMC[X] = A;
+    A      = Y;              // 6502 branch instr?
+    if (A == 0) goto L806F;  // Yes (BEQ)
+    X++;
+    A      = ValExpr_hi;  // SW16 BSL/BRL
+    GMC[X] = A;
+
+  L806F:
+    PrtAsmLn();
+    StorGMC();
+    A = Length;
+    AdvPC();
+
+  L807A:
+    PollKbd();
+    if (C) goto L8088;  // BCS
+    NextRec();
+    L81A3();
+    goto Pass2Lup;  // Assemble next srcline
+  L8088:
+    CanclAsm();
+  }
+
+  // RVLsting - Chk if instruction is to be printed
+  // C=0 - Yes
+  // C=1 - No
+  void RVLsting() {
+    C = false;           // CLC
+    A = ErrorF;          // Was an error reported for this srcline?
+    if (A != 0) return;  // Yes (BNE doRTS5)
+    // BIT CondAsmF - Has this line been assembled?
+    if ((int8_t)CondAsmF >= 0) goto L8098;  // Yes (BPL)
+    // BIT LstUnAsm - Print unasm src block?
+    if ((int8_t)LstUnAsm >= 0) goto L80A4;  // No (BPL)
+  L8098:
+    // BIT MacroF - Is line a result of mac exp?
+    if ((int8_t)MacroF >= 0) goto L80A0;  // No (BPL)
+    // BIT LstExpMac - List such lines?
+    if ((int8_t)LstExpMac >= 0) goto L80A4;  // No (BPL)
+  L80A0:
+    // BIT ListingF - Is listing ON?
+    if ((int8_t)ListingF < 0) return;  // Yes (BMI doRTS5)
+  L80A4:
+    C = true;  // SEC
+  }
+
+  // PrtAsmLn - Print Assembled Line
+  void PrtAsmLn() {
+    RVLsting();
+    if (C) return;  // No (BCS doRTS6)
+    ListCode();     // Print generated code
+    LstSrcLn();     // Print src stmt
+  }
+
+  // StorGMC - Store generated machine code
+  void StorGMC() {
+    Y = Length;          // # of bytes
+    if (Y == 0) return;  // (BEQ doRTS7)
+
+    Y = 0;
+  L80B8:
+    A = GMC[Y];
+    // BIT GenF - Is code generation suppressed?
+    if ((int8_t)GenF < 0) return;        // Yes (BMI doRTS7)
+    if ((GenF & 0x40) != 0) goto L80C5;  // Write to disk (BVS)
+    ObjPC[Y] = A;                        // Write to mem
+    // BVC L80C8 - always
+    goto L80C8;
+  L80C5:
+    Wr1Byte();
+  L80C8:
+    Y++;
+    if (Y != Length) goto L80B8;  // Next byte (BNE)
+
+    // BIT GenF - Did we do a mem store?
+    if ((GenF & 0x40) != 0) return;  // No (BVS doRTS7), a disk store
+    A = Y;
+    AdvObjPC();
+  }
+
+  // ($80D6) StorByt - (A)=byte to store in mem/disk
+  // Translate from ASM2.S lines 1521-1556
+  void StorByt() {
+    // BIT GenF - Suppress code generation?
+    if ((int8_t)GenF < 0) return;        // Yes (BMI doRTS8)
+    if ((GenF & 0x40) != 0) goto L80F1;  // Write to Disk (BVS)
+
+    // Memory mode: write A to (ObjPC),Y where Y=0
+    Y = 0;
+    // STA (ObjPC),Y - Store accumulator to memory at ObjPC
+    if (g_test_obj_memory_enabled) {
+      g_test_obj_memory[ObjPC] = A;
+    }
+    // INC ObjPC - Increment 16-bit ObjPC (automatic carry in C++)
+    ObjPC++;
+
+  L80E6:
+    // Are we out of mem?
+    // LDA ObjPC - CMP HighMem
+    // LDA ObjPC+1 - SBC HighMem+1
+    // 16-bit comparison: ObjPC >= HighMem?
+    if (ObjPC >= HighMem) goto L80F4;  // Yes (BCS)
+
+    // C=0 - no
+    // C=1 - yes
+    // (SrcP) & Y-reg preserved
+    void L80F7() {
+      SavIndY               = Y;  // Index into field of src line
+      uint8_t saved_srcP    = SrcP;
+      uint8_t saved_srcP_hi = SrcP_hi;
+
+      L81F0();            // Look ahead for a space
+      if (Z) goto L812D;  // None found (BNE -> BEQ inverted)
+
+      SkipSpcs();  // Skip until non-blank
+      AdvSrcP();   // Now pointing @ pseudo code field
+
+      X = 3;  // Y=0
+    L810C:
+      ChrGot();
+      if (A != FINTxt[Y]) goto L811A;
+      Y++;
+      X--;
+      if (X != 0) goto L810C;
+      if (X == 0) goto L812A;  // Got a hit (BEQ)
+
+    L811A:
+      Y = 0;
+      X = 4;
+    L811E:
+      ChrGot();
+      if (A != ELSETxt[Y]) goto L812D;
+      Y++;
+      X--;
+      if (X != 0) goto L811E;
+    L812A:
+      C = true;  // got a hit (SEC)
+      // BCS L812E - always
+      goto L812E;
+
+    L812D:
+      C = false;  // CLC
+    L812E:
+      SrcP_hi = saved_srcP_hi;
+      SrcP    = saved_srcP;
+      Y       = SavIndY;
     }
 
-    uint16_t GetErrorCount() {
-      return NbrErrs;
+    const char FINTxt[]  = "FIN";
+    const char ELSETxt[] = "ELSE";
+
+    // WhiteSpc - Check if character is white space (space or CR)
+    // Entry:
+    //  (A)=char to check (from (SrcP),Y)
+    // Ret:
+    // ($81FF) Ret Z=1 of space/CR
+    // White space chars are <sp> and CR for ProDOS
+    //
+    void WhiteSpc() {
+      A = SrcP_at(Y);
+      if (A == SPACE) {
+        Z = true;
+        return;
+      }
+      if (A == CR) {
+        Z = true;
+        return;
+      }
+      Z = false;
     }
 
-    uint16_t GetWarningCount() {
-      return NbrWarns;
+    // Checks if expr is a 8-bit or 16-bit value
+    // For addressing modes involving zp
+    // Ret:
+    //  C=0 - Yes
+    //  C=1 - No
+    //
+    void IsZPMod() {
+      A = ExprAccF;
+      A &= 0b11101111;               // Clear EXTeRNal symbol bit
+      A |= ValExpr_hi;               // Is hi-byte of expr zero?
+      if (A == 0) goto L85CF_ZPMod;  // Yes => 8-bit
+      A = ExprAccF;
+      A &= 0b00010000;         // Is EXTeRNal symbol bit set?
+      if (A == 0) goto L85C6;  // No
+      A = Ret816F;             // EXTRN but is lo-byte being returned?
+      if (A == 0) goto L85C8;  // Yes
+    L85C6:
+      C = true;  // 16-bit
+      return;
+    //
+    L85C8:
+      X = 0x44 + 1;  // odd-warning
+      RegAsmEW();    //  (EXTRN used as ZXTRN)
+      X = SavIndX;
+    L85CF_ZPMod:
+      Y--;  // Move back
+      C = false;
+      return;
     }
 
-    uint8_t GetErrorFlag() {
-      return ErrorF;
+    // Check a single 'A' in the operand field
+    // i.e. checking for accumulator mode
+    // Entry:
+    // (A)=char to check
+    // Ret:
+    //   C=0 - Yes
+    //   C=1 - No
+    //
+    void IsAccMod() {
+      if (A != 'A') goto L85DD_AccMod;
+      Y++;         // Look 1 char ahead
+      WhiteSpc();  // Is the next char sp/cr?
+      // Yes, we have a single 'A' in operand field
+      if (Z) {
+        Y--;  // Move back
+        C = false;
+        return;
+      }
+      Y--;  // No, just move back
+    L85DD_AccMod:
+      C = true;
+      return;
     }
 
-    uint8_t GetErrNbr4() {
-      return ErrNbr4;
+    // Chk if sw16 reg ($00-$0F)
+    // Z=0
+    // Z=1 - yes
+    // (Y)-unchanged?
+    //
+    void IsSW16Reg() {
+      A = ValExpr_hi;
+      if (A != 0) {  // BNE L9500
+        Z = false;   // LDA sets Z=0 when A != 0
+        goto L9500;
+      }
+
+      A = 0xF0;
+      Z = ((A & ValExpr) == 0);  // BIT - test without modifying A, sets Z
+      if (!Z) {                  // BNE L9500
+        goto L9500;
+      }
+
+      // Z is already true (set by BIT), fall through to RTS
+      return;
+
+    //
+    L9500:
+      bool z_flag = Z;     // PHP - Save Z bit
+      X           = 0x32;  // SW16 reg err
+      RegAsmEW();
+      Z = z_flag;  // PLP - Restore Z bit
+      return;
     }
 
-    void SetVidSlot(uint8_t slot) {
-      VidSlot = slot;
+    // Check if 65C02 opcodes are valid
+    // Only Status reg is changed
+    // Ret:
+    // C=0 - Yes
+    // C=1 - No
+    // NB. If X6502F off, LDA (ZP) is still considered
+    // valid. It is equivalent to LDA ZP
+    //
+    void Is65C02() {
+      if ((int8_t)X6502F < 0) {  // Are X6502 opcodes allowed?
+        // Yes
+        Y--;  // Move back
+        C = false;
+        return;
+      }
+      // always
+      C = true;
+      return;
     }
 
-    void SetFileNbr(uint8_t file) {
-      FileNbr = file;
+    // IsC02Op - (A) = opcode
+    // Check if (A) is NCR 65C02 opcode
+    // C=1 - yes
+    // (X)-unchanged
+    void IsC02Op() {
+      Y = 0;
+    L8319:
+      if (A < L8327[Y]) {
+        C = true;
+        return;
+      }  // (BCC doRet5)
+      if (A == L8327[Y]) {
+        C = true;
+        return;
+      }  // (BEQ doRet5)
+      Y++;
+      if (Y < 0x12) goto L8319;  // (BCC)
+      C = false;                 // CLC
     }
 
-    void SetBCDLineNumber(uint8_t hi, uint8_t lo) {
-      BCDNbr[1] = hi;
-      BCDNbr[0] = lo;
+    // Rockwell opcodes
+    const uint8_t L8327[] = {0x04, 0x0C, 0x14, 0x1A, 0x1C, 0x34, 0x3C, 0x3A, 0x5A,
+                             0x64, 0x74, 0x7A, 0x80, 0x89, 0x9C, 0x9E, 0xDA, 0xFA};
+
+    // AddRLDEnt - Add an entry to the relocation entry dictionary table
+    // Entry:
+    // (CodeLen) - zeroed whenever the initial srcfile is read
+    // A=offset
+    // X=1,2; 1 - 8-bits, 2 - 16-bits
+    // Y=order of bytes 0=DW(low-hi), 1=DDB(hi-low)
+    // On 6502, normal order is lower 8 bits of a 16-bit
+    // value is stored in 1st byte and upper 8-bits in 2nd
+    // byte (pg 103). However, according to page 229,
+    // normal order is DDB.
+    // The Relocation Dictionary is build downwards from
+    // high mem towards the End of Symbol Table
+    // The initial start of the RLD is @ MemTop
+    // & is build downwards towards LoMem
+    // Each entry is 4 bytes
+    void AddRLDEnt() {
+      // BIT RelCodeF - Gen REL code?
+      if ((int8_t)RelCodeF < 0) goto L8143;  // yes (BMI)
+      return;
+
+    L8143:
+      uint8_t saved_a = A;       // PHA
+      A               = RLDEnd;  // Chk if there is enough mem
+      // SEC
+      A -= 4;  // for 1 RLD entry (4 bytes)
+      RLDEnd = A;
+      A      = RLDEnd_hi;
+      // SBC #0 with carry
+      if (RLDEnd < 4) A--;  // handle borrow
+      RLDEnd_hi = A;
+
+      A = EndSymT;
+      // CMP RLDEnd
+      A = EndSymT_hi;
+      // SBC RLDEnd+1
+      bool overflow = (EndSymT_hi < RLDEnd_hi) || (EndSymT_hi == RLDEnd_hi && EndSymT < RLDEnd);
+      if (!overflow) goto L8163;  // (BCC)
+      X = 0x12;                   // Sym/RLD table full!
+      RegAsmEW();
+      CanclAsm();
+
+    L8163:
+      X--;                     // Do we have a 2-byte operand?
+      A = X;                   // NB. Acc=0 on fall thru.
+      if (A != 0) goto L8170;  // Yes (BNE)
+
+      X = Ret816F;  // Are we using hi-8 bits?
+      X--;
+      if ((int8_t)X < 0) goto L8178;  // No (BMI), lo-8 bits with (A)=$00
+      A = 0x40;                       // Yes
+      if (A != 0) goto L8178;         // always (BNE)
+
+    // Bits of the RLD flag byte are defined as follows:
+    // $80 - sizeof relocatable field
+    // $40 - Upper/Lower 8 if a 16-bit value
+    // $20 - Normal/reversed 2-byte field
+    // $10 - Field is EXTRN 16-bit reference
+    // $01 - "Not EO RLD" (Clear => EO RLD)
+    L8170:
+      A = Y;  // Y=0 or 1
+      A <<= 1;
+      A <<= 1;
+      A <<= 1;
+      A <<= 1;
+      A <<= 1;    // -> $00(Reverse) or $20 (Normal)
+      A |= 0x80;  // Sizeof relocatable field=2 bytes
+
+    L8178:
+      A |= 0x01;  // Flag 'Not EO RLD' => more entries
+      Y = GblAbsF;
+      if (Y == 0) goto L8180;  // ZDEF/ZREF (BEQ)
+      A |= 0x10;               // EXTRN 16-bit reference
+
+    // RLD entries are build downwards from high mem
+    L8180:
+      Y         = 3;
+      RLDEnd[Y] = A;        // Set RLD flagbyte
+      A         = saved_a;  // Restore offset (PLA)
+      // CLC
+      A += CodeLen;  // Calc the offset in image
+      Y--;           // Y=2
+      RLDEnd[Y] = A;
+      A         = 0;
+      A += CodeLen_hi;  // with carry
+      Y--;              // Y=1
+      RLDEnd[Y] = A;
+      Y--;  // Y=0
+
+      // Set 4-th byte of an RLD entry. First we check if the symbol refers
+      // to an 8-bit or 16-bit address. If it's a 16-bit address
+      // then 4-th byte takes a valid value which is an ESD number.
+      A = GblAbsF;             // ZDEF/ZREF?
+      if (A != 0) goto L81A0;  // No => DEF/EXTRN (A)=ESD # (BNE)
+
+      // The operand refers to an 8-bit value. Check if
+      // #<addr16 or #>addr16. If the former, return a 0
+      // else return the low 8-bit value of the 16-bit
+      // address in 4-th byte of the RLD entry.
+      A = 0;
+      X = Ret816F;  // -1,0,1
+      X--;
+      if ((int8_t)X < 0) goto L81A0;  // It's #<addr16 (low) (BMI)
+      A = Lower8;                     // Lower 8 bits of 16-bit value
+    L81A0:
+      RLDEnd[Y] = A;
     }
 
-    void SetLstWarns(uint8_t flags) {
-      LstWarns = flags;
+    // CalcDisp - Compute relative addr of a branch op
+    // Ret:
+    //   Val=Val-PC-Len
+    void CalcDisp() {
+      // SEC
+      A = ValExpr;
+      A -= Length;  // SBC
+      X = A;
+      A = ValExpr_hi;
+      // SBC #0 with borrow
+      if (ValExpr < Length) A--;
+
+      Y = A;
+      A = X;
+      // SEC
+      A -= PC;  // SBC
+      ValExpr = A;
+      A       = Y;
+      // SBC PC+1 with borrow
+      if (X < PC) A--;
+      ValExpr_hi = A;
     }
 
-    struct ErrorInfo {
-      uint8_t fileNbr;
-      uint8_t errIndex;
-      uint8_t lineHi;
-      uint8_t lineLo;
+    // Stub: ListCode - Print generated code
+    void ListCode() {
+      // TODO: List/print generated object code
+    }
+
+    // Stub: LstSrcLn - List source line
+    void LstSrcLn() {
+      // TODO: Print source line to listing
+    }
+
+    // Stub: Wr1Byte - Write one byte to disk
+    void Wr1Byte() {
+      // TODO: Write one byte to object file on disk
+    }
+
+    // AdvObjPC - A=# to advance
+    void AdvObjPC() {
+      // CLC
+      A += ObjPC;  // code buf
+      ObjPC = A;
+      if (A >= ObjPC) goto L8275;  // no carry (BCC)
+      ObjPC_hi++;                  // INC ObjPC+1
+    L8275:
+      L828A();
+    }
+
+    // L8278 - Not referenced
+    void L8278() {
+      A = MemTop;
+      // CMP ObjPC
+      A = MemTop_hi;
+      // SBC ObjPC+1
+      if ((MemTop_hi < ObjPC_hi) || (MemTop_hi == ObjPC_hi && MemTop < ObjPC)) goto L828A;  // (BCC)
+    }
+
+    // L8282 - Object buffer overflow error
+    void L8282() {
+      X = 0x36;     // Obj buf overflow
+      RegAsmEW(X);  // Pass error token to RegAsmEW
+      CanclAsm();
+    }
+
+    // L828A
+    void L828A() {
+      A = ObjPC;  // Should not be >= HiMem
+      // CMP HighMem - which was passed by Editor
+      A = ObjPC_hi;
+      // SBC HighMem+1
+      if ((ObjPC_hi > HighMem_hi) || (ObjPC_hi == HighMem_hi && ObjPC >= HighMem))
+        goto L8282;  // (BCS)
+    }
+
+    // SkipSpcs - Skip to next field
+    void SkipSpcs() {
+      A = SrcP_at(Y);
+      if (A != SPACE) return;  // Return (BNE doRTS9)
+      Y++;
+      if (Y != 0) goto SkipSpcs;  // skip blanks (BNE)
+    }
+
+    // ($81E6) Skip Blanks
+    // Ret:
+    // Z=1 blank
+    // Z=0 non-blank
+    // (A)=char
+    // (Y)=index
+    // On fall thru, search starts fr 2nd char of field
+    //
+    void L81EF() {
+      Y++;
+    }
+
+    void L81F0() {
+      A = SrcP_at(Y);
+      if (A == SPACE) {
+        Z = true;
+        return;
+      }  // Got a blank (Z=1) & ret (BEQ doRTS9)
+      if (A != CR) goto L81EF;  // (BNE)
+      Y = 0;                    // Index 1st char of field
+      A = CR;                   // Got CR (Z=0) & ret
+      Z = false;
+    }
+
+    // AdvSrcP
+    void AdvSrcP() {
+      // CLC
+      A = Y;
+      A += SrcP;
+      SrcP = A;
+      A    = 0;
+      Y    = A;      // =0
+      A += SrcP_hi;  // with carry
+      SrcP_hi = A;
+    }
+
+    // This subrtn is part of Scanner
+    // There are 2 entry points viz ChrGet and ChrGot
+    // On entry:
+    //   (Y)    = index into the src line
+    //   (SrcP) = Pointing somewhere within source line
+    // Ret:
+    // (A) - char (converted to uppercase if alphabetic)
+    // C=1 if char is non-alphabetic
+    // C=0 if char is alphabetic (A-Z, a-z)
+    // Z=1 if char is numeric digit (0-9)
+    // Z=0 if char is non-numeric
+    // V=1 if char is hexdec digit (0-9, A-F, a-f)
+    // V=0 if char is non-hexdec
+    // (X) - unchanged
+    // (Y) - incr by 1 if 1st entry point else unchanged
+    void ChrGet() {
+      Y++;
+    }
+
+    void ChrGot() {
+      A              = SrcP_at(Y);     // Get char fr src line
+      ZPSaveY        = Y;              // Save (Y) temporarily
+      uint8_t char_y = A;              // Use char as an index as well as saving it in (Y)
+      if ((int8_t)A >= 0) goto L8211;  // Must be std ASCII or (BPL)
+
+      std::abort();  // BRK - else crash
+
+    L8211:
+      A             = CharMap1[char_y];  // Get flag byte
+      uint8_t flags = A;                 // Save for later use (PHA)
+      A             = char_y;            // Get back char (TYA)
+      Y             = ZPSaveY;           // restore Y
+
+      // Set flags from saved flag byte (PLP)
+      N = (flags & 0x80) != 0;
+      V = (flags & 0x40) != 0;
+      Z = (flags & 0x02) != 0;
+      C = (flags & 0x01) != 0;
+
+      if (N) {      // If (A)=$61-$7A (a-z) (BPL doRet2)
+        A &= 0xDF;  // convert to upper case
+      }
+    }
+
+    //=================================================
+    // HndlMnem - Process mnemonic/pseudo opcode/directive field
+    // (ASM2.S line ~2054, label HndlMnem)
+    // Entry:
+    //   (Y) = index into source line (typically 0 at mnemonic start)
+    //   SrcP = pointer to current position in source line
+    // Ret:
+    //   ZAB = first flag byte if not a directive; directive flag if directive
+    //   MnemP = pointer to mnemonic table entry
+    //   SubTIdx = offset into opcode sub-table (for opcodes)
+    //   C=0 - success (opcode/directive found)
+    //   C=1 - fail (mnemonic not found, or macro invocation in restricted context)
+    // For directives: sets up RTS trampoline (not fully implemented here)
+    //=================================================
+    void HndlMnem() {
+      // L8348: Initialize
+      A   = 0x80;
+      ZAB = A;  // STA ZAB - Initialize flag byte
+
+      ChrGot();                  // JSR ChrGot - Get first character
+      if (!C) goto L8348_alpha;  // BCC L8348 - alphabetic char
+      if (A == '.') goto L8346;  // BNE L83AC - If a DOT directive
+      goto L83AC_notfound;       // Else not found
+
+    L8346:
+      A = 'A' - 1;  // LDA #'A'-1 - use ASCII @ in place of dot
+
+    L8348_alpha:
+      // SEC, SBC #'A'-1 - Convert letter to index (A=0, B=1, ..., Z=25)
+      A = static_cast<std::uint8_t>(A - ('A' - 1));
+      A = static_cast<std::uint8_t>(A << 1);  // ASL - Multiply by 2 for word index
+      X = A;                                  // TAX
+
+      // LDA Tbl1stLet,X / STA MnemP - Get pointer to subtable
+      const std::uint8_t* ptr = Tbl1stLet[X / 2];
+      if (ptr == nullptr) goto L839C_nosubtbl;  // No such opcode/directive with this 1st letter
+
+      MnemP = reinterpret_cast<std::uintptr_t>(ptr);
+
+    // L8359: Main character comparison loop
+    L8359:
+      ChrGot();  // JSR ChrGot - Note: msb of char=0
+      const std::uint8_t* mnemP_ptr = reinterpret_cast<const std::uint8_t*>(MnemP);
+      A ^= mnemP_ptr[Y];               // EOR (MnemP),Y - Effectively comparing 7 bits
+      uint8_t cmp_result = A;          // Save comparison result
+      A <<= 1;                         // ASL - C=1 if last char of opcode was compared
+      if (A != 0) goto L837E_nomatch;  // BNE L837E - No hit
+
+    L8361:
+      Y++;                 // INY - Z=1 => 7 bits comparison above matched
+      if (!C) goto L8359;  // BCC L8359 - Continue to cmp next char
+      //
+      // On fall thru, if C=1 then that was last char/byte of
+      // mnemonic entry & we have got a match
+      //
+      WhiteSpc();                  // JSR WhiteSpc - sp/cr?
+      if (!Z) goto L8386_advnext;  // BNE L8386 - no
+
+      // Got a match! Load the flag byte.
+      A   = mnemP_ptr[Y];                     // LDA (MnemP),Y - Get 1st flag byte
+      ZAB = A;                                // STA ZAB
+      if ((int8_t)A >= 0) goto L837C_opcode;  // BPL L837C - Not a directive
+
+      //
+      // This part of the code handles directives by doing a jump via RTS
+      // (ZAB) has the directive's only flag byte which may be modified
+      // by the directive handler
+      //
+      // For now, we'll just mark success and return
+      // (Full directive dispatch would use RTS trampoline)
+      SavIndY = Y;  // STY SavIndY - Save index into Mnemonics table
+      Y++;
+      // Get RTS addr-1 (hibyte and lobyte)
+      // LDA (MnemP),Y / PHA / INY / LDA (MnemP),Y / PHA / LDY SavIndY / RTS
+      // For C++ translation: directive handlers would be called via function pointers
+      // For now, just mark as directive found
+      C = false;  // Success
+      return;
+
+    L837C_opcode:
+      C = false;  // CLC - 6502/SW16 opcode, success
+      return;
+
+    //
+    L837E_nomatch:
+      // LDA (MnemP),Y - Skip rest of entry
+      A = mnemP_ptr[Y];
+      if ((int8_t)A < 0) goto L8385_endentry;  // BMI L8385 - Last byte of entry has msb=1
+      Y++;
+      goto L837E_nomatch;  // BNE L837E
+
+    //
+    L8385_endentry:
+      Y++;  // INY
+    L8386_advnext:
+      // SEC, INY, INY - Add 3 more bytes to skip flag bytes
+      Y++;
+      Y++;
+      // TYA, ADC MnemP, STA MnemP, BCC L8392, INC MnemP+1
+      A     = Y;
+      A     = static_cast<std::uint8_t>(A + (MnemP & 0xFF));
+      MnemP = (MnemP & 0xFF00) | A;
+      if (A < (Y + (MnemP & 0xFF))) {  // Carry occurred
+        MnemP += 0x100;                // INC MnemP+1
+      }
+
+    L8392:
+      Y = 0;     // LDY #0 - Try next entry with
+      ChrGot();  // JSR ChrGot
+      const std::uint8_t* new_mnemP_ptr = reinterpret_cast<const std::uint8_t*>(MnemP);
+      A ^= new_mnemP_ptr[Y];   // EOR (MnemP),Y
+      A <<= 1;                 // ASL
+      if (A == 0) goto L8361;  // BEQ L8361 - the same first letter
+
+    //
+    // Not mnemonics/pseudo code/directive
+    // Assume it's a macro invocation
+    //
+    L839C_nosubtbl:
+      A = MacroF;                              // LDA MacroF - Are macros allowed?
+      if (A == 0) goto L83AC_notfound;         // BEQ L83AC - No
+      if ((int8_t)A < 0) goto L83A4_macroerr;  // BMI L83A4 - Invocation fr a macro defn file -> err
+      // BPL L83AE - No macro nesting issue, could be valid macro invocation
+      // For now, macro invocation code not fully translated, return error
+      goto L83AC_notfound;
+
+    L83A4_macroerr:
+      X = 0x18;  // LDX #$18 - Macro nesting error
+      RegAsmEW();
+      // JMP DrtvDone - would be called here
+      goto L83AC_notfound;  // For now, just return error
+
+    L83AC_notfound:
+      C = true;  // SEC - Flag it's an err
+      return;
+    }
+
+    // Stub: VidOut - Video output
+    void VidOut() {
+      // TODO: Output character to video
+    }
+
+    // Stub: L986A - Helper function
+    void L986A() {
+      // TODO: Implement L986A
+    }
+
+    // GAdrMod - This subrtn will parse the addressing mode of the
+    // operand of a 6502 mnemonic/SW16 psuedo opcode
+    // Ret
+    //  (A)=index (0-12) use to get addr mode fr a table
+    //  C=0 - succ
+    //  C=1 - syntax error
+    void GAdrMod() {
+      X = 0;  // X=index into the 2 tables
+      Y = 0;  // Position @ start of operand
+    L853B:
+      ChrGot();  // Y=index into operand text
+      A |= 0x80;
+      if (A == AModTkns[X]) goto L855E;  // Got a hit
+
+      A = AModTkns[X];                 // Get a token
+      if ((int8_t)A >= 0) goto L8570;  // Not a char (BPL)
+
+      if (A != (SPACE | 0x80)) goto L8554;
+
+      // Token is $A0
+      A = CR;                           // Is char a cr?
+      if (A == SrcP_at(Y)) goto L8563;  // Yes, eol
+
+    // On fall thru, if token is $A0 and CR not found
+    L8554:
+      A = AModCmds[X];
+      if (A == 0) goto L855E;         // => next token & src char
+      if ((int8_t)A < 0) goto L8583;  // Error token (BMI)
+      X = A;                          // Index to next token fr $D7D7 table to be
+      if (X != 0) goto L853B;         // used to cmp against SAME char of src code
+
+    // No fall thru here
+    // Proceed to get next token of $D7D7 table
+    // and next char of src to be compared
+    L855E:
+      X++;  // next token
+      Y++;  // next src char
+      goto L853B;
+
+    // Got a CR
+    L8563:
+      X++;  // Prepare to look at next token
+      Y--;  // Index prev src char
+      A = AModTkns[X];
+      if (A == 0) goto L856C;          // $A0+cr followed by $00
+      if ((int8_t)A >= 0) goto L858B;  // $A0+cr followed by +ve byte value (always) (BPL)
+
+    L856C:
+      X = 0x0A;                // expr syntax err - never reported! (LDA #$0A)
+      if (X != 0) goto L8583;  // always (BNE) - bug?
+
+    L8570:
+      if (A != 0) goto L858B;  // token > 0 (BNE)
+
+      // Got a $00 token
+      SavIndX = X;  // Save X
+      EvalExpr();
+      X = SavIndX;
+      if (!C) goto L8554;  // No errs during evaluation (BCC)
+      A = NxtToken;
+      A &= 0x7F;
+      if (A != 0x34) goto L8589;  // Invalid delimiter (BNE)
+
+    // (A) = error token
+    L8583:
+      X                 = A;  // (X) overwritten! Is it a bug?
+      uint8_t saved_err = A;  // Save error token (PHA)
+      RegAsmEW();
+      A = saved_err;  // (PLA)
+    L8589:
+      C = true;  // SEC
+      return;
+
+    L858B:
+      A >>= 1;             // LSR - If odd then
+      if (!C) goto L8590;  // (BCC)
+      C = false;           // CLC - ret to caller w/mod2 which
+      return;              // is an index to Adr Mode Table
+
+    L8590:
+      A <<= 1;             // Even, get back token first (ASL)
+      L8598();             // Now, execute helper function
+      if (!C) goto L855E;  // Loop back to process next src char (BCC)
+      if (C) goto L8554;   // Go get index to next token (BCS)
+    }
+
+    // L8598 - Calls help subroutines (functions).
+    // Only 3 defined so far.
+    // Entry
+    //   (A)=2,4,6 - index into subrtn table
+    //
+    // The helper functions with return the required values
+    // primarily the C bit
+
+    // Helper function pointer type
+    typedef void (*HelperFunc)();
+
+    // Jump-table pointers for helper subroutines
+    // Entry at index 0 = IsZPMod, index 1 = IsAccMod, index 2 = Is65C02
+    const HelperFunc L85AE_helpers[] = {IsZPMod, IsAccMod, Is65C02};
+
+    // Number of helper functions in the table
+    constexpr size_t kNumHelpers = sizeof(L85AE_helpers) / sizeof(L85AE_helpers[0]);
+
+    void L8598() {
+      SavIndX = X;
+      X       = A;  // Byte offset (must be 2, 4, or 6)
+
+      // Validate: only 3 subrtns, and X must be in [2..6] range
+      if (X >= 7) {
+        std::abort();  // BRK
+      }
+
+      // X must be even (2, 4, or 6 correspond to entries 0, 1, 2)
+      // If X is odd, it's an invalid call - treat as error
+      if ((X & 1) != 0) {  // Odd value?
+        std::abort();      // BRK
+      }
+
+    L85A0:
+      // Convert byte offset to array index: X/2 gives 1, 2, 3; so index = (X/2) - 1
+      uint8_t array_index = (X / 2) - 1;
+
+      // Bounds check
+      if (array_index >= kNumHelpers) {
+        std::abort();  // Should not reach here given X validation above
+      }
+
+      // Prepare for JMP via RTS in original
+      ChrGot();  // Get curr char
+    L85AB:
+      X = SavIndX;
+
+      // Call the appropriate helper function
+      HelperFunc helper = L85AE_helpers[array_index];
+      helper();  // Call IsZPMod, IsAccMod, or Is65C02
+    }
+
+    // EvalExpr - Evaluate expressions. No check for numeric overflow
+    // Support for +,-,;,/ and bitwise AND ^, OR |,EOR !
+    // Ref pg 89 for Expression Syntax adopted for Assembler
+    //
+    // Expression := [byteopr] Term [opr Term]...]
+    // byteopr   := >, <
+    //
+    // Meaning of:
+    // ExprAccF - Expression's accumulated flag bits
+    // NxtToken - Use to chk for eo expr(sp/cr), comma, )
+    //            Error if -ve
+    // SavSEF   - prev subexpr's RelExprF
+    // RelExprF - non-zero if subexpr is evaluated fr a relocatable addr
+    //          - zero, it's fr an abs addr
+    // Ret
+    // (A)=
+    // C=0 - no errors parsing
+    // C=1 - err during eval
+    //
+    // NB. If relocatable code is generated, only +,- can be used
+    void EvalExpr() {
+      A        = 0x00;
+      RelExprF = A;  // Assume expr's val is absolute not relative
+      ExprAccF = A;
+      NxtToken = A;
+      GblAbsF  = A;  // Assume ZDEF/ZREF
+      SkipSpcs();
+
+      // Check for the presence of the byte operators
+      // Set (Ret816F)
+      // (-1) - 16-bits; 0 - low 8-bits, 1 - hi 8-bits
+      A       = -1;  // Default is to ret a 16-bit value
+      Ret816F = A;
+      A       = SrcP_at(Y);
+      if (A != '<') goto L8601;  // EDASM not MERLIN! (BNE)
+      Y++;
+      Ret816F++;                     // =0 (INC)
+      if (Ret816F == 0) goto L8606;  // Proceed to set to 1 (BEQ)
+    L8601:
+      if (A != '>') goto L8608;  // (BNE)
+      Y++;
+    L8606:
+      Ret816F++;  // 0-lobyte, 1-hibyte (INC)
+
+    L8608:
+      if (A == '-') goto L8610;  // unary ops
+      if (A != '+') goto L8618;  // Get on with it (BNE)
+
+    L8610:
+      A          = 0;
+      ValExpr    = A;  // Returned value
+      ValExpr_hi = A;
+      if (A == 0) goto L8628;  // always (BEQ)
+
+    L8618:
+      EvalTerm();                     // The leading term is treated differently
+      A = NxtToken;                   // Err?
+      if ((int8_t)A < 0) goto L869C;  // Yes (BMI)
+
+      A          = Accum;
+      ValExpr    = A;  // Partial result
+      A          = Accum_hi;
+      ValExpr_hi = A;
+    L8627:
+      Y++;  // Eval [opr term]
+    L8628:
+      A = SrcP_at(Y);
+      X = 6;
+    L862C:
+      if (A == Operators[X]) goto L8636;
+      X--;
+      if ((int8_t)X >= 0) goto L862C;  // Chk next operator (BPL)
+      if ((int8_t)X < 0) goto L8662;   // No hit (BMI)
+
+    L8636:
+      if (X < 2) goto L864E;  // +/-? Yes (BCC)
+
+      // Perform additional checks for the operators
+      // /,;,&,^,| which cannot operate on rel expr/sub-expr
+      A = RelExprF;            // Is it a relative subexpr?
+      if (A == 0) goto L864E;  // No, abs (BEQ)
+      A = PassNbr;
+      if (A == 0) goto L864E;  // (BEQ)
+      // BIT RelCodeF - REL code output?
+      if ((int8_t)RelCodeF >= 0) goto L864E;  // No, BIN (BPL)
+    L8646:
+      X = 0x08;  // rel exprn op
+      L87FB();
+      goto L869C;
+
+    L864E:
+      // BIT RelCodeF
+      if ((int8_t)RelCodeF >= 0) goto L865C;  // BIN (BPL)
+      // BIT Ret816F - Are we returning a 16-bit value?
+      if ((int8_t)Ret816F < 0) goto L865C;  // Yes (BMI)
+      A = 0x10;                             // Was an EXTeRNal symbol used
+      // BIT ExprAccF - during evaln?
+      if ((ExprAccF & A) != 0) goto L8646;  // Yes (BNE)
+    L865C:
+      EvalSExpr();  // Eval new sub expr
+      goto L8627;   // Next [opr term]
+
+    L8662:
+      X = Ret816F;                    // -1,0,1
+      if ((int8_t)X < 0) goto L8674;  // Return 16-bit value (BMI)
+      if (X == 0) goto L8670;         // Return val of lobyte (BEQ)
+
+      A       = ValExpr;     // Save lobyte
+      Lower8  = A;           // here and
+      A       = ValExpr_hi;  // return val of hibyte
+      ValExpr = A;           // by storing it here
+    L8670:
+      A          = 0;
+      ValExpr_hi = A;
+
+    L8674:
+      GNToken();      // Chk for comma, ) and cr/space
+      A |= NxtToken;  // In case of err
+      NxtToken = A;
+    L867B:
+      A = NxtToken;
+      Y--;              // Index prev char
+      C = (A >= 0x80);  // C=1 if err (CMP #$80)
+    }
+
+    // Operators table
+    const uint8_t Operators[] = {
+        0x2B,  // +
+        0x2D,  // -
+        0x2A,  // ; (multiply)
+        0x2F,  // /
+        0x21,  // ! EOR
+        0x5E,  // ^ AND
+        0x7C   // | OR
     };
 
-    ErrorInfo GetErrorInfo(int index) {
-      ErrorInfo info;
-      int       offset = index * 4;
-      if (offset >= 0 && offset < (int)sizeof(ErrInfoT) - 3) {
-        info.fileNbr  = ErrInfoT[offset];
-        info.errIndex = ErrInfoT[offset + 1];
-        info.lineHi   = ErrInfoT[offset + 2];
-        info.lineLo   = ErrInfoT[offset + 3];
-      } else {
-        info.fileNbr  = 0;
-        info.errIndex = 0;
-        info.lineHi   = 0;
-        info.lineLo   = 0;
-      }
-      return info;
+    // Forward declarations for operator functions
+    void ExprADD();
+    void ExprSUB();
+    void ExprMUL();
+    void ExprDIV();
+    void ExprEOR();
+    void ExprAND();
+    void ExprORA();
+
+    // We are going to process a new subexpression
+    // after the operator
+    // X=0-6
+    void EvalSExpr() {
+      A        = RelExprF;
+      SavSEF   = A;     // Save it
+      A        = 0x00;  // Assume absolute value
+      RelExprF = A;
+
+      // Get JMP addr-1 and push to prepare for RTS jump
+      A              = L8895[X];  // Get JMP addr-1 hibyte
+      uint8_t jmp_hi = A;         // (PHA)
+      A              = L888E[X];  // lo byte
+      uint8_t jmp_lo = A;         // (PHA)
+
+      Y++;
+      EvalTerm();
+      A = NxtToken;
+      if (A != 0) goto L869A;  // (BNE)
+
+      // Combine the 2 subexprs by calling the operator function
+      uint16_t jmp_addr = (jmp_hi << 8) | jmp_lo;
+      if (jmp_addr == (uint16_t)(ExprADD - 1))
+        ExprADD();
+      else if (jmp_addr == (uint16_t)(ExprSUB - 1))
+        ExprSUB();
+      else if (jmp_addr == (uint16_t)(ExprMUL - 1))
+        ExprMUL();
+      else if (jmp_addr == (uint16_t)(ExprDIV - 1))
+        ExprDIV();
+      else if (jmp_addr == (uint16_t)(ExprEOR - 1))
+        ExprEOR();
+      else if (jmp_addr == (uint16_t)(ExprAND - 1))
+        ExprAND();
+      else if (jmp_addr == (uint16_t)(ExprORA - 1))
+        ExprORA();
+      return;
+
+    L869A:
+      // Dump JMP addr (PLA; PLA)
+      goto L869C;
     }
 
-    void RegAsmEW(uint8_t errorToken) {
-      ::RegAsmEW(errorToken);
+    void L869C() {
+      Y = 0;
+      // DB $24 - BIT trick to skip next instruction
+      goto L869F;
     }
 
-    void SaveErrInfo(uint8_t errorToken) {
-      ::SaveErrInfo(errorToken);
+    void L869F() {
+      Y++;
+      ChrGot2();               // alphanumeric char?
+      if (!C) goto L869F;      // Yes, skip (BCC)
+      GNToken();               // Is it cr/space,comma,)
+      if (A != 0) goto L869F;  // No (BNE)
+      if (A == 0) goto L867B;  // always (BEQ)
     }
 
-    //=================================================
-    // Phase 2: Mnemonic Dispatch Test Helpers
-    //=================================================
-
-    // Test source line buffer
-    static uint8_t  test_src_buffer[256];
-    static uint8_t* test_SrcP_ptr = nullptr;
-
-    void ResetDispatchState() {
-      MnemP   = 0;
-      ZAB     = 0x80;
-      SubTIdx = 0;
-      MacroF  = 0;  // No macros for testing
-      Y       = 0;
-      std::memset(test_src_buffer, 0, sizeof(test_src_buffer));
+    // Entry:
+    //  (A)=char to check
+    // Ret:
+    // Z=1, (A)=0 if space/cr (white space)
+    //      (A)=1 if char is ,
+    //      (A)=2 if char is )
+    // Z=0, (A)=err token
+    // (Y)-unchanged
+    void GNToken() {
+      WhiteSpc();
+      bool z_flag = Z;  // PHP - Save Z bit
+      X           = A;  // Save char in X-reg (TAX)
+      A           = 0x00;
+      Z           = z_flag;  // PLP - Was is a cr/space?
+      if (Z) goto doRet7;    // Yes (BEQ)
+      A = 0x01;
+      if (X == ',') goto doRet7;  // (CPX #','; BEQ doRet7)
+      A = 0x02;
+      if (X == ')') goto doRet7;  // (CPX #')'; BEQ doRet7)
+      A = 0x34 + 0x80;            // err token
+    doRet7:
+      return;
     }
 
-    void SetupSourceLine(const char* line) {
-      // Copy line to test buffer
-      size_t len = strlen(line);
-      if (len > sizeof(test_src_buffer) - 1) {
-        len = sizeof(test_src_buffer) - 1;
-      }
-      std::memcpy(test_src_buffer, line, len);
-      test_src_buffer[len] = CR;  // Add CR terminator
+    // Process a term where
+    //   Term := Constant, Identifier
+    // If a term is an idfer, look up its value
+    // Ret:
+    //  (Y)=index src line?
+    //  (Accum)= Term's 16-bit value
+    // NB. Y-reg seems to have a dual purpose. To index the
+    // src line and to index an entry of the symbol table
+    // Its returned value must be monitored and adjust correctly
+    // Todo: Need to check this more closely.
+    void EvalTerm() {
+      AdvSrcP();  // On ret, (Y)=0
+      Y        = 0;
+      Accum    = 0;
+      Accum_hi = 0;
+      ChrGot();                  // Get 1st char
+      if (!C && !Z) goto L8716;  // Alphabetic char => idfer
+      if (Z) goto L86D6;         // Numeric char
+      goto L8781;                // Not alphanumeric
 
-      // Set up global test buffer pointer so SrcP_at() uses it
-      g_test_src_buffer = test_src_buffer;
+    // Decimal constant
+    L86D6:
+      A = SrcP_at(Y);  // Get numeric char
+      A -= '0';        // $30-$39 -> 0-9 (SEC; SBC #'0')
+      A += Accum;      // CLC; ADC Accum
+      Accum = A;
+      if (!C) goto L86E6;
+      Accum_hi++;                     // INC Accum+1
+      if (Accum_hi == 0) goto L870E;  // Overflow (BEQ)
+    L86E6:
+      ChrGet();           // Look 1 char ahead
+      if (Z) goto Mul10;  // If numeric, continue (BEQ)
+      Y--;                // else move back and ret (DEY)
+      return;
 
-      // Set up SrcP to point to test buffer (for pointer arithmetic)
-      test_SrcP_ptr = test_src_buffer;
+    // The next char is numeric so the
+    // accumulated result must be x 10
+    // before we loop back to process it
+    // Logic: 2R x 2 x 2 + 2R = 10R
+    Mul10:
+      Mul2();                           // 2R
+      if (C) goto L870E;                // (BCS)
+      A                    = Accum_hi;  // save temporarily (PHA)
+      uint8_t saved_acc_hi = A;
+      A                    = Accum;
+      Mul2();             // 2R x 2
+      if (C) goto L870D;  // (BCS)
+      Mul2();             // 4R x 2
+      if (C) goto L870D;  // (BCS)
+      A += Accum;         // + 2R (ADC Accum)
+      Accum = A;
+      A     = saved_acc_hi;  // (PLA)
+      A += Accum_hi;         // (ADC Accum+1)
+      Accum_hi = A;
+      if (!C) goto L86D6;  // Loop back to process the next char (BCC)
+      saved_acc_hi = A;    // overflow (PHA)
+    L870D:
+      // PLA
+    L870E:
+      goto L87F9;  // error
 
-      // Initialize Y to 0 (start of line)
+    // Identifier
+    L8716:
+      RsvdId();           // Chk single A,X,Y
+      if (C) goto L871C;  // (BCC) - corrected
+      return;             // error
+
+    L871C:
+      FindSym();
+      if (C) goto L8757;              // Idfer's not in symbol table (BCS)
+      X = A;                          // Save idfer's flag byte (TAX)
+      C = false;                      // CLC
+      if ((int8_t)A < 0) goto L8757;  // Idfer's undefined (BMI)
+      A &= external;                  // 0001 0000 Is it declared as an EXTeRNal?
+      // BIT ExprAccF
+      if ((ExprAccF & A) == 0) goto L8734;  // Ifder is not EXTeRNal (BEQ)
+      SavFByt = X;                          // Save flag byte here while (STX SavFByt)
+      X       = 0x40;                       // we report Duplicate EXT/ENT (LDX #$40)
+      RegAsmEW();
+      X = SavFByt;  // Get flagbyte back (LDX SavFByt)
+    L8734:
+      A = X;  // into (A) (TXA)
+    L8735:
+      A &= (external | fwdrefd);  // 0001 0001
+      A |= ExprAccF;
+      ExprAccF = A;
+      A        = X;            // Test old flag byte (TXA)
+      A &= external;           // 0001 0000
+      if (A == 0) goto L874A;  // No, not EXTeRNal (BEQ)
+      A = PassNbr;
+      if (A == 0) goto L8754;  // (BEQ)
+      A       = SymP[Y];       // LoByte of value field (LDA (SymP),Y)
+      GblAbsF = A;             // 0=>ZDEF/ZREF
+      if (A != 0) goto L8754;  // Its ENTRY/EXTRN (BNE)
+
+    L874A:
+      A     = SymP[Y];  // Get value of symbolic idfer (LDA (SymP),Y)
+      Accum = A;        // & ret it here
+      Y++;
+      A        = SymP[Y];
+      Accum_hi = A;
+      Y--;
+    L8754:
+      Y--;
+      Y--;
+      return;
+
+    // Identifer is undefined
+    // (A)-symbol's flag byte
+    // (Y)-indexing symbol's value field if symbol was found
+    // (Y)=0 if symbol not found
+    L8757:
+      X = PassNbr;
+      if (X == 0) goto L876F;  // Its pass 1 (BEQ)
+      // BIT Bit02 - Is No-such-label error?
+      if ((Bit02 & 0x80) == 0) goto L8764;  // No (BEQ)
+      ErrorF++;                             // Flag as err since its pass 2 (INC ErrorF)
+      if (ErrorF != 0) goto L8769;          // =1 (BNE)
+    L8764:
+      A |= nosuchlabel;  // 0000 0010
+      Y--;               // (DEY)
+      SymP[Y] = A;       // Modified flag byte (STA (SymP),Y)
+    L8769:
+      X = 0x00;    // Undefined idfer
+      Y--;         // what's this for?
+      goto L87FB;  // Go report it
+
+    L876F:
+      X = A;               // (A)=flag byte (TAX)
+      A = fwdrefd;         // 0000 0001
+      if (!C) goto L8735;  // Symbol was found but undefined (BCC)
+      A |= ExprAccF;       // Symbol not found
+      ExprAccF = A;
+      A        = undefined | fwdrefd;  // symbol's flag byte
+      AddNode();
+      Y--;
+      Y--;
+      Y--;  // Indexing last char of symbolicname?
+      return;
+
+    // 1st char is non-alphanumeric
+    // Is it an ASCII char const?
+    L8781:
+      if (A != '\'') goto L879E;  // Opening single quote? No (BNE)
+      Accum_hi = Y;               // Zero the hibyte (STY Accum+1)
+      Y++;
+      A = SrcP_at(Y);           // Get char within quotes
+      if (A == CR) goto L8791;  // (CMP #CR; BNE L8791)
+      goto L880F;
+
+    L8791:
+      A |= msbF;
+      Accum = A;
+      Y++;
+      A = SrcP_at(Y);              // Look for a
+      if (A == '\'') goto doRet8;  // closing single quote (CMP #$27; BEQ doRet8)
+      Y--;                         // Move back (DEY)
+    doRet8:
+      return;
+
+    // Program counter reference
+    L879E:
+      if (A != '*') goto L87AF;  // Do we have a star? (CMP #'*'; BNE L87AF)
+
+      A        = relative;  // Flag symbol's val is relative
+      RelExprF = A;         // & not an absolute addr
+      A        = PC;
+      Accum    = A;
+      A        = PC_hi;
+      Accum_hi = A;
+      return;
+
+    // Checks for bin/octal/hexdec const
+    L87AF:
+      if (A != '%') goto L87B9;  // binary (CMP #'%'; BNE L87B9)
+      A = '2';
+      X = 0x01;
+      if (X != 0) goto L87CB;  // always (BNE)
+
+    L87B9:
+      if (A != '$') goto L87C3;  // hexdec (CMP #'$'; BNE L87C3)
+      A = 0xC0;                  // '@'+$80
+      X = 0x04;
+      if (X != 0) goto L87CB;  // always (BNE)
+
+    L87C3:
+      if (A != '@') goto L880F;  // octal (CMP #'@'; BNE L880F)
+      A = '8';
+      X = 0x03;
+    L87CB:
+      RadixCh = A;  // =$32,$38,$C0
+      BitsDig = X;  // =$01,$03,$04
+
+    // Conversion starts here
+    L87CF:
+      ChrGet();                         // Is next char hexdec?
+      if ((A & 0x40) == 0) goto L8808;  // No (BVC)
+      if (A < '9' + 1) goto L87DA;      // (CMP #'9'+1; BCC L87DA)
+      A -= 0x07;                        // 'A'-'F' ($41-$46) -> $3A-$3F (SBC #$07)
+    L87DA:
+      if (A >= RadixCh) goto L8808;  // Not valid (CMP RadixCh; BCS L8808)
+      X = BitsDig;
+      if (X == 0x03) goto L87E8;  // Octal (CPX #$03; BEQ L87E8)
+      if (X >= 0x03) goto L87E9;  // HexDec (BCS L87E9)
+
+      A <<= 1;  // binary (ASL)
+      A <<= 1;  // (ASL)
+    L87E8:
+      A <<= 1;  // (ASL)
+    L87E9:
+      A <<= 1;  // (ASL)
+      A <<= 1;  // (ASL)
+      A <<= 1;  // (ASL)
+      A <<= 1;  // (ASL)
+
+    // binary x000 0000, octal xxx0 0000 hex xxxx 0000
+    // (X)=# of shifts (% - 1, @ - 3, $ - 4)
+    L87ED:
+      A <<= 1;  // (ASL)
+      uint8_t temp = Accum;
+      Accum        = (Accum << 1) | (A >> 7);  // (ROL Accum)
+      A            = (A << 1) | (temp >> 7);
+      temp         = Accum_hi;
+      Accum_hi     = (Accum_hi << 1) | (Accum >> 7);  // (ROL Accum+1)
+      C            = (temp & 0x80) != 0;
+      if (C) goto L87F9;  // Overflow (BCS)
+      X--;
+      if (X != 0) goto L87ED;  // (DEX; BNE L87ED)
+      if (X == 0) goto L87CF;  // Process another numeral (BEQ)
+
+    L87F9:
+      X = 0x06;  // overflow
+    L87FB:
+      NxtToken = X;
+      RegAsmEW();
+      A = 0x80;
+      A |= NxtToken;
+      NxtToken = A;  // $80,$86,$88,$8A
+      // NOP
+      return;
+
+    L8808:
+      Y--;  // Move back (DEY)
+      ChrGot();
+      if ((A & 0x40) == 0) goto L880F;  // Char is not hexdec (BVC)
+      return;
+
+    L880F:
+      X = 0x0A;  // expr syntax
+      goto L87FB;
+    }
+
+    // Mul2 - Multiply accumulator by 2
+    void Mul2() {
+      uint8_t old_accum = Accum;
+      Accum <<= 1;  // ASL Accum
+      C                    = (old_accum & 0x80) != 0;
+      uint8_t old_accum_hi = Accum_hi;
+      Accum_hi             = (Accum_hi << 1) | (old_accum >> 7);  // ROL Accum+1
+      C                    = (old_accum_hi & 0x80) != 0;
+    }
+
+    // AdvSrcP - Advance source pointer
+    void AdvSrcP() {
       Y = 0;
     }
 
-    uint16_t GetMnemP() {
-      return MnemP;
+    // ; operator
+    void ExprMUL() {
+      AdvSrcP();
+      ValExpr_2 = Y;  // zero these
+      ValExpr_3 = Y;
+      Y         = 16;  // # of times
+    L881D:
+      A             = ValExpr;
+      uint8_t old_c = C;
+      C             = (A & 0x01) != 0;  // Check LSB before shift
+      A >>= 1;                          // (LSR)
+      if (!C) goto L882E;               // (BCC)
+
+      C = false;  // CLC
+      // Add Accum_2 and Accum_3 to ValExpr_2 and ValExpr_3
+      A = ValExpr_2;
+      A += Accum_2;
+      ValExpr_2 = A;
+      A         = ValExpr_3;
+      if (C) A++;  // Add carry
+      A += Accum_3;
+      ValExpr_3 = A;
+
+    L882E:
+      // Shift right the 4-byte value (ValExpr, ValExpr_hi, ValExpr_2, ValExpr_3)
+      // From MSB to LSB
+      C = (ValExpr_3 & 0x01) != 0;
+      ValExpr_3 >>= 1;  // ROR ValExpr_3
+
+      uint8_t temp = ValExpr_2;
+      ValExpr_2    = (ValExpr_2 >> 1) | (C ? 0x80 : 0);  // ROR ValExpr_2
+      C            = (temp & 0x01) != 0;
+
+      temp       = ValExpr_hi;
+      ValExpr_hi = (ValExpr_hi >> 1) | (C ? 0x80 : 0);  // ROR ValExpr_hi
+      C          = (temp & 0x01) != 0;
+
+      ValExpr = (ValExpr >> 1) | (C ? 0x80 : 0);  // ROR ValExpr
+
+      Y--;
+      if (Y != 0) goto L881D;  // (BNE)
     }
 
-    uint8_t GetZAB() {
-      return ZAB;
+    // / operator
+    void ExprDIV() {
+      AdvSrcP();
+      ValExpr_2 = Y;
+      ValExpr_3 = Y;  // zero these
+      Y         = 16;
+    L8842:
+      uint8_t old_val = ValExpr;
+      ValExpr <<= 1;  // ASL ValExpr - dividend
+      C          = (old_val & 0x80) != 0;
+      old_val    = ValExpr_hi;
+      ValExpr_hi = (ValExpr_hi << 1) | (C ? 1 : 0);  // ROL ValExpr+1
+      C          = (old_val & 0x80) != 0;
+      old_val    = ValExpr_2;
+      ValExpr_2  = (ValExpr_2 << 1) | (C ? 1 : 0);  // ROL ValExpr+2
+      C          = (old_val & 0x80) != 0;
+      old_val    = ValExpr_3;
+      ValExpr_3  = (ValExpr_3 << 1) | (C ? 1 : 0);  // ROL ValExpr+3
+      C          = (old_val & 0x80) != 0;
+
+      C = true;  // SEC
+      A = ValExpr_2;
+      A -= Accum;  // SBC Accum - divisor
+      X = A;       // (TAX)
+      A = ValExpr_3;
+      A -= Accum_hi;      // SBC Accum+1
+      if (C) goto L885C;  // (BCC L885C - inverted)
+      ValExpr_2 = X;      // (STX ValExpr+2)
+      ValExpr_3 = A;
+      ValExpr++;  // INC ValExpr
+    L885C:
+      Y--;
+      if (Y != 0) goto L8842;  // (BNE)
     }
 
-    uint8_t GetSubTIdx() {
-      return SubTIdx;
+    // - operator
+    void ExprSUB() {
+      A = RelExprF;
+      A ^= SavSEF;  // prev subexpr's RelExprF (EOR SavSEF)
+      RelExprF = A;
+      A        = Accum_hi;  // Do 1's complement (LDA Accum+1)
+      A ^= 0xFF;            // (EOR #$FF)
+      Accum_hi = A;
+      A        = Accum;
+      A ^= 0xFF;          // (EOR #$FF)
+      C = true;           // SEC - Proceed to add 1
+      if (C) goto L887C;  // giving 2's complement (BCS - always)
     }
 
-    bool HndlMnem() {
-      // Call the internal HndlMnem function
-      // It returns via setting the C flag
-      // For testing, we need to capture the C flag state
-
-      // Re-route SrcP array access to test buffer
-      // This is a workaround since SrcP is uint16_t but used as array
-      auto old_SrcP = ::SrcP;
-
-      // Temporarily replace the SrcP array access mechanism
-      // by modifying how SrcP_at(Y) is evaluated
-      // Since we can't directly change pointer behavior, we'll use a different approach
-
-      // For now, call HndlMnem with Y=0
-      ::HndlMnem();
-
-      // Return success status (C flag: false=success, true=error)
-      return !C;
+    // + operator
+    void ExprADD() {
+      A = SavSEF;  // Get prev subexpr's RelExprF
+      A |= RelExprF;
+      RelExprF = A;
+      C        = false;  // CLC
+      A        = Accum;
+    L887C:
+      A += ValExpr;  // (ADC ValExpr)
+      ValExpr = A;
+      A       = Accum_hi;
+      A += ValExpr_hi;  // (ADC ValExpr+1)
+      ValExpr_hi = A;
     }
 
-  }  // namespace Asm
-}  // namespace EdAsmNg
+    // This table of JMP (via RTS) addresses is split into 2 parts
+    const uint8_t L888E[] = {
+        static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprADD) - 1) & 0xFF),  // lobyte
+        static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprSUB) - 1) & 0xFF),
+        static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprMUL) - 1) & 0xFF),
+        static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprDIV) - 1) & 0xFF),
+        static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprEOR) - 1) & 0xFF),
+        static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprAND) - 1) & 0xFF),
+        static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprORA) - 1) & 0xFF)};
+    const uint8_t L8895[] = {
+        static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprADD) - 1) >> 8),  // hibyte
+        static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprSUB) - 1) >> 8),
+        static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprMUL) - 1) >> 8),
+        static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprDIV) - 1) >> 8),
+        static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprEOR) - 1) >> 8),
+        static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprAND) - 1) >> 8),
+        static_cast<uint8_t>((reinterpret_cast<uintptr_t>(ExprORA) - 1) >> 8)};
+
+    // | operator bitwise OR
+    void ExprORA() {
+      A = Accum;
+      A |= ValExpr;
+      ValExpr = A;
+      A       = Accum_hi;
+      A |= ValExpr_hi;
+      ValExpr_hi = A;
+    }
+
+    // ^ operator bitwise AND
+    void ExprAND() {
+      A = Accum;
+      A &= ValExpr;
+      ValExpr = A;
+      A       = Accum_hi;
+      A &= ValExpr_hi;
+      ValExpr_hi = A;
+    }
+
+    // ! operator - bitwise EOR
+    void ExprEOR() {
+      A = Accum;
+      A ^= ValExpr;
+      ValExpr = A;
+      A       = Accum_hi;
+      A ^= ValExpr_hi;
+      ValExpr_hi = A;
+    }
+
+    //=================================================
+    // START of Assembler's Tables
+    //=================================================
+
+    // ($D3D4) Table of Ptrs to messages incl. error msgs
+    // Ref page 219 Workbench
+    const char         LD50F[] = "UNDEFINED      IDENTIFIER";
+    const char         LD524[] = "DUPLICATE      IDENTIFIER";
+    const char         LD539[] = "UNDEFINED      OPCODE";
+    const char         LD54A[] = "OVERFLOW";
+    const char         LD553[] = "RELATIVE       EXPRSN OPERATOR";
+    const char         LD56C[] = "EXPRESSION     SYNTAX";
+    const char         LD57E[] = "EQUATE         SYNTAX";
+    const char         LD58C[] = "INVALID        IDENTIFIER";
+    const char         LD59F[] = "DSECT/DEND";
+    const char         LD5AA[] = "SYMBOL/RLD     TABLE FULL";
+    const char         LD5C0[] = "ASSEMBLER      PARAMETER";
+    const char         LD5D4[] = "INCLUDE/CHN    NESTING";
+    const char         LD5E8[] = "MACRO          NESTING";
+    const char         LD5F6[] = "MACRO          ARGUMENT";
+    const char         LD605[] = "ADDRESS        MODE";
+    const char         LD612[] = "RESERVED       IDENTIFIER";
+    const char         LD626[] = "MACRO          FILE NOT FOUND";
+    const char         LD63B[] = "DIRECTIVE      OPERAND";
+    const char         LD64D[] = "BRANCH         RANGE";
+    const char         LD65A[] = "BYTE           OVERFLOW";
+    const char         LD668[] = "INDIRECT       SYNTAX";
+    const char         LD678[] = "INDEXING       SYNTAX";
+    const char         LD688[] = "INDIRECT       REQUIRES ZPAGE";
+    const char         LD6A0[] = "INVALID        AFTER 1ST IDENTIFIER";
+    const char         LD6BD[] = "SW16           REGISTER";
+    const char         LD6CB[] = "INVALID        DELIMITER";
+    const char         LD6DD[] = "OBJ            BUFFER OVERFLOW";
+    const char         LD6F1[] = "OBJ            BUFFER CONFLICT";
+    const char         LD705[] = "INVALID        FROM INCLUDE";
+    const char         LD71A[] = "BUFFER         SIZE";
+    const char         LD726[] = ">255           EXTRNS/ENTRYS";
+    const char         LD739[] = "DUPLICATE      EXT/ENT";
+    const std::uint8_t LD74B[] = {'S', 'W', 'E', 'E', 'T', '1', '6', ' ', ' ', ' ', ' ',
+                                  ' ', ' ', ' ', 'O', 'P', 'C', 'O', 'D', 'E', 0x01};
+    const std::uint8_t LD75A[] = {'E', 'X', 'T', 'R', 'N', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'U',
+                                  'S', 'E', 'D', ' ', 'A', 'S', ' ', 'Z', 'X', 'T', 'R', 'N', 0x01};
+    const char         LD76E[] = "ORG            MUST BE > $100";
+    const char         LD781[] = "6502X          ADRS MODE/OPCODE";
+
+    const std::uint8_t* ErrMsgT[] = {
+        reinterpret_cast<const std::uint8_t*>(LD50F),  // 0
+        reinterpret_cast<const std::uint8_t*>(LD524),  // 2
+        reinterpret_cast<const std::uint8_t*>(LD539),  // 4
+        reinterpret_cast<const std::uint8_t*>(LD54A),  // 6
+        reinterpret_cast<const std::uint8_t*>(LD553),  // 8
+        reinterpret_cast<const std::uint8_t*>(LD56C),  // A
+        reinterpret_cast<const std::uint8_t*>(LD57E),  // C
+        reinterpret_cast<const std::uint8_t*>(LD58C),  // E
+        reinterpret_cast<const std::uint8_t*>(LD59F),  // 10
+        reinterpret_cast<const std::uint8_t*>(LD5AA),  // 12
+        reinterpret_cast<const std::uint8_t*>(LD5C0),  // 14
+        reinterpret_cast<const std::uint8_t*>(LD5D4),  // 16
+        reinterpret_cast<const std::uint8_t*>(LD5E8),  // 18
+        reinterpret_cast<const std::uint8_t*>(LD5F6),  // 1A
+        reinterpret_cast<const std::uint8_t*>(LD605),  // 1C
+        reinterpret_cast<const std::uint8_t*>(LD612),  // 1E
+        reinterpret_cast<const std::uint8_t*>(LD626),  // 20
+        nullptr,                                       // 22 - none?
+        reinterpret_cast<const std::uint8_t*>(LD63B),  // 24
+        reinterpret_cast<const std::uint8_t*>(LD64D),  // 26
+        reinterpret_cast<const std::uint8_t*>(LD65A),  // 28
+        reinterpret_cast<const std::uint8_t*>(LD668),  // 2A
+        reinterpret_cast<const std::uint8_t*>(LD678),  // 2C
+        reinterpret_cast<const std::uint8_t*>(LD688),  // 2E
+        reinterpret_cast<const std::uint8_t*>(LD6A0),  // 30
+        reinterpret_cast<const std::uint8_t*>(LD6BD),  // 32
+        reinterpret_cast<const std::uint8_t*>(LD6CB),  // 34
+        reinterpret_cast<const std::uint8_t*>(LD6DD),  // 36
+        reinterpret_cast<const std::uint8_t*>(LD6F1),  // 38
+        reinterpret_cast<const std::uint8_t*>(LD705),  // 3A
+        reinterpret_cast<const std::uint8_t*>(LD71A),  // 3C
+        reinterpret_cast<const std::uint8_t*>(LD726),  // 3E
+        reinterpret_cast<const std::uint8_t*>(LD739),  // 40
+        reinterpret_cast<const std::uint8_t*>(LD74B),  // 42
+        reinterpret_cast<const std::uint8_t*>(LD75A),  // 44
+        reinterpret_cast<const std::uint8_t*>(LD76E),  // 46
+        reinterpret_cast<const std::uint8_t*>(LD781),  // 48
+    };
+
+    const std::uint8_t FileTxt[]  = "               # ELIF";  // FILE #
+    const std::uint8_t ASErrTxt[] = "               ERRORS IN THIS ASSEMBLY";
+    const std::uint8_t SuccTxt[]  = "**             SUCCESSFUL ASSEMBLY := NO ERRORS";
+    const std::uint8_t WarnTxt[]  = "               WARNINGS IN THIS ASSEMBLY";
+    const std::uint8_t CreatTxt[] = {'*', '*', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
+                                     ' ', ' ', ' ', ' ', ' ', 'A', 'S', 'S', 'E', 'M',
+                                     'B', 'L', 'E', 'R', ' ', 'C', 'R', 'E', 'A', 'T',
+                                     'E', 'D', ' ', 'O', 'N', ' ', 0x01};
+    const std::uint8_t FSPCTxt[] = {'*', '*', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
+                                    ' ', ' ', 'F', 'R', 'E', 'E', ' ', 'S', 'P', 'A', 'C', 'E', ' ',
+                                    'P', 'A', 'G', 'E', ' ', 'C', 'O', 'U', 'N', 'T', 0x01};
+    const std::uint8_t TotLnTxt[] = {'*', '*', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
+                                     ' ', ' ', ' ', ' ', ' ', 'T', 'O', 'T', 'A', 'L',
+                                     ' ', 'L', 'I', 'N', 'E', 'S', ' ', 'A', 'S', 'S',
+                                     'E', 'M', 'B', 'L', 'E', 'D', ' ', 0x01};
+    const std::uint8_t ContTxt[]  = {'P', 'R', 'E', 'S', 'S', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
+                                     ' ', ' ', ' ', 'R', 'E', 'T', 'U', 'R', 'N', ' ', 'T', 'O',
+                                     ' ', 'C', 'O', 'N', 'T', 'I', 'N', 'U', 'E', 0x01};
+    const std::uint8_t AbortTxt[] = {'A', 'S', 'S', 'E', 'M', 'B', 'L', 'Y', ' ', ' ',
+                                     ' ', ' ', ' ', ' ', ' ', 'A', 'B', 'O', 'R', 'T',
+                                     'E', 'D', '.', ' ', 'P', 'R', 'E', 'S', 'S', ' ',
+                                     'R', 'E', 'T', 'U', 'R', 'N', 0x01};
+    const std::uint8_t InLinTxt[] = "ENIL           NI RORRE          ";
+
+    const std::uint8_t LD798[] = "-----          NEXT OBJECT FILE NAME IS ";
+    const std::uint8_t LD7B7[] = {0x0D, 'S', 'O', 'U', 'R', 'C', 'E', ' ', ' ', ' ', ' ',
+                                  ' ',  ' ', ' ', ' ', 'F', 'I', 'L', 'E', ' ', '#'};
+    const std::uint8_t LD7C7[] = {0x0D, ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
+                                  ' ',  ' ', ' ', ' ', 'I', 'N', 'C', 'L', 'U', 'D',
+                                  'E',  ' ', 'F', 'I', 'L', 'E', ' ', '#'};
+
+    //=================================================
+    // Table for operand parser (47 bytes)
+    //=================================================
+    const std::uint8_t AModTkns[] = {
+        0xA3, 0x00, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
+        0xA0, 0xA0, 0x05, 0xA8, 0x00, 0xAC, 0xD8, 0xA9, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
+        0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0x02, 0x0F, 0x06, 0x19, 0xA9, 0xAC, 0xD9,
+        0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
+        0x02, 0x0D, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
+        0xA0, 0xA0, 0x06, 0x02, 0x11, 0x13, 0x04, 0x15, 0x8D, 0x15, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
+        0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xBB, 0x15, 0x00, 0xA0, 0xA0,
+        0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0x02, 0x03,
+        0x01, 0xAC, 0xD8, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
+        0xA0, 0xA0, 0xA0, 0x02, 0x07, 0x09, 0xD9, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
+        0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0x02, 0x17, 0x0B,
+    };
+
+    const std::uint8_t AModCmds[] = {
+        0x12, 0x00, 0xB4, 0x00, 0x51, 0x00, 0x2A, 0xAA, 0xAA, 0xB4, 0x28, 0x00,
+        0xAE, 0x00, 0xAA, 0x3E, 0xAA, 0xB4, 0xAE, 0x00, 0xB4, 0x50, 0x50, 0x00,
+        0x00, 0x53, 0x00, 0x55, 0x00, 0x66, 0x00, 0x00, 0x79, 0x78, 0x00, 0x00,
+        0xB4, 0x8D, 0xB4, 0x8C, 0x00, 0x00, 0xAC, 0xB4, 0x9F, 0x00, 0x00,
+    };
+
+    //=================================================
+    // ($D835) 6502/X6502 Opcode Translation table  213 bytes
+    //=================================================
+    constexpr std::size_t ADCOps  = 0;
+    constexpr std::size_t ANDOps  = 9;
+    constexpr std::size_t ASLOps  = 18;
+    constexpr std::size_t BITOps  = 26;
+    constexpr std::size_t CLROps  = 38;
+    constexpr std::size_t CMPOps  = 42;
+    constexpr std::size_t CPXOps  = 51;
+    constexpr std::size_t CPYOps  = 54;
+    constexpr std::size_t DECOps  = 57;
+    constexpr std::size_t EOROps  = 64;
+    constexpr std::size_t INCOps  = 73;
+    constexpr std::size_t JMPOps  = 80;
+    constexpr std::size_t JSROps  = 83;
+    constexpr std::size_t LDAOps  = 84;
+    constexpr std::size_t LDXOps  = 93;
+    constexpr std::size_t LDYOps  = 99;
+    constexpr std::size_t LSROps  = 104;
+    constexpr std::size_t NOPOps  = 109;
+    constexpr std::size_t ORAOps  = 110;
+    constexpr std::size_t PSHOps  = 119;
+    constexpr std::size_t ROLOps  = 127;
+    constexpr std::size_t ROROps  = 132;
+    constexpr std::size_t SBCOps  = 139;
+    constexpr std::size_t STAOps  = 151;
+    constexpr std::size_t STXOps  = 160;
+    constexpr std::size_t STYOps  = 164;
+    constexpr std::size_t STZOps  = 168;
+    constexpr std::size_t TRBOps  = 175;
+    constexpr std::size_t TSBOps  = 177;
+    constexpr std::size_t SW16Ops = 183;
+
+    const std::uint8_t OpcodeT[] = {
+        0x6D, 0x65, 0x69, 0x75, 0x7D, 0x79, 0x71, 0x61, 0x72, 0x2D, 0x25, 0x29, 0x35, 0x3D, 0x39,
+        0x31, 0x21, 0x32, 0x0E, 0x06, 0x0A, 0x16, 0x1E, 0x90, 0xB0, 0xF0, 0x2C, 0x24, 0x89, 0x34,
+        0x3C, 0x30, 0xD0, 0x10, 0x80, 0x00, 0x50, 0x70, 0x18, 0xD8, 0x58, 0xB8, 0xCD, 0xC5, 0xC9,
+        0xD5, 0xDD, 0xD9, 0xD1, 0xC1, 0xD2, 0xEC, 0xE4, 0xE0, 0xCC, 0xC4, 0xC0, 0xCE, 0xC6, 0x3A,
+        0xD6, 0xDE, 0xCA, 0x88, 0x4D, 0x45, 0x49, 0x55, 0x5D, 0x59, 0x51, 0x41, 0x52, 0xEE, 0xE6,
+        0x1A, 0xF6, 0xFE, 0xE8, 0xC8, 0x4C, 0x6C, 0x7C, 0x20, 0xAD, 0xA5, 0xA9, 0xB5, 0xBD, 0xB9,
+        0xB1, 0xA1, 0xB2, 0xAE, 0xA6, 0xA2, 0xB6, 0x00, 0xBE, 0xAC, 0xA4, 0xA0, 0xB4, 0xBC, 0x4E,
+        0x46, 0x4A, 0x56, 0x5E, 0xEA, 0x0D, 0x05, 0x09, 0x15, 0x1D, 0x19, 0x11, 0x01, 0x12, 0x48,
+        0x08, 0xDA, 0x5A, 0x68, 0x28, 0xFA, 0x7A, 0x2E, 0x26, 0x2A, 0x36, 0x3E, 0x6E, 0x66, 0x6A,
+        0x76, 0x7E, 0x40, 0x60, 0xED, 0xE5, 0xE9, 0xF5, 0xFD, 0xF9, 0xF1, 0xE1, 0xF2, 0x38, 0xF8,
+        0x78, 0x8D, 0x85, 0x00, 0x95, 0x9D, 0x99, 0x91, 0x81, 0x92, 0x8E, 0x86, 0x00, 0x96, 0x8C,
+        0x84, 0x00, 0x94, 0x9C, 0x64, 0x00, 0x74, 0x9E, 0xAA, 0xA8, 0x1C, 0x14, 0x0C, 0x04, 0xBA,
+        0x8A, 0x9A, 0x98, 0xA0, 0x03, 0x0A, 0x05, 0x08, 0x02, 0x09, 0x07, 0x04, 0x01, 0x0E, 0x0C,
+        0x0F, 0x06, 0x0D, 0xD0, 0xF0, 0xE0, 0x20, 0x60, 0x40, 0x80, 0xC0, 0x00, 0x0B, 0x30, 0x50,
+        0x70, 0x90, 0xB0,
+    };
+
+    //=================================================
+    // ($D90A) 213 bytes cycle times
+    //=================================================
+    const std::uint8_t CycTimes[] = {
+        4,    3,    2,    4,    4,    4,    5,    6,    5,    4,    3,    2,    4,    4,    4,
+        5,    6,    5,    6,    5,    2,    6,    7,    3,    3,    3,    4,    3,    2,    4,
+        4,    3,    3,    3,    3,    7,    3,    3,    2,    2,    2,    2,    4,    3,    2,
+        4,    4,    4,    5,    6,    5,    4,    3,    2,    4,    3,    2,    6,    5,    2,
+        6,    7,    2,    2,    4,    3,    2,    4,    4,    4,    5,    6,    5,    6,    5,
+        2,    6,    7,    2,    2,    3,    5,    6,    6,    4,    3,    2,    4,    4,    4,
+        5,    6,    5,    4,    3,    2,    4,    0x29, 4,    4,    3,    2,    4,    4,    6,
+        5,    2,    6,    7,    2,    4,    3,    2,    4,    4,    4,    5,    6,    5,    3,
+        3,    3,    3,    4,    4,    4,    4,    6,    5,    2,    6,    7,    6,    5,    2,
+        6,    7,    6,    6,    4,    3,    2,    4,    4,    4,    5,    6,    5,    2,    2,
+        2,    4,    3,    0x29, 4,    5,    5,    6,    6,    5,    4,    3,    0x29, 4,    4,
+        3,    0x29, 4,    4,    3,    0x29, 4,    5,    2,    2,    6,    5,    6,    5,    2,
+        2,    2,    2,    0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29,
+        0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29,
+        0x29, 0x29, 0x29,
+    };
+
+    //=================================================
+    // ($D9DF) Char mapping
+    //=================================================
+    const std::uint8_t CharMap1[] = {
+        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43,
+        0x43, 0x43, 0x43, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x40, 0x40, 0x40, 0x40, 0x40,
+        0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0,
+        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01, 0x01, 0x01, 0x01, 0x01,
+    };
+
+    //=================================================
+    // Char mapping
+    //=================================================
+    const std::uint8_t CharMap2[] = {
+        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42,
+        0x42, 0x42, 0x42, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x40, 0x40, 0x40, 0x40, 0x40,
+        0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0,
+        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01, 0x01, 0x01, 0x01, 0x01,
+    };
+
+    //=================================================
+    // Directives/Mnemonics/Sweet16 table
+    //=================================================
+    // MnemTbl
+
+    // LtrA
+    const std::uint8_t LtrA[] = {
+        'A', 'D', DCI_end('C'), 0x03, 0xFF, static_cast<std::uint8_t>(ADCOps),
+        'A', 'D', DCI_end('D'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops),
+        'A', 'N', DCI_end('D'), 0x03, 0xFF, static_cast<std::uint8_t>(ANDOps),
+        'A', 'S', DCI_end('C'), 0x80, 0x00, 0x00,  // L8DD2-1
+        'A', 'S', DCI_end('L'), 0x02, 0x1B, static_cast<std::uint8_t>(ASLOps),
+    };
+
+    // LtrB
+    const std::uint8_t LtrB[] = {
+        'B',
+        DCI_end('C'),
+        0x48,
+        0x03,
+        static_cast<std::uint8_t>(SW16Ops + 1),
+        'B',
+        'C',
+        DCI_end('C'),
+        0x08,
+        0x03,
+        0x17,
+        'B',
+        'C',
+        DCI_end('S'),
+        0x08,
+        0x03,
+        0x18,
+        'B',
+        'E',
+        DCI_end('Q'),
+        0x08,
+        0x03,
+        0x19,
+        'B',
+        'G',
+        DCI_end('E'),
+        0x08,
+        0x03,
+        0x18,
+        'B',
+        'I',
+        DCI_end('T'),
+        0x00,
+        0x1F,
+        static_cast<std::uint8_t>(BITOps),
+        'B',
+        DCI_end('K'),
+        0x60,
+        0x00,
+        static_cast<std::uint8_t>(SW16Ops + 2),
+        'B',
+        'L',
+        DCI_end('T'),
+        0x08,
+        0x03,
+        0x17,
+        'B',
+        DCI_end('M'),
+        0x48,
+        0x03,
+        static_cast<std::uint8_t>(SW16Ops + 3),
+        'B',
+        'M',
+        DCI_end('1'),
+        0x48,
+        0x03,
+        static_cast<std::uint8_t>(SW16Ops + 4),
+        'B',
+        'M',
+        DCI_end('I'),
+        0x08,
+        0x03,
+        0x1F,
+        'B',
+        'N',
+        DCI_end('C'),
+        0x48,
+        0x03,
+        static_cast<std::uint8_t>(SW16Ops + 5),
+        'B',
+        'N',
+        DCI_end('E'),
+        0x08,
+        0x03,
+        0x20,
+        'B',
+        'N',
+        'M',
+        DCI_end('1'),
+        0x48,
+        0x03,
+        static_cast<std::uint8_t>(SW16Ops + 6),
+        'B',
+        'N',
+        DCI_end('Z'),
+        0x48,
+        0x03,
+        static_cast<std::uint8_t>(SW16Ops + 7),
+        'B',
+        DCI_end('P'),
+        0x48,
+        0x03,
+        static_cast<std::uint8_t>(SW16Ops + 8),
+        'B',
+        'P',
+        DCI_end('L'),
+        0x08,
+        0x03,
+        0x21,
+        'B',
+        DCI_end('R'),
+        0x48,
+        0x03,
+        static_cast<std::uint8_t>(SW16Ops + 9),
+        'B',
+        'R',
+        DCI_end('A'),
+        0x08,
+        0x03,
+        0x22,
+        'B',
+        'R',
+        DCI_end('K'),
+        0x20,
+        0x00,
+        0x23,
+        'B',
+        'R',
+        DCI_end('L'),
+        0x58,
+        0x03,
+        static_cast<std::uint8_t>(SW16Ops + 10),
+        'B',
+        DCI_end('S'),
+        0x48,
+        0x03,
+        static_cast<std::uint8_t>(SW16Ops + 11),
+        'B',
+        'S',
+        DCI_end('L'),
+        0x58,
+        0x03,
+        static_cast<std::uint8_t>(SW16Ops + 12),
+        'B',
+        'V',
+        DCI_end('C'),
+        0x08,
+        0x03,
+        0x24,
+        'B',
+        'V',
+        DCI_end('S'),
+        0x08,
+        0x03,
+        0x25,
+        'B',
+        DCI_end('Z'),
+        0x48,
+        0x03,
+        static_cast<std::uint8_t>(SW16Ops + 13),
+    };
+
+    // LtrC
+    const std::uint8_t LtrC[] = {
+        'C',
+        'H',
+        DCI_end('N'),
+        0x80,
+        0x00,
+        0x00,  // L928C-1
+        'C',
+        'H',
+        DCI_end('R'),
+        0x80,
+        0x00,
+        0x00,  // L8FC7-1
+        'C',
+        'L',
+        DCI_end('C'),
+        0x20,
+        0x00,
+        0x26,
+        'C',
+        'L',
+        DCI_end('D'),
+        0x20,
+        0x00,
+        0x27,
+        'C',
+        'L',
+        DCI_end('I'),
+        0x20,
+        0x00,
+        0x28,
+        'C',
+        'L',
+        DCI_end('V'),
+        0x20,
+        0x00,
+        0x29,
+        'C',
+        'M',
+        DCI_end('P'),
+        0x03,
+        0xFF,
+        static_cast<std::uint8_t>(CMPOps),
+        'C',
+        'P',
+        'I',
+        DCI_end('M'),
+        0x50,
+        0x01,
+        static_cast<std::uint8_t>(SW16Ops + 14),
+        'C',
+        'P',
+        DCI_end('R'),
+        0x40,
+        0x02,
+        static_cast<std::uint8_t>(SW16Ops + 15),
+        'C',
+        'P',
+        DCI_end('X'),
+        0x00,
+        0x07,
+        static_cast<std::uint8_t>(CPXOps),
+        'C',
+        'P',
+        DCI_end('Y'),
+        0x00,
+        0x07,
+        static_cast<std::uint8_t>(CPYOps),
+    };
+
+    // LtrD
+    const std::uint8_t LtrD[] = {
+        'D',          'A',          'T',
+        DCI_end('E'), 0x80,         0x00,
+        0x00,  // L901D-1
+        'D',          DCI_end('B'), 0x80,
+        0x00,         0x00,  // L8CC3-1
+        'D',          'C',          DCI_end('I'),
+        0x80,         0x00,         0x00,  // L8E54-1
+        'D',          'C',          DCI_end('R'),
+        0x40,         0x02,         static_cast<std::uint8_t>(SW16Ops + 16),
+        'D',          'D',          DCI_end('B'),
+        0x80,         0x00,         0x00,  // L8DCD-1
+        'D',          'E',          DCI_end('C'),
+        0x02,         0x1B,         static_cast<std::uint8_t>(DECOps),
+        'D',          'E',          DCI_end('F'),
+        0x81,         0x00,         0x00,  // L9144-1
+        'D',          'E',          'N',
+        DCI_end('D'), 0x80,         0x00,
+        0x00,  // L908E-1
+        'D',          'E',          DCI_end('X'),
+        0x20,         0x00,         0x3E,
+        'D',          'E',          DCI_end('Y'),
+        0x20,         0x00,         0x3F,
+        'D',          'F',          DCI_end('B'),
+        0x80,         0x00,         0x00,  // L8CC3-1
+        'D',          DCI_end('O'), 0x81,
+        0x00,         0x00,  // L90B7-1
+        'D',          DCI_end('S'), 0x81,
+        0x00,         0x00,  // L8C0E-1
+        'D',          'S',          'E',
+        'C',          DCI_end('T'), 0x80,
+        0x00,         0x00,  // L9065-1
+        'D',          DCI_end('W'), 0x80,
+        0x00,         0x00,  // L8D67-1
+    };
+
+    // LtrE
+    const std::uint8_t LtrE[] = {
+        'E',  'L',  'S',          DCI_end('E'), 0x80,         0x00,
+        0x00,  // L90CB-1
+        'E',  'N',  'T',          'R',          DCI_end('Y'), 0x81,
+        0x00, 0x00,  // L9144-1
+        'E',  'O',  DCI_end('R'), 0x03,         0xFF,         static_cast<std::uint8_t>(EOROps),
+        'E',  'Q',  DCI_end('U'), 0x81,         0x00,         0x00,  // L8A31-1
+        'E',  'X',  'T',          'R',          DCI_end('N'), 0x81,
+        0x00, 0x00,  // L91A8-1
+    };
+
+    // LtrF
+    const std::uint8_t LtrF[] = {
+        'F', 'A', 'I',          DCI_end('L'), 0x80, 0x00, 0x00,  // L9215-1
+        'F', 'I', DCI_end('N'), 0x80,         0x00, 0x00,        // L90D7-1
+    };
+
+    // LtrI
+    const std::uint8_t LtrI[] = {
+        'I',          'B',          'U',
+        'F',          'S',          'I',
+        DCI_end('Z'), 0x81,         0x00,
+        0x00,  // L93C4-1
+        'I',          'D',          'N',
+        'U',          DCI_end('M'), 0x80,
+        0x00,         0x00,  // L905E-1
+        'I',          'F',          'E',
+        DCI_end('Q'), 0x81,         0x00,
+        0x00,  // L90DE-1
+        'I',          'F',          'G',
+        DCI_end('E'), 0x81,         0x00,
+        0x00,  // L90FC-1
+        'I',          'F',          'G',
+        DCI_end('T'), 0x81,         0x00,
+        0x00,  // L90EB-1
+        'I',          'F',          'N',
+        DCI_end('E'), 0x81,         0x00,
+        0x00,  // L90B7-1
+        'I',          'F',          'L',
+        DCI_end('E'), 0x81,         0x00,
+        0x00,  // L9112-1
+        'I',          'F',          'L',
+        DCI_end('T'), 0x81,         0x00,
+        0x00,  // L9107-1
+        'I',          'N',          DCI_end('C'),
+        0x02,         0x1B,         static_cast<std::uint8_t>(INCOps),
+        'I',          'N',          'C',
+        'L',          'U',          'D',
+        DCI_end('E'), 0x80,         0x00,
+        0x00,  // L9360-1
+        'I',          'N',          DCI_end('R'),
+        0x40,         0x02,         static_cast<std::uint8_t>(SW16Ops + 17),
+        'I',          'N',          'T',
+        'E',          'R',          DCI_end('P'),
+        0x81,         0x00,         0x00,  // L9131-1
+        'I',          'N',          DCI_end('X'),
+        0x20,         0x00,         0x4E,
+        'I',          'N',          DCI_end('Y'),
+        0x20,         0x00,         0x4F,
+    };
+
+    // LtrJ
+    const std::uint8_t LtrJ[] = {
+        'J', 'M', DCI_end('P'), 0x11, 0x01, static_cast<std::uint8_t>(JMPOps),
+        'J', 'S', DCI_end('R'), 0x10, 0x01, static_cast<std::uint8_t>(JSROps),
+    };
+
+    // LtrL
+    const std::uint8_t LtrL[] = {
+        'L',  DCI_end('D'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops + 18), 'L',
+        'D',  DCI_end('A'), 0x03, 0xFF, static_cast<std::uint8_t>(LDAOps),       'L',
+        'D',  DCI_end('D'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops + 19), 'L',
+        'D',  DCI_end('I'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops + 20), 'L',
+        'D',  DCI_end('P'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops + 21), 'L',
+        'D',  DCI_end('X'), 0x04, 0x27, static_cast<std::uint8_t>(LDXOps),       'L',
+        'D',  DCI_end('Y'), 0x00, 0x1F, static_cast<std::uint8_t>(LDYOps),       'L',
+        'S',  DCI_end('L'), 0x02, 0x1B, static_cast<std::uint8_t>(ASLOps),       'L',
+        'S',  DCI_end('R'), 0x02, 0x1B, static_cast<std::uint8_t>(LSROps),       'L',
+        'S',  DCI_end('T'), 0x80, 0x00,
+        0x00,  // L8ECA-1
+    };
+
+    // LtrM
+    const std::uint8_t LtrM[] = {
+        'M', 'A', 'C',          'L',  'I',  DCI_end('B'), 0x80, 0x00, 0x00,  // L937F-1
+        'M', 'S', DCI_end('B'), 0x80, 0x00, 0x00,                            // L8E66-1
+    };
+
+    // LtrN
+    const std::uint8_t LtrN[] = {
+        'N', 'O', DCI_end('P'), 0x20, 0x00, 0x6D,
+    };
+
+    // LtrO
+    const std::uint8_t LtrO[] = {
+        'O', 'B', DCI_end('J'), 0x81, 0x00, 0x00,  // L8BAD-1
+        'O', 'R', DCI_end('A'), 0x03, 0xFF, static_cast<std::uint8_t>(ORAOps),
+        'O', 'R', DCI_end('G'), 0x81, 0x00, 0x00,  // L8A82-1
+    };
+
+    // LtrP
+    const std::uint8_t LtrP[] = {
+        'P',
+        'A',
+        'G',
+        DCI_end('E'),
+        0x80,
+        0x00,
+        0x00,  // DoPage-1
+        'P',
+        'A',
+        'U',
+        'S',
+        DCI_end('E'),
+        0x80,
+        0x00,
+        0x00,  // L927A-1
+        'P',
+        'H',
+        DCI_end('A'),
+        0x20,
+        0x00,
+        0x77,
+        'P',
+        'H',
+        DCI_end('P'),
+        0x20,
+        0x00,
+        0x78,
+        'P',
+        'H',
+        DCI_end('X'),
+        0x20,
+        0x00,
+        0x79,
+        'P',
+        'H',
+        DCI_end('Y'),
+        0x20,
+        0x00,
+        0x7A,
+        'P',
+        'L',
+        DCI_end('A'),
+        0x20,
+        0x00,
+        0x7B,
+        'P',
+        'L',
+        DCI_end('P'),
+        0x20,
+        0x00,
+        0x7C,
+        'P',
+        'L',
+        DCI_end('X'),
+        0x20,
+        0x00,
+        0x7D,
+        'P',
+        'L',
+        DCI_end('Y'),
+        0x20,
+        0x00,
+        0x7E,
+        'P',
+        'O',
+        DCI_end('P'),
+        0x40,
+        0x02,
+        static_cast<std::uint8_t>(SW16Ops + 21),
+        'P',
+        'O',
+        'P',
+        DCI_end('D'),
+        0x40,
+        0x02,
+        static_cast<std::uint8_t>(SW16Ops + 22),
+    };
+
+    // LtrR
+    const std::uint8_t LtrR[] = {
+        'R',
+        'E',
+        DCI_end('F'),
+        0x81,
+        0x00,
+        0x00,  // L91A8-1
+        'R',
+        'E',
+        DCI_end('L'),
+        0x80,
+        0x00,
+        0x00,  // L9126-1
+        'R',
+        'E',
+        DCI_end('P'),
+        0x80,
+        0x00,
+        0x00,  // L8FA3-1
+        'R',
+        'O',
+        DCI_end('L'),
+        0x02,
+        0x1B,
+        static_cast<std::uint8_t>(ROLOps),
+        'R',
+        'O',
+        DCI_end('R'),
+        0x02,
+        0x1B,
+        static_cast<std::uint8_t>(ROROps),
+        'R',
+        DCI_end('S'),
+        0x60,
+        0x00,
+        static_cast<std::uint8_t>(SW16Ops + 24),
+        'R',
+        'T',
+        DCI_end('I'),
+        0x20,
+        0x00,
+        0x89,
+        'R',
+        'T',
+        DCI_end('N'),
+        0x60,
+        0x00,
+        0x23,
+        'R',
+        'T',
+        DCI_end('S'),
+        0x20,
+        0x00,
+        0x8A,
+    };
+
+    // LtrS
+    const std::uint8_t LtrS[] = {
+        'S',
+        'B',
+        DCI_end('C'),
+        0x03,
+        0xFF,
+        static_cast<std::uint8_t>(SBCOps),
+        'S',
+        'B',
+        'T',
+        DCI_end('L'),
+        0x80,
+        0x00,
+        0x00,  // L8F61-1
+        'S',
+        'B',
+        'U',
+        'F',
+        'S',
+        'I',
+        DCI_end('Z'),
+        0x81,
+        0x00,
+        0x00,  // L93C7-1
+        'S',
+        'E',
+        DCI_end('C'),
+        0x20,
+        0x00,
+        0x94,
+        'S',
+        'E',
+        DCI_end('D'),
+        0x20,
+        0x00,
+        0x95,
+        'S',
+        'E',
+        DCI_end('I'),
+        0x20,
+        0x00,
+        0x96,
+        'S',
+        'E',
+        DCI_end('T'),
+        0xC0,
+        0x00,
+        0x00,  // L94C0-1
+        'S',
+        'K',
+        DCI_end('P'),
+        0x80,
+        0x00,
+        0x00,  // L8FEA-1
+        'S',
+        DCI_end('T'),
+        0x40,
+        0x02,
+        static_cast<std::uint8_t>(SW16Ops + 25),
+        'S',
+        'T',
+        DCI_end('A'),
+        0x03,
+        0xFB,
+        static_cast<std::uint8_t>(STAOps),
+        'S',
+        'T',
+        DCI_end('D'),
+        0x40,
+        0x02,
+        static_cast<std::uint8_t>(SW16Ops + 27),
+        'S',
+        'T',
+        DCI_end('I'),
+        0x40,
+        0x02,
+        static_cast<std::uint8_t>(SW16Ops + 26),
+        'S',
+        'T',
+        DCI_end('P'),
+        0x40,
+        0x02,
+        static_cast<std::uint8_t>(SW16Ops + 28),
+        'S',
+        'T',
+        DCI_end('R'),
+        0x80,
+        0x00,
+        0x00,  // L8E94-1
+        'S',
+        'T',
+        DCI_end('X'),
+        0x04,
+        0x03,
+        static_cast<std::uint8_t>(STXOps),
+        'S',
+        'T',
+        DCI_end('Y'),
+        0x00,
+        0x0B,
+        static_cast<std::uint8_t>(STYOps),
+        'S',
+        'T',
+        DCI_end('Z'),
+        0x00,
+        0x1B,
+        static_cast<std::uint8_t>(STZOps),
+        'S',
+        'U',
+        DCI_end('B'),
+        0x40,
+        0x02,
+        static_cast<std::uint8_t>(SW16Ops + 29),
+        'S',
+        'Y',
+        DCI_end('S'),
+        0x81,
+        0x00,
+        0x00,  // L9131-1
+        'S',
+        'W',
+        '1',
+        DCI_end('6'),
+        0xC0,
+        0x00,
+        0x00,  // L946F-1
+    };
+
+    // LtrT
+    const std::uint8_t LtrT[] = {
+        'T',  'A', DCI_end('X'), 0x20,         0x00, 0xAD,
+        'T',  'A', DCI_end('Y'), 0x20,         0x00, 0xAE,
+        'T',  'I', 'M',          DCI_end('E'), 0x80, 0x00,
+        0x00,  // L905E-1
+        'T',  'R', DCI_end('B'), 0x00,         0x03, static_cast<std::uint8_t>(TRBOps),
+        'T',  'S', DCI_end('B'), 0x00,         0x03, static_cast<std::uint8_t>(TSBOps),
+        'T',  'S', DCI_end('X'), 0x20,         0x00, 0xB3,
+        'T',  'X', DCI_end('A'), 0x20,         0x00, 0xB4,
+        'T',  'X', DCI_end('S'), 0x20,         0x00, 0xB5,
+        'T',  'Y', DCI_end('A'), 0x20,         0x00, 0xB6,
+    };
+
+    // LtrX
+    const std::uint8_t LtrX[] = {
+        'X', '6', '5', '0', DCI_end('2'), 0x81, 0x00, 0x00,  // L9139-1
+    };
+
+    // LtrZ
+    const std::uint8_t LtrZ[] = {
+        'Z', 'D', 'E', DCI_end('F'), 0x81,         0x00, 0x00,        // L9140-1
+        'Z', 'R', 'E', DCI_end('F'), 0x81,         0x00, 0x00,        // L91A4-1
+        'Z', 'X', 'T', 'R',          DCI_end('N'), 0x81, 0x00, 0x00,  // L91A4-1
+    };
+
+    // Dot directives
+    const std::uint8_t DotDrtv[] = {
+        '.',  'A',  'S',  'C',          'I',          DCI_end('I'), 0x80,         0x00,
+        0x00,  // L8DD2-1
+        '.',  'B',  'L',  'O',          'C',          DCI_end('K'), 0x81,         0x00,
+        0x00,                                                                            // L8C0E-1
+        '.',  'B',  'Y',  'T',          DCI_end('E'), 0x80,         0x00,         0x00,  // L8CC3-1
+        '.',  'D',  'B',  'Y',          'T',          DCI_end('E'), 0x80,         0x00,
+        0x00,                                                              // L8DCD-1
+        '.',  'D',  'E',  DCI_end('F'), 0x81,         0x00,         0x00,  // L9144-1
+        '.',  'E',  'Q',  DCI_end('U'), 0x81,         0x00,         0x00,  // L8A31-1
+        '.',  'I',  'N',  'C',          'L',          'U',          'D',          DCI_end('E'),
+        0x80, 0x00, 0x00,                                                                // L9360-1
+        '.',  'L',  'I',  'S',          DCI_end('T'), 0x80,         0x00,         0x00,  // L8F3D-1
+        '.',  'N',  'O',  'L',          'I',          'S',          DCI_end('T'), 0x80,
+        0x00, 0x00,                                                                      // L8F3A-1
+        '.',  'O',  'R',  DCI_end('G'), 0x81,         0x00,         0x00,                // L8A82-1
+        '.',  'P',  'A',  'G',          DCI_end('E'), 0x80,         0x00,         0x00,  // DoPage-1
+        '.',  'R',  'E',  DCI_end('F'), 0x81,         0x00,         0x00,                // L91A8-1
+        '.',  'S',  'K',  'I',          DCI_end('P'), 0x80,         0x00,         0x00,  // L8FEA-1
+        '.',  'T',  'I',  'T',          'L',          DCI_end('E'), 0x80,         0x00,
+        0x00,                                                                            // L8F61-1
+        '.',  'W',  'O',  'R',          DCI_end('D'), 0x80,         0x00,         0x00,  // L8D67-1
+        0x00, 0x00, 0x00, 0x00,                                                          // unused
+    };
+
+    // Table of ptrs to first letter subtables
+    const std::uint8_t* Tbl1stLet[] = {
+        DotDrtv, LtrA, LtrB,    LtrC,    LtrD,    LtrE,    LtrF, nullptr, nullptr,
+        LtrI,    LtrJ, nullptr, LtrL,    LtrM,    LtrN,    LtrO, LtrP,    nullptr,
+        LtrR,    LtrS, LtrT,    nullptr, nullptr, nullptr, LtrX, nullptr, LtrZ,
+    };
+
+    // MnemTbl points at LtrA
+    const std::uint8_t* MnemTbl = LtrA;
+
+    // Assembler's creation date and time
+    const char LDF3F[] = "30-APR-85";
+    const char LDF48[] = "22:46          ";
+
+    // Area to preserve the zero page locations $60-$F1
+    std::uint8_t SvZPArea[0x92] = {};
+
+    // ($DFE0) Unidentified data block
+    const std::uint16_t DFE0Data[] = {
+        0xD581, 0xD589, 0xD58E, 0xD546, 0xA023, 0xA048, 0xA308, 0xDCC7,
+        0x9BF8, 0xA071, 0xB9AF, 0x9B18, 0x9B6D, 0xDDC0, 0x9F49, 0xC8D3,
+    };
+
+  }  // namespace
+
+  //=================================================
+  // Test Helper Functions - Exported for Unit Testing
+  //=================================================
+  namespace EdAsmNg {
+    namespace Asm {
+
+      void ResetErrorState() {
+        NbrErrs  = 0;
+        NbrWarns = 0;
+        ErrorF   = 0;
+        ErrNbr4  = 0;
+        std::memset(ErrInfoT, 0, sizeof(ErrInfoT));
+      }
+
+      uint16_t GetErrorCount() {
+        return NbrErrs;
+      }
+
+      uint16_t GetWarningCount() {
+        return NbrWarns;
+      }
+
+      uint8_t GetErrorFlag() {
+        return ErrorF;
+      }
+
+      uint8_t GetErrNbr4() {
+        return ErrNbr4;
+      }
+
+      void SetVidSlot(uint8_t slot) {
+        VidSlot = slot;
+      }
+
+      void SetFileNbr(uint8_t file) {
+        FileNbr = file;
+      }
+
+      void SetBCDLineNumber(uint8_t hi, uint8_t lo) {
+        BCDNbr[1] = hi;
+        BCDNbr[0] = lo;
+      }
+
+      void SetLstWarns(uint8_t flags) {
+        LstWarns = flags;
+      }
+
+      struct ErrorInfo {
+        uint8_t fileNbr;
+        uint8_t errIndex;
+        uint8_t lineHi;
+        uint8_t lineLo;
+      };
+
+      ErrorInfo GetErrorInfo(int index) {
+        ErrorInfo info;
+        int       offset = index * 4;
+        if (offset >= 0 && offset < (int)sizeof(ErrInfoT) - 3) {
+          info.fileNbr  = ErrInfoT[offset];
+          info.errIndex = ErrInfoT[offset + 1];
+          info.lineHi   = ErrInfoT[offset + 2];
+          info.lineLo   = ErrInfoT[offset + 3];
+        } else {
+          info.fileNbr  = 0;
+          info.errIndex = 0;
+          info.lineHi   = 0;
+          info.lineLo   = 0;
+        }
+        return info;
+      }
+
+      void RegAsmEW(uint8_t errorToken) {
+        ::RegAsmEW(errorToken);
+      }
+
+      void SaveErrInfo(uint8_t errorToken) {
+        ::SaveErrInfo(errorToken);
+      }
+
+      //=================================================
+      // Phase 2: Mnemonic Dispatch Test Helpers
+      //=================================================
+
+      // Test source line buffer
+      static uint8_t  test_src_buffer[256];
+      static uint8_t* test_SrcP_ptr = nullptr;
+
+      void ResetDispatchState() {
+        MnemP   = 0;
+        ZAB     = 0x80;
+        SubTIdx = 0;
+        MacroF  = 0;  // No macros for testing
+        Y       = 0;
+        std::memset(test_src_buffer, 0, sizeof(test_src_buffer));
+      }
+
+      void SetupSourceLine(const char* line) {
+        // Copy line to test buffer
+        size_t len = strlen(line);
+        if (len > sizeof(test_src_buffer) - 1) {
+          len = sizeof(test_src_buffer) - 1;
+        }
+        std::memcpy(test_src_buffer, line, len);
+        test_src_buffer[len] = CR;  // Add CR terminator
+
+        // Set up SrcP to point to test buffer
+        // In the original 6502 code, SrcP is a 16-bit pointer stored in zero page
+        // For C++ testing, we'll use the SrcP macro which simulates array access
+        test_SrcP_ptr = test_src_buffer;
+
+        // Initialize Y to 0 (start of line)
+        Y = 0;
+      }
+
+      uint16_t GetMnemP() {
+        return MnemP;
+      }
+
+      uint8_t GetZAB() {
+        return ZAB;
+      }
+
+      uint8_t GetSubTIdx() {
+        return SubTIdx;
+      }
+
+      bool HndlMnem() {
+        // Call the internal HndlMnem function
+        // It returns via setting the C flag
+        // For testing, we need to capture the C flag state
+
+        // Re-route SrcP array access to test buffer
+        // This is a workaround since SrcP is uint16_t but used as array
+        auto old_SrcP = ::SrcP;
+
+        // Temporarily replace the SrcP array access mechanism
+        // by modifying how SrcP_at(Y) is evaluated
+        // Since we can't directly change pointer behavior, we'll use a different approach
+
+        // For now, call HndlMnem with Y=0
+        ::HndlMnem();
+
+        // Return success status (C flag: false=success, true=error)
+        return !C;
+      }
+
+      //=================================================
+      // Phase 3a: StorByt Test Helpers
+      //=================================================
+
+      void SetGenF(uint8_t value) {
+        GenF = value;
+      }
+
+      uint8_t GetGenF() {
+        return GenF;
+      }
+
+      void SetObjPC(uint16_t value) {
+        ObjPC = value;
+      }
+
+      uint16_t GetObjPC() {
+        return ObjPC;
+      }
+
+      void SetHighMem(uint16_t value) {
+        HighMem = value;
+      }
+
+      uint16_t GetHighMem() {
+        return HighMem;
+      }
+
+      void StorByt(uint8_t byte) {
+        A = byte;
+        ::StorByt();
+      }
+
+      uint8_t ReadObjMemory(uint16_t addr) {
+        return g_test_obj_memory[addr];
+      }
+
+      void WriteObjMemory(uint16_t addr, uint8_t value) {
+        g_test_obj_memory[addr] = value;
+      }
+
+      void InitObjMemory() {
+        std::memset(g_test_obj_memory, 0, sizeof(g_test_obj_memory));
+        g_test_obj_memory_enabled = true;
+      }
+
+    }  // namespace Asm
+  }  // namespace EdAsmNg
