@@ -165,3 +165,241 @@ TEST_F(ErrorRegistrationTest, BCDIncrementCorrect) {
   EdAsmNg::Asm::RegAsmEW(0x02);
   EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0x0011);  // BCD 11
 }
+
+//=================================================
+// Mnemonic/Directive Dispatch Tests (Phase 2)
+//=================================================
+
+// Helper functions to access assembler internals for mnemonic testing
+namespace EdAsmNg {
+  namespace Asm {
+    // Setup test sources and get dispatch state
+    void     SetupSourceLine(const char* line);
+    uint16_t GetMnemP();
+    uint8_t  GetZAB();
+    uint8_t  GetSubTIdx();
+    bool     HndlMnem();  // Returns true on success (C=0), false on error (C=1)
+    void     ResetDispatchState();
+  }  // namespace Asm
+}  // namespace EdAsmNg
+
+class MnemonicDispatchTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetErrorState();
+    EdAsmNg::Asm::ResetDispatchState();
+  }
+};
+
+TEST_F(MnemonicDispatchTest, ValidMnemonicLDA) {
+  // Test 3-letter mnemonic LDA
+  EdAsmNg::Asm::SetupSourceLine("LDA");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);  // C=0 means success
+
+  // Verify ZAB contains addressing mode flags (not directive flag $80+)
+  uint8_t zab = EdAsmNg::Asm::GetZAB();
+  EXPECT_LT(zab, 0x80);  // Not a directive
+
+  // Verify MnemP points to valid entry (non-zero)
+  uint16_t mnemP = EdAsmNg::Asm::GetMnemP();
+  EXPECT_NE(mnemP, 0);
+}
+
+TEST_F(MnemonicDispatchTest, ValidMnemonicSTA) {
+  EdAsmNg::Asm::SetupSourceLine("STA");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+
+  uint8_t zab = EdAsmNg::Asm::GetZAB();
+  EXPECT_LT(zab, 0x80);  // Not a directive
+
+  uint16_t mnemP = EdAsmNg::Asm::GetMnemP();
+  EXPECT_NE(mnemP, 0);
+}
+
+TEST_F(MnemonicDispatchTest, ValidMnemonicJMP) {
+  EdAsmNg::Asm::SetupSourceLine("JMP");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+
+  uint8_t zab = EdAsmNg::Asm::GetZAB();
+  EXPECT_LT(zab, 0x80);
+}
+
+TEST_F(MnemonicDispatchTest, ValidMnemonicBREAK) {
+  // BRK is a special case (single letter can extend to 3)
+  EdAsmNg::Asm::SetupSourceLine("BRK");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+
+  uint8_t zab = EdAsmNg::Asm::GetZAB();
+  EXPECT_LT(zab, 0x80);
+}
+
+TEST_F(MnemonicDispatchTest, ValidDirectiveEQU) {
+  EdAsmNg::Asm::SetupSourceLine(".EQU");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+
+  // Directive should set ZAB high bit ($80+)
+  uint8_t zab = EdAsmNg::Asm::GetZAB();
+  EXPECT_GE(zab, 0x80);  // Directive flag
+}
+
+TEST_F(MnemonicDispatchTest, ValidDirectiveORG) {
+  EdAsmNg::Asm::SetupSourceLine(".ORG");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+
+  uint8_t zab = EdAsmNg::Asm::GetZAB();
+  EXPECT_GE(zab, 0x80);
+}
+
+TEST_F(MnemonicDispatchTest, ValidDirectiveDFB) {
+  // .BYTE directive
+  EdAsmNg::Asm::SetupSourceLine(".BYTE");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+
+  uint8_t zab = EdAsmNg::Asm::GetZAB();
+  EXPECT_GE(zab, 0x80);
+}
+
+TEST_F(MnemonicDispatchTest, ValidDirectiveDW) {
+  // .WORD directive
+  EdAsmNg::Asm::SetupSourceLine(".WORD");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+
+  uint8_t zab = EdAsmNg::Asm::GetZAB();
+  EXPECT_GE(zab, 0x80);
+}
+
+TEST_F(MnemonicDispatchTest, InvalidMnemonicXYZ) {
+  // Non-existent mnemonic
+  EdAsmNg::Asm::SetupSourceLine("XYZ");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_FALSE(success);  // C=1 means error
+
+  // Should register an error
+  EXPECT_GT(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(MnemonicDispatchTest, InvalidFirstLetter) {
+  // Letter with no opcodes (e.g., 'Q')
+  EdAsmNg::Asm::SetupSourceLine("QQQ");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_FALSE(success);
+
+  // Should register an error or return failure
+  EXPECT_GT(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(MnemonicDispatchTest, PartialMatchFailure) {
+  // Starts like LDA but continues incorrectly
+  EdAsmNg::Asm::SetupSourceLine("LDAX");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_FALSE(success);
+
+  EXPECT_GT(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(MnemonicDispatchTest, WhitespaceAfterMnemonic) {
+  // LDA followed by space (valid termination)
+  EdAsmNg::Asm::SetupSourceLine("LDA ");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+
+  uint8_t zab = EdAsmNg::Asm::GetZAB();
+  EXPECT_LT(zab, 0x80);
+}
+
+TEST_F(MnemonicDispatchTest, CRAfterMnemonic) {
+  // LDA followed by CR (valid termination)
+  EdAsmNg::Asm::SetupSourceLine("LDA\r");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+
+  uint8_t zab = EdAsmNg::Asm::GetZAB();
+  EXPECT_LT(zab, 0x80);
+}
+
+TEST_F(MnemonicDispatchTest, CaseSensitivityCheck) {
+  // lowercase mnemonic (should be converted to uppercase by ChrGot)
+  EdAsmNg::Asm::SetupSourceLine("lda");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);  // Should work due to uppercase conversion
+}
+
+TEST_F(MnemonicDispatchTest, MixedCaseMnemonic) {
+  // Mixed case
+  EdAsmNg::Asm::SetupSourceLine("LdA");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+}
+
+TEST_F(MnemonicDispatchTest, ValidMnemonic6502ADC) {
+  EdAsmNg::Asm::SetupSourceLine("ADC");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+
+  uint8_t zab = EdAsmNg::Asm::GetZAB();
+  EXPECT_LT(zab, 0x80);
+}
+
+TEST_F(MnemonicDispatchTest, ValidMnemonic6502AND) {
+  EdAsmNg::Asm::SetupSourceLine("AND");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+
+  uint8_t zab = EdAsmNg::Asm::GetZAB();
+  EXPECT_LT(zab, 0x80);
+}
+
+TEST_F(MnemonicDispatchTest, ValidMnemonic6502ASL) {
+  EdAsmNg::Asm::SetupSourceLine("ASL");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+
+  uint8_t zab = EdAsmNg::Asm::GetZAB();
+  EXPECT_LT(zab, 0x80);
+}
+
+TEST_F(MnemonicDispatchTest, ValidMnemonic6502BCC) {
+  EdAsmNg::Asm::SetupSourceLine("BCC");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+
+  uint8_t zab = EdAsmNg::Asm::GetZAB();
+  EXPECT_LT(zab, 0x80);
+}
+
+TEST_F(MnemonicDispatchTest, ValidMnemonic6502BCS) {
+  EdAsmNg::Asm::SetupSourceLine("BCS");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+
+  uint8_t zab = EdAsmNg::Asm::GetZAB();
+  EXPECT_LT(zab, 0x80);
+}
