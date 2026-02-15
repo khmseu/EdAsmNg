@@ -72,6 +72,11 @@ namespace {
   void Is16K();
   void IsAXY();
 
+  // Phase 8.2: Source line reader forward declarations
+  void GSrcLin();
+  void ReadMore();
+  void SetupMemorySource(const char* sourceText, size_t length);
+
   // Directive handler forward declarations
   void DrtvDone();
   void HndlEQU();
@@ -171,6 +176,7 @@ namespace {
   std::uint16_t SrcP;       // Source pointer - points within current source line
   std::uint16_t UnsortedP;  // Pointer to unsorted auxiliary work array (aliases SrcP)
   std::uint16_t Src2P;      // Copy of source pointer used during code listing
+  std::uint16_t TxtEnd;     // End of text buffer (for memory source mode)
   std::uint16_t PC;         // Program Counter / position counter (current assembly address)
   std::uint16_t SortedP;    // Pointer to sorted auxiliary array (aliases PC)
   std::uint16_t ObjPC;  // Object code Program Counter (where to store in memory, 2 bytes: $7C-$7D)
@@ -184,6 +190,11 @@ namespace {
   // Global test buffer for unit testing (when non-null, overrides SrcP for array access)
   std::uint8_t* g_test_src_buffer = nullptr;
 
+  // Global test memory buffer for source code (simulated 64KB memory for SrcP)
+  // This allows SrcP to be treated as a 16-bit address in tests
+  std::uint8_t  g_test_src_memory[65536];
+  std::uint16_t g_test_src_base = 0x1000;  // Base address in simulated memory
+
   // Global test memory buffer for StorByt testing (64KB simulated memory)
   std::uint8_t g_test_obj_memory[65536];
   bool         g_test_obj_memory_enabled = false;
@@ -195,8 +206,9 @@ namespace {
     if (g_test_src_buffer != nullptr) {
       return g_test_src_buffer[index];
     }
-    std::uint8_t* ptr = reinterpret_cast<std::uint8_t*>(static_cast<uintptr_t>(SrcP));
-    return ptr[index];
+    // Use g_test_src_memory for simulated memory access
+    std::uint16_t addr = SrcP + index;
+    return g_test_src_memory[addr];
   }
 
   // Macro to simplify array-style access (for code that looks like SrcP_at(Y))
@@ -1674,11 +1686,119 @@ namespace {
     RegAsmEW(X);
   }
 
-  // Stub: GSrcLin - Get source line
+  //=================================================
+  // GSrcLin - Get next source line from memory or disk
+  // Original: ASM3.S:2991-3056
+  // Returns: C=1 if EOF, C=0 if line fetched
+  //
+  // Memory Mode (IDskSrcF = 0):
+  //   - SrcP points into memory buffer containing source text
+  //   - Check if SrcP >= TxtEnd (reached end of text)
+  //   - If at end: set carry (C=1), return (EOF)
+  //   - If not at end: clear carry (C=0), return (line ready)
+  //
+  // Disk Mode (IDskSrcF != 0):
+  //   - Stubbed for Phase 8.2 - will be implemented in Phase 9+
+  //   - Returns EOF (C=1) for now
+  //=================================================
   void GSrcLin() {
-    // TODO: Get next source line
-    // Set C flag when no more lines
-    C = true;  // For now, signal end
+    // Original: GSrcLin at ASM3.S:2991
+    // LDA DskSrcF ; Are we using disk source files?
+    // BMI L9B95   ; Yes
+
+    std::uint8_t dskSrcFValue = static_cast<std::uint8_t>(DskSrcF);
+    if (dskSrcFValue & 0x80) {  // BMI - check MSB (disk mode)
+      // L9B95: Disk mode - check macro and include file handling
+      // For Phase 8.2, we stub this entire path
+      // TODO: Phase 9+ - implement disk I/O, macro expansion, CHN/INCLUDE
+      C = true;  // Set carry (EOF)
+      return;
+    }
+
+    // Memory source mode
+    // Original: ASM3.S:2995-3001
+    // LDA    SrcP            ; Check if there are still
+    // CMP    TxtEnd          ; lines to be assembled
+    // LDA    SrcP+1
+    // SBC    TxtEnd+1
+    // RTS                    ; If C=1, done
+
+    // Compare SrcP with TxtEnd (16-bit comparison)
+    // If SrcP >= TxtEnd, set carry (EOF)
+    // If SrcP < TxtEnd, clear carry (line available)
+
+    std::uint8_t srcP_lo   = SrcP & 0xFF;
+    std::uint8_t srcP_hi   = (SrcP >> 8) & 0xFF;
+    std::uint8_t txtEnd_lo = TxtEnd & 0xFF;
+    std::uint8_t txtEnd_hi = (TxtEnd >> 8) & 0xFF;
+
+    // Emulate 6502 CMP/SBC sequence:
+    // First compare low bytes (CMP sets carry if A >= operand)
+    // Then subtract high bytes with borrow (SBC)
+    bool cmp_carry = (srcP_lo >= txtEnd_lo);
+
+    // SBC: A - M - (1-C)  where C is carry from CMP
+    // If result has carry set, then SrcP >= TxtEnd (EOF)
+    int result = srcP_hi - txtEnd_hi - (cmp_carry ? 0 : 1);
+
+    C = (result >= 0);  // Set carry flag based on comparison result
+
+    // Original returns here with carry flag indicating status:
+    // C=1: EOF (SrcP >= TxtEnd)
+    // C=0: Line available (SrcP < TxtEnd)
+  }
+
+  //=================================================
+  // ReadMore - Read next block from disk into buffer
+  // Original: ASM3.S:3064-3204 (L9BFC label)
+  // Stubbed for Phase 8.2 - will be implemented in Phase 9+
+  //
+  // Original functionality:
+  // - Read ProDOS blocks via MLI
+  // - Handle partial lines across block boundaries
+  // - Manage SBuf/IBuf buffers
+  // - Handle file nesting (CHN/INCLUDE)
+  // - Prepend partial line from previous block
+  //=================================================
+  void ReadMore() {
+    // TODO: Phase 9+ - implement disk I/O
+    // For now, just set carry (EOF) and return
+    C = true;
+  }
+
+  //=================================================
+  // SetupMemorySource - Set up memory source mode
+  // Helper function for testing and in-memory assembly
+  //
+  // Parameters:
+  //   sourceText: pointer to source code buffer
+  //   length: length of buffer in bytes
+  //
+  // Sets:
+  //   Copies source to g_test_src_memory at base address
+  //   SrcP to g_test_src_base (simulated address)
+  //   TxtEnd to g_test_src_base + length
+  //   IDskSrcF = 0 (memory mode)
+  //   DskSrcF = 0 (memory mode)
+  //
+  // Note: Uses g_test_src_memory for simulated 16-bit address space
+  //=================================================
+  void SetupMemorySource(const char* sourceText, size_t length) {
+    // Copy source to simulated memory
+    if (length > sizeof(g_test_src_memory) - g_test_src_base) {
+      length = sizeof(g_test_src_memory) - g_test_src_base;
+    }
+    std::memcpy(&g_test_src_memory[g_test_src_base], sourceText, length);
+
+    // SrcP points to start of source in simulated memory
+    SrcP = g_test_src_base;
+
+    // TxtEnd points to end
+    TxtEnd = g_test_src_base + static_cast<std::uint16_t>(length);
+
+    // Clear disk source flags (memory mode)
+    IDskSrcF = 0;
+    DskSrcF  = 0;
   }
 
   //=================================================
@@ -2104,17 +2224,21 @@ namespace {
     Z = true;  // For now, simulate CR found
   }
 
-#if 0   // TODO: Phase 9+ - Fix NxtField recursive goto
-  // NxtField - On entry (Y)=index into src line
+  //=================================================
+  // NxtField - Advance SrcP to start of next field (first non-space)
+  // Original: ASM2.S:1846
+  // On entry (Y)=index into src line
   // Ret:
   // (Y)=0
   // src ptr pointing @ 1st char of the field
   // (X) - unchanged
+  //=================================================
   void NxtField() {
+  NxtField_start:
     A = SrcP_at(Y);
     if (A != SPACE) goto L823D;  // (BNE)
     Y++;
-    if (Y != 0) goto NxtField;  // (BNE)
+    if (Y != 0) goto NxtField_start;  // (BNE) - loop until non-space or Y wraps
 
   L823D:
     // CLC
@@ -2126,7 +2250,6 @@ namespace {
     A += SrcP_hi;  // with carry
     SrcP_hi = A;
   }
-#endif  // NxtField
 
 #if 0
   // Stub: HndlMnem - Handle mnemonic/pseudo opcode
@@ -2399,6 +2522,55 @@ namespace {
 
     // On fall thru, Y=# to advance
     AdvSrcP();
+  }
+
+  //=================================================
+  // ChrGot/ChrGet - Character Scanner (using CharMap1)
+  // Original: ASM2.S:1792
+  // This subrtn is part of Scanner
+  // There are 2 entry points viz ChrGet and ChrGot
+  // On entry:
+  //   (Y)    = index into the src line
+  //   (SrcP) = Pointing somewhere within source line
+  // Ret:
+  // (A) - char (converted to uppercase if alphabetic)
+  // C=1 if char is non-alphabetic
+  // C=0 if char is alphabetic (A-Z, a-z)
+  // Z=1 if char is numeric digit (0-9)
+  // Z=0 if char is non-numeric
+  // V=1 if char is hexdec digit (0-9, A-F, a-f)
+  // V=0 if char is non-hexdec
+  // (X) - unchanged
+  // (Y) - incr by 1 if 1st entry point else unchanged
+  //=================================================
+  void ChrGet() {
+    Y++;
+    ChrGot();
+  }
+
+  void ChrGot() {
+    A              = SrcP_at(Y);     // Get char fr src line
+    ZPSaveY        = Y;              // Save (Y) temporarily
+    uint8_t char_y = A;              // Use char as an index as well as saving it in (Y)
+    if ((int8_t)A >= 0) goto L8211;  // Must be std ASCII or (BPL)
+
+    std::abort();  // BRK - else crash
+
+  L8211:
+    A             = CharMap1[char_y];  // Get flag byte
+    uint8_t flags = A;                 // Save for later use (PHA)
+    A             = char_y;            // Get back char (TYA)
+    Y             = ZPSaveY;           // restore Y
+
+    // Set flags from saved flag byte (PLP)
+    N = (flags & 0x80) != 0;
+    V = (flags & 0x40) != 0;
+    Z = (flags & 0x02) != 0;
+    C = (flags & 0x01) != 0;
+
+    if (N) {      // If (A)=$61-$7A (a-z) (BPL doRet2)
+      A &= 0xDF;  // convert to upper case
+    }
   }
 
 #if 0   // TODO: Phase 9+ - Fix L81A3 (undeclared BCDNbr_hi, TotLines_hi, TotLines_2 and VidOut
@@ -7998,8 +8170,95 @@ namespace EdAsmNg {
 #endif  // Test helpers for Phase 2-3
 
     //=================================================
+    // Minimal stubs for MnemonicDispatchTest (Phase 3 - not yet fully implemented)
+    //=================================================
+
+    // Test source line buffer
+    static uint8_t test_src_buffer[256];
+
+    void ResetDispatchState() {
+      // Minimal stub - just clear test buffer
+      std::memset(test_src_buffer, 0, sizeof(test_src_buffer));
+      Y = 0;
+    }
+
+    void SetupSourceLine(const char* line) {
+      // Minimal stub - copy line to test buffer
+      size_t len = strlen(line);
+      if (len > sizeof(test_src_buffer) - 1) {
+        len = sizeof(test_src_buffer) - 1;
+      }
+      std::memcpy(test_src_buffer, line, len);
+      test_src_buffer[len] = CR;
+      g_test_src_buffer    = test_src_buffer;
+      Y                    = 0;
+    }
+
+    std::uintptr_t GetMnemP() {
+      // Minimal stub
+      return 0;
+    }
+
+    uint8_t GetZAB() {
+      // Minimal stub
+      return ZAB;
+    }
+
+    uint8_t GetSubTIdx() {
+      // Minimal stub
+      return SubTIdx;
+    }
+
+    bool HndlMnem() {
+      // Minimal stub - return failure
+      C = true;  // Set carry (error)
+      return false;
+    }
+
+    const char* GetLastDirectiveCalled() {
+      // Minimal stub
+      return "";
+    }
+
+    //=================================================
     // Phase 8.1: Initialization and Cleanup Test Helpers
     //=================================================
+
+    // Error/Warning counter accessors
+    void SetNumErrs(uint16_t value) {
+      NbrErrs = value;
+    }
+
+    void SetNumWarns(uint16_t value) {
+      NbrWarns = value;
+    }
+
+    // ListingF accessor
+    uint8_t GetListingF() {
+      return ListingF;
+    }
+
+    void SetListingF(uint8_t value) {
+      ListingF = value;
+    }
+
+    // RelCodeF accessor
+    uint8_t GetRelCodeF() {
+      return RelCodeF;
+    }
+
+    void SetRelCodeF(uint8_t value) {
+      RelCodeF = value;
+    }
+
+    // SubTtlF accessor
+    uint8_t GetSubTtlF() {
+      return SubTtlF;
+    }
+
+    void SetSubTtlF(uint8_t value) {
+      SubTtlF = value;
+    }
 
     // Line number accessor
     uint16_t GetLineNum() {
@@ -8117,6 +8376,109 @@ namespace EdAsmNg {
 
     void CleanupAsm() {
       ::CleanupAsm();
+    }
+
+    //=================================================
+    // Phase 8.2: Source Line Reader Test Helpers
+    //=================================================
+
+    // Source reader functions
+    void GSrcLin() {
+      ::GSrcLin();
+    }
+
+    bool GetCarryFlag() {
+      return C;
+    }
+
+    void SetCarryFlag(bool value) {
+      C = value;
+    }
+
+    // Memory source setup helper
+    void SetupMemorySource(const char* sourceText, size_t length) {
+      ::SetupMemorySource(sourceText, length);
+    }
+
+    // Phase 8.2 variable accessors
+    uint16_t GetSrcP() {
+      return SrcP;
+    }
+
+    void SetSrcP(uint16_t value) {
+      SrcP = value;
+    }
+
+    uint16_t GetTxtEnd() {
+      return TxtEnd;
+    }
+
+    void SetTxtEnd(uint16_t value) {
+      TxtEnd = value;
+    }
+
+    int8_t GetIDskSrcF() {
+      return IDskSrcF;
+    }
+
+    void SetIDskSrcF(int8_t value) {
+      IDskSrcF = value;
+    }
+
+    // Helper to advance SrcP to next line (for testing multi-line scenarios)
+    // Searches for CR from current SrcP and advances past it
+    void AdvanceToNextLine() {
+      // Search for CR starting at SrcP
+      while (SrcP < TxtEnd && g_test_src_memory[SrcP] != CR) {
+        SrcP++;
+      }
+      // Skip past the CR if found
+      if (SrcP < TxtEnd && g_test_src_memory[SrcP] == CR) {
+        SrcP++;
+      }
+    }
+
+    //=================================================
+    // Phase 8.3: Line Processing Helpers Test API
+    //=================================================
+
+    // Register accessors
+    uint8_t GetY() {
+      return Y;
+    }
+
+    void SetY(uint8_t value) {
+      Y = value;
+    }
+
+    uint8_t GetA() {
+      return A;
+    }
+
+    void SetA(uint8_t value) {
+      A = value;
+    }
+
+    // Source pointer byte access helper
+    uint8_t GetSrcPByte(uint8_t index) {
+      return SrcP_byte(index);
+    }
+
+    // Line processing helpers
+    void NextRec() {
+      ::NextRec();
+    }
+
+    void NxtField() {
+      ::NxtField();
+    }
+
+    void ChrGot() {
+      ::ChrGot();
+    }
+
+    void ChrGet() {
+      ::ChrGet();
     }
 
   }  // namespace Asm
