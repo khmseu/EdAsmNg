@@ -83,6 +83,12 @@ namespace {
   void NxtField();
   void L81F0();
 
+  // Phase 8.4: Symbol table and error handling forward declarations
+  void FindSym();
+  void AddNode();
+  void RegAsmEW(std::uint8_t errorToken);
+  void RegAsmEW();
+
   // Phase 8.4: Mnemonic/directive handler forward declarations
   void HndlMnem();
 
@@ -218,6 +224,12 @@ namespace {
     // Use g_test_src_memory for simulated memory access
     std::uint16_t addr = SrcP + index;
     return g_test_src_memory[addr];
+  }
+
+  // Helper to convert simulated 16-bit address to real pointer into g_test_src_memory
+  // Used for symbol table and other memory operations
+  inline std::uint8_t* SimPtrToMemPtr(std::uint16_t simAddr) {
+    return &g_test_src_memory[simAddr];
   }
 
   // Macro to simplify array-style access (for code that looks like SrcP_at(Y))
@@ -1512,16 +1524,8 @@ namespace {
     // A = BINtype / ftypeT[0] = A  - TODO: implement when BINtype/ftypeT are defined
     // OpenSrc1();  // TODO: implement when ready
 
-    // Safety counter to prevent infinite loops during development
-    int safety_counter = 1000;
-
   // Main Pass 1 loop: Assemble each source line
   Pass1Lup:
-    if (--safety_counter <= 0) {
-      // Safety exit - prevent infinite loop during development
-      return;
-    }
-
     GSrcLin();      // Get next source line
     if (C) return;  // EOF reached? (C=1 means no more lines)
 
@@ -1541,17 +1545,50 @@ namespace {
     if (A == 0) goto NoLabel;  // Line starts with space? No label
 
     // Label present - parse and add to symbol table
-    // This part is simplified for Phase 8.4 - full implementation in Phase 9+
-    // TODO Phase 9+: RsvdId();  // Check for A,X,Y as 1st char of label
-    // TODO Phase 9+: FindSym(); // Check if symbol already exists
-    // TODO Phase 9+: Handle duplicate symbol errors
-    // TODO Phase 9+: AddNode();  // Add symbol to table with current PC value
+    // Phase 8.4: Basic label parsing with duplicate detection
 
-    // For Phase 8.4: Skip label parsing, just advance past it
+    // Check if symbol already exists
+    FindSym();
+    if (!C) {  // Symbol found (C=0)
+      // Check if already defined
+      if ((int8_t)A >= 0) {  // Bit 7 clear means defined
+        X = 0x02;            // Duplicate identifier error
+        RegAsmEW();
+        A      = 0x00;
+        LabelF = A;  // Flag no label field
+        goto SkipLabel;
+      }
+      // Symbol exists but undefined - update it
+      // Y is indexing flag byte after FindSym
+      uint8_t* SymP_ptr     = SimPtrToMemPtr(SymP);  // Convert simulated address
+      uint8_t  SymFByte_val = SymP_ptr[Y];
+      SymFByte_val &= (entry | fwdrefd);  // Keep ENTRY/EXTRN flags
+      SymFByte_val |= RelCodeF;           // Add relative bit if in relative mode
+      SymP_ptr[Y] = SymFByte_val;
+      Y++;
+      SymP_ptr[Y] = PC & 0xFF;  // Store PC value
+      Y++;
+      SymP_ptr[Y] = PC >> 8;
+      goto SkipLabel;
+    }
+
+    // New label - add to symbol table
+    A        = 0x00;
+    RelExprF = RelCodeF;  // Set relative flag if in relative mode
+    AddNode();
+    if (C) {     // Error adding node
+      X = 0x0E;  // Invalid identifier
+      RegAsmEW();
+    }
+
+  SkipLabel:
+    // Skip past label text to find mnemonic
+    Y = 0;    // Reset to start of line
     L81F0();  // Skip over non-blanks (label text)
 
     // Check if there's a mnemonic/directive after label
     A = SrcP_at(Y);
+    if (A == ':') Y++;            // Skip colon if present
     if (A == CR) goto Pass1Next;  // Label only line? Done
     // Fall through to NoLabel to parse mnemonic
 
@@ -1936,9 +1973,9 @@ namespace {
     PrvSymP |= (Y << 8);  // STY PrvSymP+1
 
     Y        = 0;
-    SymP_ptr = reinterpret_cast<std::uint8_t*>(static_cast<uintptr_t>(SymP));
-    A        = SymP_ptr[Y];  // LDA (SymP),Y
-    NxtSymP  = A;            // STA NxtSymP - Point to next node
+    SymP_ptr = SimPtrToMemPtr(SymP);  // Convert simulated address to real pointer
+    A        = SymP_ptr[Y];           // LDA (SymP),Y
+    NxtSymP  = A;                     // STA NxtSymP - Point to next node
     Y++;
     A = SymP_ptr[Y];      // LDA (SymP),Y - in chain
     NxtSymP |= (A << 8);  // STA NxtSymP+1 - If NIL ($0000) end of chain
@@ -1952,7 +1989,7 @@ namespace {
 
   L88EC:
     Y        = static_cast<std::uint8_t>(-1);  // LDY #-1 - Prepare to get 1st char of src line
-    SymP_ptr = reinterpret_cast<std::uint8_t*>(static_cast<uintptr_t>(SymP));
+    SymP_ptr = SimPtrToMemPtr(SymP);           // Update pointer after SymP changed
 
   L88EE:
     ChrGet2();                         // JSR ChrGet2
@@ -1976,13 +2013,14 @@ namespace {
     A = SymP_ptr[Y];                // LDA (SymP),Y - Get symbol's flag byte
     if ((int8_t)A < 0) goto L891A;  // BMI L891A - Not defined yet
 
-    A           = A & 0b10111111;  // AND #%10111111 - Set it to referenced
-    SymP_ptr[Y] = A;               // STA (SymP),Y
-    flag        = A;               // PHA - Save flag byte
-    A           = A & relative;    // AND #relative - Retain this bit
-    A |= RelExprF;                 // ORA RelExprF
-    RelExprF = A;                  // STA RelExprF
-    A        = flag;               // PLA - Restore
+    A           = A & 0b10111111;        // AND #%10111111 - Set it to referenced
+    SymP_ptr    = SimPtrToMemPtr(SymP);  // Ensure pointer is updated
+    SymP_ptr[Y] = A;                     // STA (SymP),Y
+    flag        = A;                     // PHA - Save flag byte
+    A           = A & relative;          // AND #relative - Retain this bit
+    A |= RelExprF;                       // ORA RelExprF
+    RelExprF = A;                        // STA RelExprF
+    A        = flag;                     // PLA - Restore
 
   L891A:
     C = false;  // CLC - Flag symbolic name found
@@ -2160,50 +2198,50 @@ namespace {
   // NB. 1) msb of all chars of symbolic name
   //     except the last one are on
   //     2) The size of a node structure is not fixed.
-#if 0   // TODO: Phase 9+ - Fix AddNode goto variable initialization
+#if 1  // Phase 8.4: Enable AddNode for symbol table creation
   // Symbolic names with the same hash value (collision)
   // are connected together in a singly linked list.
   //=================================================
   void AddNode() {
     // Declare variables at function scope to avoid goto issues
-    uint8_t flag;
+    uint8_t  flag;
     uint16_t sum_low;
-    bool carry_add;
+    bool     carry_add;
 
-    flag = A;  // PHA - Save flag byte
-    Y    = 0;  // LDY #0
-    ChrGot();  // JSR ChrGot
-    if (C) {   // BCC L89B4
+    flag = A;    // PHA - Save flag byte
+    Y    = 0;    // LDY #0
+    ChrGot();    // JSR ChrGot
+    if (C) {     // BCC L89B4
       C = true;  // SEC
       return;
     }
 
   L89B4:
-    X = HashIdx;                      // LDX HashIdx - Is there already a chain
-    A = HeaderT_ptr[X + 1];           // LDA HeaderT+1,X - associated with this value?
-    if (A != 0) goto L89C8;           // BNE L89C8 - Yes
-    A        = 0x00;                  // LDA #<HeaderT - Start a new singly linked list
-    sum_low  = A + HashIdx;           // ADC HashIdx
-    A        = sum_low & 0xFF;        // Low byte result
-    PrvSymP  = A;                     // STA PrvSymP - Point @ $BCxx
-    carry_add = sum_low > 0xFF;       // Carry from low byte addition
-    A        = 0xBC;                  // LDA #>HeaderT
-    A        = static_cast<std::uint8_t>(A + (carry_add ? 1 : 0));  // ADC #0
-    PrvSymP |= (A << 8);              // STA PrvSymP+1
+    X = HashIdx;                 // LDX HashIdx - Is there already a chain
+    A = HeaderT_ptr[X + 1];      // LDA HeaderT+1,X - associated with this value?
+    if (A != 0) goto L89C8;      // BNE L89C8 - Yes
+    A         = 0x00;            // LDA #<HeaderT - Start a new singly linked list
+    sum_low   = A + HashIdx;     // ADC HashIdx
+    A         = sum_low & 0xFF;  // Low byte result
+    PrvSymP   = A;               // STA PrvSymP - Point @ $BCxx
+    carry_add = sum_low > 0xFF;  // Carry from low byte addition
+    A         = 0xBC;            // LDA #>HeaderT
+    A         = static_cast<std::uint8_t>(A + (carry_add ? 1 : 0));  // ADC #0
+    PrvSymP |= (A << 8);                                             // STA PrvSymP+1
 
     // NB: We assume PrvSymP have been set correctly
     // if it's not a new chain. In order to set this ptr
     // correctly for an existing chain, FindSym should
     // be called before AddNode.
   L89C8:
-    A                         = Y;  // TYA - A=Y=0
-    std::uint8_t* EndSymT_ptr = reinterpret_cast<std::uint8_t*>(static_cast<uintptr_t>(EndSymT));
-    EndSymT_ptr[Y]            = A;               // STA (EndSymT),Y
-    A                         = EndSymT & 0xFF;  // LDA EndSymT
-    std::uint8_t* PrvSymP_ptr = reinterpret_cast<std::uint8_t*>(static_cast<uintptr_t>(PrvSymP));
-    PrvSymP_ptr[Y]            = A;  // STA (PrvSymP),Y
-    A                         = Y;  // TYA - A=0
-    Y++;                            // INY - Y=1
+    A                         = Y;                        // TYA - A=Y=0
+    std::uint8_t* EndSymT_ptr = SimPtrToMemPtr(EndSymT);  // Convert simulated address
+    EndSymT_ptr[Y]            = A;                        // STA (EndSymT),Y
+    A                         = EndSymT & 0xFF;           // LDA EndSymT
+    std::uint8_t* PrvSymP_ptr = SimPtrToMemPtr(PrvSymP);  // Convert simulated address
+    PrvSymP_ptr[Y]            = A;                        // STA (PrvSymP),Y
+    A                         = Y;                        // TYA - A=0
+    Y++;                                                  // INY - Y=1
     EndSymT_ptr[Y] = A;             // STA (EndSymT),Y - Set link field to NIL ($0000)
     A              = EndSymT >> 8;  // LDA EndSymT+1
     PrvSymP_ptr[Y] = A;             // STA (PrvSymP),Y - Point @ new entry
@@ -2220,8 +2258,8 @@ namespace {
     // msb on except last char.
     // On fall thru, Y=0 for both SrcP and EndSymT.
   L89E3:
-    EndSymT_ptr = reinterpret_cast<std::uint8_t*>(static_cast<uintptr_t>(EndSymT));
-    ChrGot();  // JSR ChrGot
+    EndSymT_ptr = SimPtrToMemPtr(EndSymT);  // Update pointer after EndSymT changed
+    ChrGot();                               // JSR ChrGot
 
   L89E6:
     A |= 0x80;                                   // ORA #$80 - msb on
@@ -2279,10 +2317,24 @@ namespace {
   }
 #endif  // AddNode
 
-  // Stub: L81F0 - Skip over non-blanks
+  // L81F0 - Skip over non-blanks until space, CR, or colon
+  // Original: ASM2.S (various locations)
+  // Used to skip over label text
+  // Entry: Y = index into source line
+  // Exit: Y pointing at first space/CR/colon, Z flag set based on result
   void L81F0() {
-    // TODO: Skip over non-blank characters
-    Z = true;  // For now, simulate CR found
+    while (true) {
+      A = SrcP_at(Y);
+      if (A == ' ' || A == '\t' || A == CR || A == ':') {
+        Z = (A == CR);  // Set Z if CR found
+        return;
+      }
+      Y++;
+      if (Y == 0) {  // Wrapped around
+        Z = false;
+        return;
+      }
+    }
   }
 
   //=================================================
@@ -3776,8 +3828,9 @@ namespace {
       if (mnemonic.length() > 10) break;  // Safety limit
     }
 
-    // Reset Y to start of mnemonic for proper parsing
-    Y = startY;
+    // Move Y to the character just after the mnemonic so subsequent
+    // calls to NxtField() will correctly skip to the operand field.
+    Y = startY + static_cast<uint8_t>(mnemonic.length());
 
     // Handle recognized mnemonics/directives for Phase 8.4
     if (mnemonic == "NOP") {
@@ -8806,29 +8859,95 @@ namespace EdAsmNg {
 
     // Symbol table query functions
     bool HasSymbol(const char* name) {
-      (void)name;  // Suppress unused parameter warning
-      // TODO: Implement symbol lookup
-      // For now, stub - will implement with proper FindSym call
-      return false;
+      // Set up SrcP to point to the name string in test memory
+      // Use a temporary buffer at a safe location
+      const uint16_t temp_addr = 0x0300;  // Safe area in simulated memory
+      size_t         name_len  = std::strlen(name);
+      if (name_len > 100) name_len = 100;
+      std::memcpy(&g_test_src_memory[temp_addr], name, name_len);
+      g_test_src_memory[temp_addr + name_len] = '\r';  // Terminate with CR
+
+      // Point SrcP at the name
+      uint16_t saved_SrcP = SrcP;
+      SrcP                = temp_addr;
+      Y                   = 0;
+
+      // Call FindSym
+      FindSym();
+      bool found = !C;  // C=0 means found
+
+      // Restore SrcP
+      SrcP = saved_SrcP;
+
+      return found;
     }
 
     uint16_t GetSymbolValue(const char* name) {
-      (void)name;  // Suppress unused parameter warning
-      // TODO: Implement symbol value retrieval
-      // For now, stub - will implement with proper symbol table access
-      return 0;
+      // Set up SrcP to point to the name string
+      const uint16_t temp_addr = 0x0300;
+      size_t         name_len  = std::strlen(name);
+      if (name_len > 100) name_len = 100;
+      std::memcpy(&g_test_src_memory[temp_addr], name, name_len);
+      g_test_src_memory[temp_addr + name_len] = '\r';
+
+      uint16_t saved_SrcP = SrcP;
+      SrcP                = temp_addr;
+      Y                   = 0;
+
+      FindSym();
+
+      uint16_t value = 0;
+      if (!C) {  // Symbol found
+        // Y is indexing value field (low byte)
+        uint8_t* SymP_ptr = SimPtrToMemPtr(SymP);  // Convert simulated address
+        value             = SymP_ptr[Y];           // Low byte
+        value |= (SymP_ptr[Y + 1] << 8);           // High byte
+      }
+
+      SrcP = saved_SrcP;
+      return value;
     }
 
     uint8_t GetSymbolFlags(const char* name) {
-      (void)name;  // Suppress unused parameter warning
-      // TODO: Implement symbol flags retrieval
-      return 0;
+      // Set up SrcP to point to the name string
+      const uint16_t temp_addr = 0x0300;
+      size_t         name_len  = std::strlen(name);
+      if (name_len > 100) name_len = 100;
+      std::memcpy(&g_test_src_memory[temp_addr], name, name_len);
+      g_test_src_memory[temp_addr + name_len] = '\r';
+
+      uint16_t saved_SrcP = SrcP;
+      SrcP                = temp_addr;
+      Y                   = 0;
+
+      FindSym();
+
+      uint8_t flags = 0;
+      if (!C) {     // Symbol found
+        flags = A;  // FindSym returns flag byte in A
+      }
+
+      SrcP = saved_SrcP;
+      return flags;
     }
 
     int GetSymbolCount() {
-      // TODO: Implement symbol count
-      // Count non-null entries in HeaderT
-      return 0;
+      // Count symbols by traversing HeaderT and counting nodes in chains
+      int count = 0;
+
+      for (int i = 0; i < 128; i++) {
+        uint16_t node_ptr = HeaderT_ptr[i * 2] | (HeaderT_ptr[i * 2 + 1] << 8);
+
+        // Traverse chain
+        while (node_ptr != 0x0000) {
+          count++;
+          // Get next node pointer (first 2 bytes of node)
+          uint8_t* node = SimPtrToMemPtr(node_ptr);  // Convert simulated address
+          node_ptr      = node[0] | (node[1] << 8);
+        }
+      }
+
+      return count;
     }
 
     // Reset assembler state for clean testing
@@ -8841,11 +8960,17 @@ namespace EdAsmNg {
       SymNbr   = 0;
       ErrorF   = 0;
 
+      // Initialize HeaderT_ptr to point to simulated memory at HeaderT address
+      HeaderT_ptr = &g_test_src_memory[HeaderT];
+
+      // Initialize symbol table pointers
+      StrtSymT = 0x1E00;    // Start of symbol table in simulated memory
+      EndSymT  = StrtSymT;  // Empty table: start == end
+
       // Clear symbol table (HeaderT)
       if (HeaderT_ptr != nullptr) {
-        for (int i = 0; i < 128; i++) {
-          HeaderT_ptr[i * 2]     = 0x00;
-          HeaderT_ptr[i * 2 + 1] = 0x00;
+        for (int i = 0; i < 256; i++) {
+          HeaderT_ptr[i] = 0x00;
         }
       }
     }
