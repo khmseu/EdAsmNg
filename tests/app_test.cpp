@@ -1396,9 +1396,10 @@ TEST_F(Phase5DirectiveTest, ORG_UpdatesAddress_Pass1) {
 
 TEST_F(Phase5DirectiveTest, ORG_RejectsInvalid_OutOfRange) {
   // Pass 1: ORG $FFFF (assuming HighMem < 0xFFFF)
-  // Verify error registered
+  // Verify error registered and PC/ObjPC unchanged
 
   EdAsmNg::Asm::SetPassNbr(0);       // Pass 1
+  EdAsmNg::Asm::SetCurAdr(0x1000);   // Start at 0x1000
   EdAsmNg::Asm::SetHighMem(0xC000);  // Set max to 0xC000
   EdAsmNg::Asm::SetupSourceLine("$FFFF");
 
@@ -1408,11 +1409,13 @@ TEST_F(Phase5DirectiveTest, ORG_RejectsInvalid_OutOfRange) {
 
   // Should register an out-of-range error (0x24: directive operand err)
   EXPECT_GT(errorsAfter, errorsBefore);
+  // PC should NOT have changed (should remain 0x1000)
+  EXPECT_EQ(EdAsmNg::Asm::GetCurAdr(), 0x1000);
 }
 
-TEST_F(Phase5DirectiveTest, ORG_SkipsCode_Pass2) {
+TEST_F(Phase5DirectiveTest, ORG_UpdatesAddress_Pass2) {
   // Pass 2: ORG $3000
-  // Verify ORG is skipped entirely in Pass 2 (early return)
+  // Verify ORG now updates PC/ObjPC in Pass 2 as well
 
   EdAsmNg::Asm::SetPassNbr(1);  // Pass 2
   EdAsmNg::Asm::SetCurAdr(0x2000);
@@ -1422,9 +1425,10 @@ TEST_F(Phase5DirectiveTest, ORG_SkipsCode_Pass2) {
   EdAsmNg::Asm::HndlORG();
   uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
 
-  // ORG should skip processing in Pass 2: PC should NOT change
-  EXPECT_EQ(EdAsmNg::Asm::GetCurAdr(), 0x2000);  // PC unchanged
-  EXPECT_EQ(errorsAfter, errorsBefore);          // No errors
+  // ORG should now update PC/ObjPC in Pass 2 as well
+  EXPECT_EQ(EdAsmNg::Asm::GetCurAdr(), 0x3000);   // PC should change
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x3000);    // ObjPC should also change
+  EXPECT_EQ(errorsAfter, errorsBefore);           // No errors
 }
 
 //=================================================
@@ -3256,6 +3260,9 @@ namespace EdAsmNg {
     // Pass 1 execution
     void DoPass1();
 
+    // Pass 2 execution
+    void DoPass2();
+
     // Pass number accessor
     uint8_t GetPassNbr();
     void    SetPassNbr(uint8_t value);
@@ -3273,6 +3280,17 @@ namespace EdAsmNg {
     // Dummy section control (test helper)
     void    SetDummyF(uint8_t value);
     uint8_t GetDummyF();
+
+    // Pass 2 object code storage helpers
+    void     SetObjPC(uint16_t value);
+    uint16_t GetObjPC();
+    void     SetHighMem(uint16_t value);
+    uint16_t GetHighMem();
+    void     SetGenF(uint8_t value);
+    uint8_t  GetGenF();
+    uint8_t  ReadObjMemory(uint16_t addr);
+    void     WriteObjMemory(uint16_t addr, uint8_t value);
+    void     InitObjMemory();
 
     // Reset assembler state for clean test environment
     void ResetAsmState();
@@ -3550,6 +3568,179 @@ TEST_F(Phase84Pass1Test, test_pass1_reserved_label_A_error) {
   EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x0000);
 }
 
+//=================================================
+// Pass 2 Tests - Object Code Generation (Phase 8.5.1)
+//=================================================
+
+class Pass2Test : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetErrorState();
+    EdAsmNg::Asm::ResetAsmState();
+    EdAsmNg::Asm::SetPassNbr(1);  // Pass 2 = PassNbr 1
+    EdAsmNg::Asm::SetPC(0);
+    EdAsmNg::Asm::SetObjPC(0);         // Output starts at address 0
+    EdAsmNg::Asm::SetHighMem(0xFFFF);  // High memory limit (64KB)
+    EdAsmNg::Asm::SetGenF(0x00);       // Code generation ON (GenF=0)
+    EdAsmNg::Asm::InitObjMemory();     // Initialize output buffer
+  }
+};
+
+TEST_F(Pass2Test, test_pass2_nop_emits_opcode) {
+  // NOP instruction should emit byte 0x00 to output buffer
+  // Note: statement must start in operand column (leading spaces) —
+  // a token in column 0 is treated as a label by the assembler.
+  const char* source = "      NOP\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  // Set initial ObjPC to 0
+  EdAsmNg::Asm::SetObjPC(0);
+
+  // Run Pass 2
+  EdAsmNg::Asm::DoPass2();
+
+  // Verify opcode 0x00 was written at address 0x0000
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0000), 0x00);
+
+  // Verify ObjPC advanced to 0x0001
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x0001);
+}
+
+TEST_F(Pass2Test, test_pass2_lda_operand_emits_opcode_byte) {
+  // LDA #$01 should emit 0xA9 (opcode), 0x01 (8-bit immediate)
+  // LDA immediate addressing: opcode=0xA9, followed by 1-byte operand
+  const char* source = "      LDA #$01\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  EdAsmNg::Asm::SetObjPC(0);
+
+  // Run Pass 2
+  EdAsmNg::Asm::DoPass2();
+
+  // Verify opcode sequence: 0xA9, 0x01
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0000), 0xA9);  // LDA opcode
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0001), 0x01);  // Operand byte
+
+  // Verify ObjPC advanced to 0x0002
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x0002);
+}
+
+TEST_F(Pass2Test, test_pass2_output_buffer_tracking) {
+  // Multiple instructions should increment ObjPC correctly
+  // NOP (1 byte) + LDA #$00 (2 bytes) + STA $1000 (3 bytes) = 6 bytes total
+  const char* source =
+      "      NOP\r"
+      "      LDA #$00\r"
+      "      STA $1000\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  EdAsmNg::Asm::SetObjPC(0);
+
+  // Run Pass 2
+  EdAsmNg::Asm::DoPass2();
+
+  // Verify opcodes at correct positions
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0000), 0x00);  // NOP
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0001), 0xA9);  // LDA opcode
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0003), 0x8D);  // STA opcode (LDA is 2 bytes)
+
+  // Verify final ObjPC is 0x0006 (1 + 2 + 3 bytes)
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x0006);
+}
+
+TEST_F(Pass2Test, test_pass2_org_relocates_objpc) {
+  // ORG directive in Pass 2 should set ObjPC to the specified address
+  // ORG $1000 followed by NOP should emit NOP at address $1000
+  const char* source =
+      "      ORG $1000\r"
+      "      NOP\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  EdAsmNg::Asm::SetObjPC(0);
+
+  // Run Pass 2
+  EdAsmNg::Asm::DoPass2();
+
+  // Verify NOP opcode (0x00) is at address 0x1000
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x1000), 0x00);
+
+  // Verify ObjPC advanced to 0x1001 after NOP
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x1001);
+}
+
+TEST_F(Pass2Test, test_pass2_ds_emits_zeros) {
+  // DS (Define Storage) should emit N zeros and advance ObjPC
+  // DS 5 should emit 5 zero bytes
+  const char* source =
+      "      ORG $2000\r"
+      "      DS 5\r"
+      "      NOP\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  EdAsmNg::Asm::SetObjPC(0);
+
+  // Run Pass 2
+  EdAsmNg::Asm::DoPass2();
+
+  // Verify 5 zero bytes at 0x2000-0x2004
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x2000), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x2001), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x2002), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x2003), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x2004), 0x00);
+
+  // Verify NOP is at 0x2005
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x2005), 0x00);
+
+  // Verify ObjPC advanced to 0x2006 (5 DS bytes + 1 NOP)
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x2006);
+}
+
+TEST_F(Pass2Test, test_pass2_dfb_emits_bytes) {
+  // DFB (Define Byte) should emit a list of bytes
+  // DFB $12,$34,$56
+  const char* source =
+      "      ORG $3000\r"
+      "      DFB $12,$34,$56\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  EdAsmNg::Asm::SetObjPC(0);
+
+  // Run Pass 2
+  EdAsmNg::Asm::DoPass2();
+
+  // Verify bytes at 0x3000, 0x3001, 0x3002
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x3000), 0x12);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x3001), 0x34);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x3002), 0x56);
+
+  // Verify ObjPC advanced to 0x3003
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x3003);
+}
+
+TEST_F(Pass2Test, test_pass2_dw_emits_little_endian) {
+  // DW (Define Word) should emit 16-bit words in little-endian format
+  // DW $1234,$5678 should emit: $34,$12,$78,$56
+  const char* source =
+      "      ORG $4000\r"
+      "      DW $1234,$5678\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  EdAsmNg::Asm::SetObjPC(0);
+
+  // Run Pass 2
+  EdAsmNg::Asm::DoPass2();
+
+  // Verify little-endian words
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x4000), 0x34);  // Low byte of $1234
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x4001), 0x12);  // High byte of $1234
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x4002), 0x78);  // Low byte of $5678
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x4003), 0x56);  // High byte of $5678
+
+  // Verify ObjPC advanced to 0x4004 (2 words = 4 bytes)
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x4004);
+}
+
 TEST_F(Phase84Pass1Test, test_pass1_invalid_label_first_char_error) {
   // Label starting with a digit is invalid -> error, no symbol added, no PC advance
   const char* source = "1FOO NOP\r";
@@ -3566,4 +3757,226 @@ TEST_F(Phase84Pass1Test, test_pass1_invalid_label_first_char_error) {
 
   // PC should not advance when label is invalid
   EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x0000);
+}
+
+//=================================================
+// Phase 8.5.2: PC/ObjPC Sync Tests
+//=================================================
+
+TEST_F(Pass2Test, test_pass2_pc_objpc_sync_nop) {
+  // After NOP, PC should equal ObjPC
+  const char* source = "      NOP\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0x8000);
+  EdAsmNg::Asm::SetPC(0x8000);
+
+  EdAsmNg::Asm::DoPass2();
+
+  // Both PC and ObjPC should be 0x8001
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x8001);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x8001);
+}
+
+TEST_F(Pass2Test, test_pass2_pc_objpc_sync_lda_sta) {
+  // After LDA and STA, PC should equal ObjPC
+  const char* source =
+      "      LDA #$42\r"
+      "      STA $1000\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0x6000);
+  EdAsmNg::Asm::SetPC(0x6000);
+
+  EdAsmNg::Asm::DoPass2();
+
+  // LDA = 2 bytes, STA = 3 bytes, total = 5 bytes
+  // Both PC and ObjPC should be 0x6005
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x6005);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x6005);
+}
+
+TEST_F(Pass2Test, test_pass2_pc_objpc_sync_ds) {
+  // After DS directive, PC should equal ObjPC
+  const char* source =
+      "      ORG $2000\r"
+      "      DS 10\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+  EdAsmNg::Asm::SetPC(0);
+
+  EdAsmNg::Asm::DoPass2();
+
+  // DS 10 creates 10 bytes
+  // Both PC and ObjPC should be 0x200A
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x200A);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x200A);
+}
+
+TEST_F(Pass2Test, test_pass2_pc_objpc_sync_dfb) {
+  // After DFB directive, PC should equal ObjPC
+  const char* source =
+      "      ORG $3000\r"
+      "      DFB $11,$22,$33\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+  EdAsmNg::Asm::SetPC(0);
+
+  EdAsmNg::Asm::DoPass2();
+
+  // DFB creates 3 bytes
+  // Both PC and ObjPC should be 0x3003
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x3003);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x3003);
+}
+
+TEST_F(Pass2Test, test_pass2_pc_objpc_sync_dw) {
+  // After DW directive, PC should equal ObjPC
+  const char* source =
+      "      ORG $4000\r"
+      "      DW $1234\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+  EdAsmNg::Asm::SetPC(0);
+
+  EdAsmNg::Asm::DoPass2();
+
+  // DW creates 2 bytes
+  // Both PC and ObjPC should be 0x4002
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x4002);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x4002);
+}
+
+TEST_F(Pass2Test, test_pass2_org_sets_both_pc_objpc) {
+  // ORG should set both PC and ObjPC
+  const char* source =
+      "      ORG $5000\r"
+      "      NOP\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+  EdAsmNg::Asm::SetPC(0);
+
+  EdAsmNg::Asm::DoPass2();
+
+  // After ORG $5000 and NOP, both should be 0x5001
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x5001);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5001);
+}
+
+TEST_F(Pass2Test, test_pass2_dfb_overflow_error) {
+  // DFB with value > 0xFF should flag error 0x28 but still emit low byte
+  const char* source =
+      "      ORG $6000\r"
+      "      DFB $123\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+  EdAsmNg::Asm::SetPC(0);
+
+  EdAsmNg::Asm::DoPass2();
+
+  // Should have an error registered
+  EXPECT_GT(EdAsmNg::Asm::GetErrorCount(), 0);
+  auto errInfo = EdAsmNg::Asm::GetErrorInfo(0);
+  EXPECT_EQ(errInfo.errIndex, 0x28);  // Byte overflow error
+
+  // Should still emit low byte (0x23) and advance counters
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x6000), 0x23);
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x6001);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x6001);
+}
+
+TEST_F(Pass2Test, test_pass2_org_bounds_check) {
+  // ORG with address >= HighMem should flag error and NOT change PC/ObjPC
+  const char* source = "      ORG $C000\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0x1000);
+  EdAsmNg::Asm::SetPC(0x1000);
+  EdAsmNg::Asm::SetHighMem(0xC000);  // Set HighMem to same as ORG target
+
+  EdAsmNg::Asm::DoPass2();
+
+  // Should have an error registered (0x24 = directive operand error)
+  EXPECT_GT(EdAsmNg::Asm::GetErrorCount(), 0);
+  auto errInfo = EdAsmNg::Asm::GetErrorInfo(0);
+  EXPECT_EQ(errInfo.errIndex, 0x24);
+
+  // PC and ObjPC should NOT have changed (should remain 0x1000)
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x1000);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x1000);
+}
+
+TEST_F(Pass2Test, test_pass2_ds_large_size) {
+  // DS with size > 255 should not truncate and PC should equal ObjPC
+  const char* source =
+      "      ORG $2000\r"
+      "      DS 300\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+  EdAsmNg::Asm::SetPC(0);
+
+  EdAsmNg::Asm::DoPass2();
+
+  // Should advance by 300 bytes (0x012C)
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x212C);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x212C);
+}
+
+TEST_F(Pass2Test, test_pass2_dfb_many_bytes) {
+  // DFB with many bytes should keep PC == ObjPC
+  const char* source =
+      "      ORG $3000\r"
+      "      DFB $01,$02,$03,$04\r"
+      "      DFB $05,$06,$07,$08\r"
+      "      DFB $09,$0A,$0B,$0C\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+  EdAsmNg::Asm::SetPC(0);
+
+  EdAsmNg::Asm::DoPass2();
+
+  // Should emit 12 bytes total
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x300C);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x300C);
+}
+
+TEST_F(Pass2Test, test_pass2_dw_many_words) {
+  // DW with many words should keep PC == ObjPC
+  const char* source =
+      "      ORG $4000\r"
+      "      DW $1234\r"
+      "      DW $5678,$ABCD\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+  EdAsmNg::Asm::SetPC(0);
+
+  EdAsmNg::Asm::DoPass2();
+
+  // Should emit 6 bytes total (3 words * 2 bytes each)
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x4006);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x4006);
+}
+
+TEST_F(Pass2Test, test_pass2_combined_pc_objpc_tracking) {
+  // Complex test with multiple directives and instructions
+  const char* source =
+      "      ORG $7000\r"
+      "      NOP\r"
+      "      DS 5\r"
+      "      DFB $AA,$BB\r"
+      "      LDA #$99\r"
+      "      DW $5555\r"
+      "      STA $8000\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+  EdAsmNg::Asm::SetPC(0);
+
+  EdAsmNg::Asm::DoPass2();
+
+  // ORG $7000: PC=0x7000, ObjPC=0x7000
+  // NOP: +1 = 0x7001, 0x7001
+  // DS 5: +5 = 0x7006, 0x7006
+  // DFB $AA,$BB: +2 = 0x7008, 0x7008
+  // LDA #$99: +2 = 0x700A, 0x700A
+  // DW $5555: +2 = 0x700C, 0x700C
+  // STA $8000: +3 = 0x700F, 0x700F
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x700F);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x700F);
 }

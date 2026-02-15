@@ -1228,8 +1228,61 @@ namespace {
   // Forward declaration - full implementation below
   void DoPass1();
 
+  // DoPass2 - Generate object code from symbol table
+  // Source code reading, code generation
+  // Original: ASM2.S lines ~456-650 (approximate)
   void DoPass2() {
-    // TODO: Pass 2
+    // Initialize Pass 2 state
+    PassNbr = 1;  // Pass 2
+    // ObjPC is set by caller or from initialization
+    // GenF controls whether code is actually generated
+
+    // Main Pass 2 loop: Assemble each source line and emit code
+  Pass2Lup:
+    GSrcLin();      // Get next source line
+    if (C) return;  // EOF reached? (C=1 means no more lines)
+
+    // Initialize vars before assembling each src line
+    Y = 0;  // Start at first character
+
+    // Check for comment-only lines
+    A = SrcP_at(Y);                // Get 1st char (Y=0)
+    if (A == '*') goto Pass2Next;  // Pure comment line? Skip it
+    if (A == ';') goto Pass2Next;  // Comment line? Skip it
+    if (A == CR) goto Pass2Next;   // Blank line? Skip it
+
+    // Check for label (non-space first character)
+    A ^= SPACE;
+    LabelF = A;  // 0 => no label
+
+    if (A == 0) goto Pass2NoLabel;  // Line starts with space? No label
+
+    // Label present - skip past it to find mnemonic
+    Y = 0;    // Reset to start of line
+    L81F0();  // Skip over non-blanks (label text)
+
+    // Check if there's a mnemonic/directive after label
+    A = SrcP_at(Y);
+    if (A == ':') Y++;            // Skip colon if present
+    if (A == CR) goto Pass2Next;  // Label only line? Done
+    // Fall through to Pass2NoLabel to parse mnemonic
+
+  Pass2NoLabel:
+    NxtField();  // Skip spaces, point at mnemonic/directive
+
+    // Check if we reached end of line
+    A = SrcP_at(Y);
+    if (A == CR) goto Pass2Next;  // End of line? Done
+
+    // Parse mnemonic/directive and emit opcodes
+    HndlMnem();
+
+    // TODO Phase 9+: Check error flag, handle operand evaluation
+
+  Pass2Next:
+    // Advance to next source line
+    NextRec();
+    goto Pass2Lup;
   }
 
   void ClsFile() {
@@ -1647,7 +1700,6 @@ namespace {
     goto Pass1Lup;
   }
 
-  // PHASE1_CODE:   ChkCommLin:
   // PHASE1_CODE:     A = SrcP_at(Y);               // Get 1st char (Y=0)
   // PHASE1_CODE:     if (A == '*') goto L7E74;  // Is it a pure comment line? Yes
   // PHASE1_CODE:     if (A == ';') goto L7E74;  // comment
@@ -3118,41 +3170,33 @@ namespace {
   }
 #endif  // StorGMC
 
-#if 0   // TODO: Phase 9+ - Stub StorByt calls undeclared Wr1Byte and has other issues
-  // ($80D6) StorByt - (A)=byte to store in mem/disk
+  // StorByt - Store one byte to output buffer
+  // Input: A = byte to store, ObjPC = output address, GenF = generation flag
   // Translate from ASM2.S lines 1521-1556
   void StorByt() {
     // BIT GenF - Suppress code generation?
-    if ((int8_t)GenF < 0) return;        // Yes (BMI doRTS8)
-    if ((GenF & 0x40) != 0) goto L80F1;  // Write to Disk (BVS)
+    if ((int8_t)GenF < 0) return;  // Yes (BMI doRTS8)
 
-    // Memory mode: write A to (ObjPC),Y where Y=0
-    Y = 0;
-    // STA (ObjPC),Y - Store accumulator to memory at ObjPC
+    // Write to memory (test mode)
     if (g_test_obj_memory_enabled) {
       g_test_obj_memory[ObjPC] = A;
     }
-    // INC ObjPC - Increment 16-bit ObjPC (automatic carry in C++)
+
+    // INC ObjPC - Increment 16-bit ObjPC
     ObjPC++;
 
-  L80E6:
-    // Are we out of mem?
+    // Are we out of memory?
     // LDA ObjPC - CMP HighMem
     // LDA ObjPC+1 - SBC HighMem+1
     // 16-bit comparison: ObjPC >= HighMem?
-    if (ObjPC >= HighMem) goto L80F4;  // Yes (BCS)
-    return;  // RTS - No error, return
-
-  L80F1:
-    Wr1Byte();  // Write to disk
-    return;     // RTS
-
-  L80F4:
-    X = 0x0A;     // LDX #$0A - Out of memory error
-    RegAsmEW(X);  // JSR RegAsmEW
-    CanclAsm();   // JMP CanclAsm - Cancel assembly
+    if (ObjPC >= HighMem) {
+      // Out of memory error - register error and stop
+      X = 0x0A;     // Out of memory error
+      RegAsmEW(X);  // JSR RegAsmEW
+      // TODO: Cancel assembly (set abort flag or similar)
+    }
+    return;  // RTS
   }
-#endif  // StorByt
 
 #if 0   // TODO: Phase 9+ - Stub L80F7 already exists at line 2146, this is duplicate/incomplete
   // C=0 - no
@@ -3871,43 +3915,135 @@ namespace {
     // calls to NxtField() will correctly skip to the operand field.
     Y = startY + static_cast<uint8_t>(mnemonic.length());
 
-    // Debug: show extracted mnemonic (removed in production)
-
-    // Handle recognized mnemonics/directives for Phase 8.4
+    // Handle recognized mnemonics/directives for Phase 8.4-8.5
     if (mnemonic == "NOP") {
       Length = 1;
-      PC += 1;
+
+      // Pass 2: Emit opcode and sync PC with ObjPC
+      if (PassNbr == 1) {
+        A = 0x00;  // NOP opcode
+        StorByt();
+        // Sync PC with ObjPC after emission
+        PC = ObjPC;
+      } else {
+        // Pass 1: just track PC
+        PC += 1;
+      }
+
       C = false;  // Success
       return;
     }
 
     if (mnemonic == "LDA") {
-      // LDA - Minimal operand processing for Pass 1 tests
-      // If operand is an identifier, ensure it exists in symbol table
+      // LDA - Minimal operand processing (immediate 8-bit for now)
       NxtField();  // Point to operand field (sets Y=0, advances SrcP)
-      uint8_t ch = SrcP_at(Y);
-      if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) {
-        // Try to find symbol; if not found, add forward-ref entry
-        FindSym();
-        if (C) {
-          // Not found -> create undefined forward-ref node
-          A = (undefined | fwdrefd);
-          AddNode();
-          C = false;  // treat as success for Pass 1
+
+      // Parse operand to get value
+      uint16_t operand = 0;
+      uint8_t  ch      = SrcP_at(Y);
+
+      // Handle immediate mode (#$NN)
+      if (ch == '#') {
+        Y++;  // Skip #
+        ch = SrcP_at(Y);
+        if (ch == '$') {
+          Y++;  // Skip $
+          // Parse hex value
+          while (true) {
+            ch = SrcP_at(Y);
+            if (ch >= '0' && ch <= '9') {
+              operand = (operand << 4) | (ch - '0');
+              Y++;
+            } else if (ch >= 'A' && ch <= 'F') {
+              operand = (operand << 4) | (ch - 'A' + 10);
+              Y++;
+            } else if (ch >= 'a' && ch <= 'f') {
+              operand = (operand << 4) | (ch - 'a' + 10);
+              Y++;
+            } else {
+              break;
+            }
+          }
+          operand &= 0x00FF;  // Immediate is 8-bit
+        }
+      } else if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) {
+        // Identifier - lookup symbol
+        if (PassNbr == 0) {
+          FindSym();
+          if (C) {
+            // Not found -> create undefined forward-ref node
+            A = (undefined | fwdrefd);
+            AddNode();
+            C = false;
+          }
         }
       }
 
-      // LDA immediate (#$00) = 2 bytes
+      // LDA immediate = 2 bytes total (opcode + 8-bit operand)
       Length = 2;
-      PC += 2;
+
+      // Pass 2: Emit opcode and operand, sync PC with ObjPC
+      if (PassNbr == 1) {
+        A = 0xA9;              // LDA immediate opcode
+        StorByt();             // opcode
+        A = (operand & 0xFF);  // 8-bit immediate
+        StorByt();
+        // Sync PC with ObjPC after emission
+        PC = ObjPC;
+      } else {
+        // Pass 1: track PC (2 bytes total)
+        PC += 2;
+      }
+
       C = false;
       return;
     }
 
     if (mnemonic == "STA") {
       // STA absolute ($1000) = 3 bytes
+      NxtField();  // Point to operand field
+
+      // Parse operand to get address
+      uint16_t operand = 0;
+      uint8_t  ch      = SrcP_at(Y);
+
+      if (ch == '$') {
+        Y++;  // Skip $
+        // Parse hex value
+        while (true) {
+          ch = SrcP_at(Y);
+          if (ch >= '0' && ch <= '9') {
+            operand = (operand << 4) | (ch - '0');
+            Y++;
+          } else if (ch >= 'A' && ch <= 'F') {
+            operand = (operand << 4) | (ch - 'A' + 10);
+            Y++;
+          } else if (ch >= 'a' && ch <= 'f') {
+            operand = (operand << 4) | (ch - 'a' + 10);
+            Y++;
+          } else {
+            break;
+          }
+        }
+      }
+
       Length = 3;
-      PC += 3;
+
+      // Pass 2: Emit opcode and operand, sync PC with ObjPC
+      if (PassNbr == 1) {
+        A = 0x8D;  // STA absolute opcode
+        StorByt();
+        A = (operand & 0xFF);  // Low byte
+        StorByt();
+        A = ((operand >> 8) & 0xFF);  // High byte
+        StorByt();
+        // Sync PC with ObjPC after emission
+        PC = ObjPC;
+      } else {
+        // Pass 1: just track PC
+        PC += 3;
+      }
+
       C = false;
       return;
     }
@@ -3936,11 +4072,250 @@ namespace {
             break;  // Not a hex digit
           }
         }
-        PC = addr;
+
+        // Bounds validation: check if address >= HighMem
+        if (addr >= HighMem) {
+          // Register error and DO NOT change PC/ObjPC
+          uint8_t savedX = X;
+          uint8_t savedY = Y;
+          X              = 0x24;  // Directive operand error
+          RegAsmEW(X);
+          X = savedX;
+          Y = savedY;
+        } else {
+          // Valid address: Set both PC and ObjPC in both passes
+          PC    = addr;
+          ObjPC = addr;
+        }
       }
 
       Length = 0;      // Directives don't generate code
       C      = false;  // Success
+      return;
+    }
+
+    if (mnemonic == "DS") {
+      // DS (Define Storage) - reserves N bytes and fills with zeros in Pass 2
+      NxtField();  // Skip to operand
+
+      // Parse count (decimal or hex)
+      uint16_t count = 0;
+      uint8_t  ch    = SrcP_at(Y);
+
+      if (ch == '$') {
+        // Hex count
+        Y++;
+        while (true) {
+          ch = SrcP_at(Y);
+          if (ch >= '0' && ch <= '9') {
+            count = (count << 4) | (ch - '0');
+            Y++;
+          } else if (ch >= 'A' && ch <= 'F') {
+            count = (count << 4) | (ch - 'A' + 10);
+            Y++;
+          } else if (ch >= 'a' && ch <= 'f') {
+            count = (count << 4) | (ch - 'a' + 10);
+            Y++;
+          } else {
+            break;
+          }
+        }
+      } else {
+        // Decimal count
+        while (ch >= '0' && ch <= '9') {
+          count = count * 10 + (ch - '0');
+          Y++;
+          ch = SrcP_at(Y);
+        }
+      }
+
+      Length = count;
+
+      // Pass 2: Emit zeros and sync PC with ObjPC
+      if (PassNbr == 1) {
+        for (uint16_t i = 0; i < count; i++) {
+          A = 0x00;
+          StorByt();
+        }
+        // After emission, PC must equal ObjPC
+        PC = ObjPC;
+      } else {
+        // Pass 1: Track PC
+        PC += count;
+      }
+
+      C = false;
+      return;
+    }
+
+    if (mnemonic == "DFB") {
+      // DFB (Define Byte) - emits a comma-separated list of bytes
+      NxtField();  // Skip to operand
+
+      uint16_t byteCount = 0;
+
+      while (true) {
+        uint8_t  ch    = SrcP_at(Y);
+        uint16_t value = 0;
+
+        // Skip spaces
+        while (ch == ' ' || ch == '\t') {
+          Y++;
+          ch = SrcP_at(Y);
+        }
+
+        if (ch == CR || ch == 0) break;  // End of line
+
+        // Parse hex or decimal value
+        if (ch == '$') {
+          // Hex value
+          Y++;
+          while (true) {
+            ch = SrcP_at(Y);
+            if (ch >= '0' && ch <= '9') {
+              value = (value << 4) | (ch - '0');
+              Y++;
+            } else if (ch >= 'A' && ch <= 'F') {
+              value = (value << 4) | (ch - 'A' + 10);
+              Y++;
+            } else if (ch >= 'a' && ch <= 'f') {
+              value = (value << 4) | (ch - 'a' + 10);
+              Y++;
+            } else {
+              break;
+            }
+          }
+        } else if (ch >= '0' && ch <= '9') {
+          // Decimal value
+          while (ch >= '0' && ch <= '9') {
+            value = value * 10 + (ch - '0');
+            Y++;
+            ch = SrcP_at(Y);
+          }
+        }
+
+        // Validate byte range (Pass 2 only)
+        if (PassNbr == 1) {
+          if (value > 0xFF) {
+            // Byte overflow error - flag but still emit low byte
+            uint8_t savedX = X;
+            uint8_t savedY = Y;
+            X              = 0x28;  // Byte overflow error
+            RegAsmEW(X);
+            X = savedX;
+            Y = savedY;
+          }
+          A = (value & 0xFF);
+          StorByt();
+        }
+        byteCount++;
+
+        // Look for comma
+        ch = SrcP_at(Y);
+        while (ch == ' ' || ch == '\t') {
+          Y++;
+          ch = SrcP_at(Y);
+        }
+
+        if (ch == ',') {
+          Y++;  // Skip comma
+        } else {
+          break;  // No more operands
+        }
+      }
+
+      Length = byteCount;
+
+      // Pass 1: Track PC; Pass 2: sync PC to ObjPC after emission
+      if (PassNbr == 0) {
+        PC += byteCount;
+      } else {
+        PC = ObjPC;
+      }
+
+      C = false;
+      return;
+    }
+
+    if (mnemonic == "DW") {
+      // DW (Define Word) - emits 16-bit words in little-endian format
+      NxtField();  // Skip to operand
+
+      uint16_t wordCount = 0;
+
+      while (true) {
+        uint8_t  ch    = SrcP_at(Y);
+        uint16_t value = 0;
+
+        // Skip spaces
+        while (ch == ' ' || ch == '\t') {
+          Y++;
+          ch = SrcP_at(Y);
+        }
+
+        if (ch == CR || ch == 0) break;  // End of line
+
+        // Parse hex or decimal value
+        if (ch == '$') {
+          // Hex value
+          Y++;
+          while (true) {
+            ch = SrcP_at(Y);
+            if (ch >= '0' && ch <= '9') {
+              value = (value << 4) | (ch - '0');
+              Y++;
+            } else if (ch >= 'A' && ch <= 'F') {
+              value = (value << 4) | (ch - 'A' + 10);
+              Y++;
+            } else if (ch >= 'a' && ch <= 'f') {
+              value = (value << 4) | (ch - 'a' + 10);
+              Y++;
+            } else {
+              break;
+            }
+          }
+        } else if (ch >= '0' && ch <= '9') {
+          // Decimal value
+          while (ch >= '0' && ch <= '9') {
+            value = value * 10 + (ch - '0');
+            Y++;
+            ch = SrcP_at(Y);
+          }
+        }
+
+        // Emit the word in Pass 2 (little-endian: low byte first)
+        if (PassNbr == 1) {
+          A = (value & 0xFF);  // Low byte
+          StorByt();
+          A = ((value >> 8) & 0xFF);  // High byte
+          StorByt();
+        }
+        wordCount++;
+
+        // Look for comma
+        ch = SrcP_at(Y);
+        while (ch == ' ' || ch == '\t') {
+          Y++;
+          ch = SrcP_at(Y);
+        }
+
+        if (ch == ',') {
+          Y++;  // Skip comma
+        } else {
+          break;  // No more operands
+        }
+      }
+
+      Length = wordCount * 2;  // Each word = 2 bytes
+
+      // Pass 1: Track PC; Pass 2: sync PC to ObjPC after emission
+      if (PassNbr == 0) {
+        PC += wordCount * 2;
+      } else {
+        PC = ObjPC;
+      }
+
+      C = false;
       return;
     }
 
@@ -5226,10 +5601,7 @@ namespace {
       g_LastDirectiveCalled = "HndlORG";
 
     L8A82:
-      // Pass 2 skip: ORG only processes in Pass 1
-      A = PassNbr;                    // LDA PassNbr
-      if (A != 0) goto DrtvDone_ORG;  // BNE DrtvDone - Skip ORG in Pass 2
-
+      // Process ORG in both Pass 1 and Pass 2
       EvalOprnd();                 // JSR EvalOprnd
       if (C) goto L8A50_ORG;       // BCS L8A50
       A = NxtToken;                // LDA NxtToken - Is sp/cr?
@@ -5282,12 +5654,14 @@ namespace {
       goto DrtvFin_ORG;
 
     SetPC_ORG:
-      // SetPC - Set Program Counter from ValExpr (ASM3.S line 264)
-      A  = ValExpr;                   // LDA ValExpr
-      PC = (PC & 0xFF00) | A;         // STA PC - PC=new ORG Addr
-      A  = ValExpr_hi;                // LDA ValExpr+1
-      PC = (PC & 0x00FF) | (A << 8);  // STA PC+1
-      goto DrtvFin_ORG;               // JMP DrtvFin
+      // SetPC - Set both PC and ObjPC from ValExpr (both passes)
+      A     = ValExpr;                   // LDA ValExpr
+      PC    = (PC & 0xFF00) | A;         // STA PC - PC=new ORG Addr
+      ObjPC = (ObjPC & 0xFF00) | A;      // Also set ObjPC
+      A     = ValExpr_hi;                // LDA ValExpr+1
+      PC    = (PC & 0x00FF) | (A << 8);  // STA PC+1
+      ObjPC = (ObjPC & 0x00FF) | (A << 8);  // Also set ObjPC+1
+      goto DrtvFin_ORG;                  // JMP DrtvFin
 
     DrtvDone_ORG:
     DrtvFin_ORG:
@@ -5585,11 +5959,13 @@ namespace {
         ;
 
     L8CA0:
-      // Adjust PC
+      // Adjust PC and ObjPC
       A  = NewPC & 0xFF;              // LDA NewPC
       PC = (PC & 0xFF00) | A;         // STA PC
       A  = NewPC >> 8;                // LDA NewPC+1
       PC = (PC & 0x00FF) | (A << 8);  // STA PC+1
+      // Sync ObjPC with PC
+      ObjPC = PC;
 
     DrtvFin_DS:
       A = ZAB;    // LDA ZAB
@@ -5683,8 +6059,8 @@ namespace {
       X = 0;  // LDX #0
       // JSR L8E28 - Store MC, update PC etc (simplified)
       StorGMC();   // Store generated machine code
-      A = Length;  // LDA Length
-      AdvPC();     // JSR AdvPC
+      // Sync PC with ObjPC after emission
+      PC = ObjPC;
       // JSR PrtAsmLn (stubbed)
 
     L8D15:
@@ -5723,13 +6099,14 @@ namespace {
         A      = A + TotCnt;
         TotCnt = A;
         A      = TotCnt;
+        AdvPC();
       } else {
         // Pass 2
         StorGMC();  // JSR StorGMC - write instr
         // JSR PrtAsmLn (stubbed)
-        A = Length;
+        // Sync PC with ObjPC after emission
+        PC = ObjPC;
       }
-      AdvPC();  // JSR AdvPC
 
     DrtvDone_DFB:
       A      = 0;     // LDA #0
@@ -5834,8 +6211,8 @@ namespace {
 
       // Pass 2: Store word
       StorGMC();   // JSR L8E28 - Store MC, update PC, print
-      A = Length;  // LDA Length
-      AdvPC();     // JSR AdvPC
+      // Sync PC with ObjPC after emission
+      PC = ObjPC;
 
     L8DBB:
       A = NxtToken;  // LDA NxtToken - Is cr/space?
@@ -6862,6 +7239,9 @@ namespace {
     // Initialize Program Counter and Object PC
     PC    = 0x0000;
     ObjPC = 0x0000;
+
+    // Initialize HighMem to a reasonable default (64KB - no limit)
+    HighMem = 0xFFFF;
 
     // Clear GMC buffer (machine code generation buffer)
     GMC[0] = 0x00;
@@ -8929,6 +9309,26 @@ namespace EdAsmNg {
       ObjPC = value;
     }
 
+    // HighMem accessor (test helper)
+    void SetHighMem(uint16_t value) {
+      HighMem = value;
+    }
+
+    uint16_t GetHighMem() {
+      return HighMem;
+    }
+
+    // Initialize object memory for tests and enable in-memory object writes
+    void InitObjMemory() {
+      std::memset(g_test_obj_memory, 0, sizeof(g_test_obj_memory));
+      g_test_obj_memory_enabled = true;
+    }
+
+    // Read a byte from the simulated object memory (test helper)
+    uint8_t ReadObjMemory(uint16_t addr) {
+      return g_test_obj_memory[addr];
+    }
+
     // GMC buffer accessors
     uint8_t GetGMC(uint8_t index) {
       if (index >= 4) return 0;
@@ -9069,6 +9469,11 @@ namespace EdAsmNg {
       ::DoPass1();
     }
 
+    // Execute Pass 2
+    void DoPass2() {
+      ::DoPass2();
+    }
+
     // Pass number accessors
     uint8_t GetPassNbr() {
       return PassNbr;
@@ -9181,6 +9586,9 @@ namespace EdAsmNg {
       DummyF   = 0;  // Clear DummyF (DSECT) for test isolation
       SymNbr   = 0;
       ErrorF   = 0;
+
+      // Initialize HighMem to a reasonable default (64KB - no limit)
+      HighMem = 0xFFFF;
 
       // Initialize HeaderT_ptr to point to simulated memory at HeaderT address
       HeaderT_ptr = &g_test_src_memory[HeaderT];
