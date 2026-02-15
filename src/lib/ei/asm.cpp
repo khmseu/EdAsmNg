@@ -1867,7 +1867,6 @@ namespace {
     if (A == CR) goto Pass1Next;  // End of line? Done
 
     // Parse mnemonic/directive
-    fprintf(stderr, "DoPass1: about to call HndlMnem (SrcP=0x%04X, Y=%u)\n", SrcP, Y);
     HndlMnem();
 
     // TODO Phase 9+: Check error flag, handle operands
@@ -4337,23 +4336,6 @@ namespace {
       return;
     }
 
-    if (mnemonic == ".BYTE" || mnemonic == ".DFB" || mnemonic == "DFB") {
-      ZAB                   = 0x80;
-      g_LastDirectiveCalled = "HndlBYTE";
-      // Simplified inline handling
-      Length = 0;
-      C      = false;
-      return;
-    }
-
-    if (mnemonic == ".WORD" || mnemonic == ".DW" || mnemonic == "DW") {
-      ZAB                   = 0x80;
-      g_LastDirectiveCalled = "HndlWORD";
-      Length                = 0;
-      C                     = false;
-      return;
-    }
-
     if (mnemonic == ".LIST" || mnemonic == "LIST") {
       ZAB                   = 0x80;
       g_LastDirectiveCalled = "HndlLIST";
@@ -4404,9 +4386,40 @@ namespace {
 
     if (mnemonic == "DFB") {
       // DFB (Define Byte) - with relocatable support
-      NxtField();  // Skip to operand
+      // Y is already positioned after mnemonic, skip any spaces to operand
+      while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
       uint16_t byteCount = 0;
 
+      if (PassNbr == 0) {
+        // Pass 1: Just count comma-separated operands to determine byte count
+        while (true) {
+          while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
+          uint8_t ch = SrcP_at(Y);
+          if (ch == CR || ch == 0) break;
+
+          //  Skip over the operand (any non-comma, non-CR sequence)
+          while (true) {
+            ch = SrcP_at(Y);
+            if (ch == CR || ch == 0 || ch == ',') break;
+            Y++;
+          }
+          byteCount++;
+
+          // Look for comma
+          while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
+          if (SrcP_at(Y) == ',') {
+            Y++;
+          } else {
+            break;
+          }
+        }
+        Length = byteCount;
+        PC += byteCount;
+        C = false;
+        return;
+      }
+
+      // Pass 2: Evaluate expressions and emit bytes
       while (true) {
         // Skip spaces
         while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
@@ -4468,9 +4481,40 @@ namespace {
 
     if (mnemonic == "DW") {
       // DW (Define Word) - with relocatable support
-      NxtField();  // Skip to operand
+      // Y is already positioned after mnemonic, skip any spaces to operand
+      while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
       uint16_t wordCount = 0;
 
+      if (PassNbr == 0) {
+        // Pass 1: Just count comma-separated operands to determine word count
+        while (true) {
+          while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
+          uint8_t ch = SrcP_at(Y);
+          if (ch == CR || ch == 0) break;
+
+          // Skip over the operand (any non-comma, non-CR sequence)
+          while (true) {
+            ch = SrcP_at(Y);
+            if (ch == CR || ch == 0 || ch == ',') break;
+            Y++;
+          }
+          wordCount++;
+
+          // Look for comma
+          while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
+          if (SrcP_at(Y) == ',') {
+            Y++;
+          } else {
+            break;
+          }
+        }
+        Length = wordCount * 2;
+        PC += wordCount * 2;
+        C = false;
+        return;
+      }
+
+      // Pass 2: Evaluate expressions and emit words
       while (true) {
         // Skip spaces
         while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
@@ -4525,7 +4569,8 @@ namespace {
 
     if (mnemonic == "EQU") {
       // Inline EQU handling for Pass 1 (avoid external HndlEQU linkage issue)
-      NxtField();  // Move to operand field
+      // Y is already positioned after mnemonic, skip any spaces
+      while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
 
       // Evaluate operand expression (force Pass2 semantics inside)
       EvalOprnd();
