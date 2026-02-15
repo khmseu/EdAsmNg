@@ -1,0 +1,93 @@
+[1/4] Building CXX object src/CMakeFiles/EdAsmNg_lib.dir/lib/ei/asm.cpp.o
+FAILED: src/CMakeFiles/EdAsmNg_lib.dir/lib/ei/asm.cpp.o 
+/usr/bin/clang++  -I/bigdata/KAI/projects/EdAsmNg/include -g -std=c++17 -Wall -Wextra -Wpedantic -MD -MT src/CMakeFiles/EdAsmNg_lib.dir/lib/ei/asm.cpp.o -MF src/CMakeFiles/EdAsmNg_lib.dir/lib/ei/asm.cpp.o.d -o src/CMakeFiles/EdAsmNg_lib.dir/lib/ei/asm.cpp.o -c /bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:584:3: warning: unused label 'LD081_label' [-Wunused-label]
+  584 |   LD081_label:
+      |   ^~~~~~~~~~~~
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:597:3: warning: unused label 'LD096_label' [-Wunused-label]
+  597 |   LD096_label:
+      |   ^~~~~~~~~~~~
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:797:3: warning: unused label 'doRtn_label' [-Wunused-label]
+  797 |   doRtn_label:
+      |   ^~~~~~~~~~~~
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:843:21: warning: variable 'X' set but not used [-Wunused-but-set-variable]
+  843 |     std::uint8_t A, X, Y;
+      |                     ^
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:1316:3: warning: unused label 'CleanUp' [-Wunused-label]
+ 1316 |   CleanUp:
+      |   ^~~~~~~~
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:1341:3: warning: unused label 'ListSymTbl' [-Wunused-label]
+ 1341 |   ListSymTbl:
+      |   ^~~~~~~~~~~
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:1350:3: warning: unused label 'AbortAsmLabel' [-Wunused-label]
+ 1350 |   AbortAsmLabel:
+      |   ^~~~~~~~~~~~~~
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:1358:3: warning: unused label 'TellUser' [-Wunused-label]
+ 1358 |   TellUser:
+      |   ^~~~~~~~~
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:1361:3: warning: unused label 'EndAsm' [-Wunused-label]
+ 1361 |   EndAsm:
+      |   ^~~~~~~
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:1368:3: warning: unused label 'ExitASM' [-Wunused-label]
+ 1368 |   ExitASM:
+      |   ^~~~~~~~
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:2098:2: error: #endif without #if
+ 2098 | #endif  // AddNode
+      |  ^
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:2742:5: error: use of undeclared identifier 'ListCode'
+ 2742 |     ListCode();     // Print generated code
+      |     ^
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:2743:5: error: use of undeclared identifier 'LstSrcLn'
+ 2743 |     LstSrcLn();     // Print src stmt
+      |     ^
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:2763:5: error: use of undeclared identifier 'Wr1Byte'
+ 2763 |     Wr1Byte();
+      |     ^
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:2771:5: error: use of undeclared identifier 'AdvObjPC'
+ 2771 |     AdvObjPC();
+      |     ^
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:2800:18: error: function definition is not allowed here
+ 2800 |     void L80F7() {
+      |                  ^
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:2852:21: error: function definition is not allowed here
+ 2852 |     void WhiteSpc() {
+      |                     ^
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:2871:20: error: function definition is not allowed here
+ 2871 |     void IsZPMod() {
+      |                    ^
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:2903:21: error: function definition is not allowed here
+ 2903 |     void IsAccMod() {
+      |                     ^
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:2924:22: error: function definition is not allowed here
+ 2924 |     void IsSW16Reg() {
+      |                      ^
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:2957:20: error: function definition is not allowed here
+ 2957 |     void Is65C02() {
+      |                    ^
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:2973:20: error: function definition is not allowed here
+ 2973 |     void IsC02Op() {
+      |                    ^
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:3008:22: error: function definition is not allowed here
+ 3008 |     void AddRLDEnt() {
+      |                      ^
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:3103:21: error: function definition is not allowed here
+ 3103 |     void CalcDisp() {
+      |                     ^
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:3141:79: error: function definition is not allowed here
+ 3141 |     bool ChkRng(std::uint8_t value, std::uint8_t minVal, std::uint8_t maxVal) {
+      |                                                                               ^
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:3178:26: error: function definition is not allowed here
+ 3178 |     void ValidateRange() {
+      |                          ^
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:3281:19: error: function definition is not allowed here
+ 3281 |     void GOpAdr() {
+      |                   ^
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:3342:21: error: function definition is not allowed here
+ 3342 |     void ListCode() {
+      |                     ^
+/bigdata/KAI/projects/EdAsmNg/src/lib/ei/asm.cpp:3347:21: error: function definition is not allowed here
+ 3347 |     void LstSrcLn() {
+      |                     ^
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+10 warnings and 20 errors generated.
+ninja: build stopped: subcommand failed.

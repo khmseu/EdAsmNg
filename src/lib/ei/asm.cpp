@@ -70,6 +70,7 @@ namespace {
   void StorGMC();
   void AdvPC();
   void Is16K();
+  void IsAXY();
 
   // Directive handler forward declarations
   void DrtvDone();
@@ -1167,22 +1168,23 @@ namespace {
     // TODO: Output form feed
   }
 
-  void NextRec() {
-    // TODO: Advance to next source record
-  }
+  // Stub commented out - replaced by Phase 8.1 implementation
+  // void NextRec() {
+  //   // TODO: Advance to next source record
+  // }
 
-  // ASM2 helper stubs
-  void SaveZP() {
-    // TODO: Save zero page area
-  }
+  // ASM2 helper stubs - commented out, replaced by Phase 8.1 implementations
+  // void SaveZP() {
+  //   // TODO: Save zero page area
+  // }
 
-  void SetupVec() {
-    // TODO: Setup/reset vectors
-  }
+  // void SetupVec() {
+  //   // TODO: Setup/reset vectors
+  // }
 
-  void InitASM() {
-    // TODO: Initialize assembler state
-  }
+  // void InitASM() {
+  //   // TODO: Initialize assembler state
+  // }
 
   // Forward declaration - full implementation below
   void DoPass1();
@@ -1232,9 +1234,10 @@ namespace {
     // TODO: Print BCD as decimal string
   }
 
-  void L81A3() {
-    // TODO: Increment decimal string
-  }
+  // Stub commented out - replaced by actual implementation later
+  // void L81A3() {
+  //   // TODO: Increment decimal string
+  // }
 
   void SaveErrInfo() {
     // TODO: Save error info for current line
@@ -1290,7 +1293,7 @@ namespace {
   void L986A();
 
   // Patchable pointer (A,X,Y as label names)
-  std::uint16_t IsAXY = 0;
+  std::uint16_t IsAXY_addr = 0;
 
   void Assembler() {
     ColdStrt();
@@ -1666,6 +1669,11 @@ namespace {
     }
   }
 
+  // Overload for cases where X register contains error token
+  void RegAsmEW() {
+    RegAsmEW(X);
+  }
+
   // Stub: GSrcLin - Get source line
   void GSrcLin() {
     // TODO: Get next source line
@@ -1728,6 +1736,11 @@ namespace {
   // PrvSymP would be set correctly for existing chains
   //=================================================
   void FindSym() {
+    // Declare variables at function scope to avoid goto issues
+    std::uint8_t  old_low;
+    std::uint8_t  flag;
+    std::uint8_t* SymP_ptr;
+
     HashFn();                // JSR HashFn - Hash the label
     Y = HeaderT_ptr[X + 1];  // LDY HeaderT+1,X - (X)=hashed value x 2 already
     if (Y == 0) goto L8908;  // BEQ L8908 - Empty slot => Not Found!
@@ -1741,16 +1754,16 @@ namespace {
     PrvSymP = A;          // STA PrvSymP
     PrvSymP |= (Y << 8);  // STY PrvSymP+1
 
-    Y                      = 0;
-    std::uint8_t* SymP_ptr = reinterpret_cast<std::uint8_t*>(static_cast<uintptr_t>(SymP));
-    A                      = SymP_ptr[Y];  // LDA (SymP),Y
-    NxtSymP                = A;            // STA NxtSymP - Point to next node
+    Y        = 0;
+    SymP_ptr = reinterpret_cast<std::uint8_t*>(static_cast<uintptr_t>(SymP));
+    A        = SymP_ptr[Y];  // LDA (SymP),Y
+    NxtSymP  = A;            // STA NxtSymP - Point to next node
     Y++;
     A = SymP_ptr[Y];      // LDA (SymP),Y - in chain
     NxtSymP |= (A << 8);  // STA NxtSymP+1 - If NIL ($0000) end of chain
 
-    std::uint8_t old_low = SymP & 0xFF;                   // Save old low byte for carry check
-    A                    = 2;                             // LDA #2 - Skip past link pointer
+    old_low = SymP & 0xFF;                                // Save old low byte for carry check
+    A       = 2;                                          // LDA #2 - Skip past link pointer
     A    = static_cast<std::uint8_t>(A + (SymP & 0xFF));  // ADC SymP - to point @ the symbolic name
     SymP = (SymP & 0xFF00) | A;                           // STA SymP
     if (A >= old_low) goto L88EC;  // BCC L88EC - This will allow us to use the
@@ -1782,13 +1795,13 @@ namespace {
     A = SymP_ptr[Y];                // LDA (SymP),Y - Get symbol's flag byte
     if ((int8_t)A < 0) goto L891A;  // BMI L891A - Not defined yet
 
-    A &= 0b10111111;   // AND #%10111111 - Set it to referenced
-    SymP_ptr[Y]  = A;  // STA (SymP),Y
-    uint8_t flag = A;  // PHA - Save flag byte
-    A &= relative;     // AND #relative - Retain this bit
-    A |= RelExprF;     // ORA RelExprF
-    RelExprF = A;      // STA RelExprF
-    A        = flag;   // PLA - Restore
+    A           = A & 0b10111111;  // AND #%10111111 - Set it to referenced
+    SymP_ptr[Y] = A;               // STA (SymP),Y
+    flag        = A;               // PHA - Save flag byte
+    A           = A & relative;    // AND #relative - Retain this bit
+    A |= RelExprF;                 // ORA RelExprF
+    RelExprF = A;                  // STA RelExprF
+    A        = flag;               // PLA - Restore
 
   L891A:
     C = false;  // CLC - Flag symbolic name found
@@ -1895,6 +1908,7 @@ namespace {
     Y       = saved_y;  // PLA / TAY - restore (Y)
   }
 
+#if 0   // TODO: Phase 9+ - Stub RsvdId function (depends on IsAXY and RegAsmEW)
   //=================================================
   // RsvdId - Check for reserved identifier
   //=================================================
@@ -1902,9 +1916,11 @@ namespace {
     IsAXY();         // JSR IsAXY - Chk if reserved idfer
     if (!C) return;  // BCC doRet9 - No
     X = 0x1E;        // LDX #$1E - Reserved idfer err
-    RegAsmEW();      // JMP RegAsmEW
+    RegAsmEW(X);     // JMP RegAsmEW
   }
+#endif  // RsvdId
 
+#if 0   // TODO: Phase 9+ - Stub IsAXY function
   //=================================================
   // IsAXY - Chk for a single 'A','X','Y' in label/operand field
   // C=1 - Yes
@@ -1935,6 +1951,7 @@ namespace {
     C = false;  // CLC
     return;
   }
+#endif  // IsAXY
 
   //=================================================
   // ($89A9) AddNode - Add a node to symbol table
@@ -1962,30 +1979,36 @@ namespace {
   // NB. 1) msb of all chars of symbolic name
   //     except the last one are on
   //     2) The size of a node structure is not fixed.
+#if 0   // TODO: Phase 9+ - Fix AddNode goto variable initialization
   // Symbolic names with the same hash value (collision)
   // are connected together in a singly linked list.
   //=================================================
   void AddNode() {
-    uint8_t flag = A;  // PHA - Save flag byte
-    Y            = 0;  // LDY #0
-    ChrGot();          // JSR ChrGot
-    if (C) {           // BCC L89B4
-      C = true;        // SEC
+    // Declare variables at function scope to avoid goto issues
+    uint8_t flag;
+    uint16_t sum_low;
+    bool carry_add;
+
+    flag = A;  // PHA - Save flag byte
+    Y    = 0;  // LDY #0
+    ChrGot();  // JSR ChrGot
+    if (C) {   // BCC L89B4
+      C = true;  // SEC
       return;
     }
 
   L89B4:
-    X = HashIdx;                        // LDX HashIdx - Is there already a chain
-    A = HeaderT_ptr[X + 1];             // LDA HeaderT+1,X - associated with this value?
-    if (A != 0) goto L89C8;             // BNE L89C8 - Yes
-    A                = 0x00;            // LDA #<HeaderT - Start a new singly linked list
-    uint16_t sum_low = A + HashIdx;     // ADC HashIdx
-    A                = sum_low & 0xFF;  // Low byte result
-    PrvSymP          = A;               // STA PrvSymP - Point @ $BCxx
-    bool carry_add   = sum_low > 0xFF;  // Carry from low byte addition
-    A                = 0xBC;            // LDA #>HeaderT
-    A                = static_cast<std::uint8_t>(A + (carry_add ? 1 : 0));  // ADC #0
-    PrvSymP |= (A << 8);                                                    // STA PrvSymP+1
+    X = HashIdx;                      // LDX HashIdx - Is there already a chain
+    A = HeaderT_ptr[X + 1];           // LDA HeaderT+1,X - associated with this value?
+    if (A != 0) goto L89C8;           // BNE L89C8 - Yes
+    A        = 0x00;                  // LDA #<HeaderT - Start a new singly linked list
+    sum_low  = A + HashIdx;           // ADC HashIdx
+    A        = sum_low & 0xFF;        // Low byte result
+    PrvSymP  = A;                     // STA PrvSymP - Point @ $BCxx
+    carry_add = sum_low > 0xFF;       // Carry from low byte addition
+    A        = 0xBC;                  // LDA #>HeaderT
+    A        = static_cast<std::uint8_t>(A + (carry_add ? 1 : 0));  // ADC #0
+    PrvSymP |= (A << 8);              // STA PrvSymP+1
 
     // NB: We assume PrvSymP have been set correctly
     // if it's not a new chain. In order to set this ptr
@@ -2070,9 +2093,10 @@ namespace {
     }
 
     X = 0x12;     // LDX #$12 - sym/rld table full!
-    RegAsmEW();   // JSR RegAsmEW
+    RegAsmEW(X);  // JSR RegAsmEW
     CanclAsm(0);  // JMP CanclAsm
   }
+#endif  // AddNode
 
   // Stub: L81F0 - Skip over non-blanks
   void L81F0() {
@@ -2080,6 +2104,7 @@ namespace {
     Z = true;  // For now, simulate CR found
   }
 
+#if 0   // TODO: Phase 9+ - Fix NxtField recursive goto
   // NxtField - On entry (Y)=index into src line
   // Ret:
   // (Y)=0
@@ -2101,6 +2126,7 @@ namespace {
     A += SrcP_hi;  // with carry
     SrcP_hi = A;
   }
+#endif  // NxtField
 
 #if 0
   // Stub: HndlMnem - Handle mnemonic/pseudo opcode
@@ -2160,11 +2186,14 @@ namespace {
     // TODO: Print file-related messages
   }
 
+#if 0   // TODO: Phase 9+ - Redefinition of SetupVec (already defined earlier)
   // Stub: SetupVec - Setup vectors
   void SetupVec() {
     // TODO: Setup interrupt vectors
   }
+#endif  // SetupVec redefinition
 
+#if 0   // TODO: Phase 9+ - Fix GInstLen (uses L851F and InstLenT before definition)
   // ($8458) GInstLen - We must determine the address mode of opcode
   // Ret:
   // Length of instruction opcode
@@ -2240,7 +2269,7 @@ namespace {
 
   BadMode:
     X = 0x1C;  // addr mode error
-    RegAsmEW();
+    RegAsmEW(X);
     A       = 0x00;
     LenTIdx = A;             // Assume abs mode addressing
     if (A == 0) goto L84FE;  // always (BEQ)
@@ -2275,7 +2304,7 @@ namespace {
     A = NxtToken;
     if (A != (0x34 | 0x80)) goto L84FE;  // Invalid delimiter (BNE)
     X = A;
-    RegAsmEW();
+    RegAsmEW(X);
     goto L8513;
 
   L84FE:
@@ -2297,6 +2326,7 @@ namespace {
   L8513:
     A = Length;
   }
+#endif  // GInstLen
 
   // (X)=index into addr mode table
   // Not only this, it can be used to index an opcode within
@@ -2371,6 +2401,8 @@ namespace {
     AdvSrcP();
   }
 
+#if 0   // TODO: Phase 9+ - Fix L81A3 (undeclared BCDNbr_hi, TotLines_hi, TotLines_2 and VidOut
+        // signature)
   // L81A3 - Incr line #s, show user we have assembled
   // a chunk of code by printing a dot
   void L81A3() {
@@ -2419,7 +2451,9 @@ namespace {
   L81E4:
     // CLD - clear decimal mode
   }
+#endif  // L81A3
 
+#if 0   // TODO: Phase 9+ - Redefinition of DoPass2 (stub already defined at line 1192)
   // DoPass2 - Second pass of assembly
   void DoPass2() {
     PassNbr++;  // Flag we are in 2nd pass
@@ -2484,7 +2518,7 @@ namespace {
 
   L7F6E:
     X = 0x04;  // undefined opcode
-    RegAsmEW();
+    RegAsmEW(X);
   L7F73:
     X      = 3;
     Length = X;
@@ -2678,6 +2712,7 @@ namespace {
   L8088:
     CanclAsm();
   }
+#endif  // DoPass2 redefinition
 
   // RVLsting - Chk if instruction is to be printed
   // C=0 - Yes
@@ -2702,6 +2737,7 @@ namespace {
     C = true;  // SEC
   }
 
+#if 0   // TODO: Phase 9+ - Stub PrtAsmLn calls undeclared ListCode/LstSrcLn
   // PrtAsmLn - Print Assembled Line
   void PrtAsmLn() {
     RVLsting();
@@ -2709,7 +2745,9 @@ namespace {
     ListCode();     // Print generated code
     LstSrcLn();     // Print src stmt
   }
+#endif  // PrtAsmLn
 
+#if 0   // TODO: Phase 9+ - Stub StorGMC calls undeclared Wr1Byte/AdvObjPC
   // StorGMC - Store generated machine code
   void StorGMC() {
     Y = Length;          // # of bytes
@@ -2737,7 +2775,9 @@ namespace {
     A = Y;
     AdvObjPC();
   }
+#endif  // StorGMC
 
+#if 0   // TODO: Phase 9+ - Stub StorByt calls undeclared Wr1Byte and has other issues
   // ($80D6) StorByt - (A)=byte to store in mem/disk
   // Translate from ASM2.S lines 1521-1556
   void StorByt() {
@@ -2760,11 +2800,24 @@ namespace {
     // LDA ObjPC+1 - SBC HighMem+1
     // 16-bit comparison: ObjPC >= HighMem?
     if (ObjPC >= HighMem) goto L80F4;  // Yes (BCS)
+    return;  // RTS - No error, return
 
-    // C=0 - no
-    // C=1 - yes
-    // (SrcP) & Y-reg preserved
-    void L80F7() {
+  L80F1:
+    Wr1Byte();  // Write to disk
+    return;     // RTS
+
+  L80F4:
+    X = 0x0A;     // LDX #$0A - Out of memory error
+    RegAsmEW(X);  // JSR RegAsmEW
+    CanclAsm();   // JMP CanclAsm - Cancel assembly
+  }
+#endif  // StorByt
+
+#if 0   // TODO: Phase 9+ - Stub L80F7 already exists at line 2146, this is duplicate/incomplete
+  // C=0 - no
+  // C=1 - yes
+  // (SrcP) & Y-reg preserved
+  void L80F7() {
       SavIndY               = Y;  // Index into field of src line
       uint8_t saved_srcP    = SrcP;
       uint8_t saved_srcP_hi = SrcP_hi;
@@ -2805,9 +2858,17 @@ namespace {
       SrcP    = saved_srcP;
       Y       = SavIndY;
     }
+#endif  // L80F7 duplicate
 
-    const char FINTxt[]  = "FIN";
-    const char ELSETxt[] = "ELSE";
+  const char FINTxt[]  = "FIN";
+  const char ELSETxt[] = "ELSE";
+
+#if 0   // TODO: Phase 9+ - Large block of stub functions with compilation errors (not needed for
+        // Phase 8.1)
+  // This section contains WhiteSpc, IsZPMod, IsAccMod, IsSW16Reg, Is65C02, IsC02Op,
+  // AddRLDEnt, CalcDisp, ChkRng, ValidateRange, GOpAdr, ListCode, LstSrcLn, Wr1Byte,
+  // L81F0 (redefinition), AdvSrcP, SkipSpcs, NextRec, GSrcLin, ChrGot, ChrGot2, ChrGet2, ToUpCase, etc.
+  // All these have compilation errors and are not needed for Phase 8.1 Init/Cleanup testing.
 
     // WhiteSpc - Check if character is white space (space or CR)
     // Entry:
@@ -3444,7 +3505,9 @@ namespace {
         A &= 0xDF;  // convert to upper case
       }
     }
+#endif  // Large block of stub functions
 
+#if 0  // TODO: Phase 9+ - HndlMnem and GAdrMod use functions that were commented out
     //=================================================
     // HndlMnem - Process mnemonic/pseudo opcode/directive field
     // (ASM2.S line ~2054, label HndlMnem)
@@ -3736,10 +3799,12 @@ namespace {
       return;
     }
 
+#if 0   // TODO: Phase 9+ - Duplicate VidOut inside test stubs
     // Stub: VidOut - Video output
     void VidOut() {
       // TODO: Output character to video
     }
+#endif  // VidOut duplicate
 
     // Stub: L986A - Helper function
     void L986A() {
@@ -3883,7 +3948,9 @@ namespace {
       HelperFunc helper = L85AE_helpers[array_index];
       helper();  // Call IsZPMod, IsAccMod, or Is65C02
     }
+#endif  // HndlMnem and GAdrMod
 
+#if 0   // TODO: Phase 9+ - EvalExpr has compilation errors (not needed for Phase 8.1)
     // EvalExpr - Evaluate expressions. No check for numeric overflow
     // Support for +,-,;,/ and bitwise AND ^, OR |,EOR !
     // Ref pg 89 for Expression Syntax adopted for Assembler
@@ -5813,1075 +5880,1488 @@ namespace {
     L8FA0:
       DoPage();  // JMP DoPage - Always do a form feed (page break)
     }
+#endif  // EvalExpr
 
-    //=================================================
-    // EvalOprnd - Evaluate operand expressions
-    // (ASM3.S line ~347, label EvalOprnd)
-    // This routine evaluates operand expressions FOR directives that need
-    // their operands evaluated as if in Pass 2, even during Pass 1
-    // Entry:
-    //   Source line positioned at operand field
-    // Exit:
-    //   PassNbr - restored to original value
-    //   (X) - error token (if any from EvalExpr)
-    //   C flag set appropriately by EvalExpr
-    //=================================================
-    void EvalOprnd() {
-      A                  = PassNbr;
-      uint8_t saved_pass = A;  // PHA - Save current pass number
-      A                  = 1;  // LDA #1 - Force Pass 2
-      PassNbr            = A;  // STA PassNbr
-      EvalExpr();              // JSR EvalExpr
-      X       = A;             // TAX - error token?
-      A       = saved_pass;    // PLA - Restore pass number
-      PassNbr = A;             // STA PassNbr
-      // RTS - return (with C flag set by EvalExpr)
+  //=================================================
+  // EvalOprnd - Evaluate operand expressions
+  // (ASM3.S line ~347, label EvalOprnd)
+  // This routine evaluates operand expressions FOR directives that need
+  // their operands evaluated as if in Pass 2, even during Pass 1
+  // Entry:
+  //   Source line positioned at operand field
+  // Exit:
+  //   PassNbr - restored to original value
+  //   (X) - error token (if any from EvalExpr)
+  //   C flag set appropriately by EvalExpr
+  //=================================================
+  void EvalOprnd() {
+    A                  = PassNbr;
+    uint8_t saved_pass = A;  // PHA - Save current pass number
+    A                  = 1;  // LDA #1 - Force Pass 2
+    PassNbr            = A;  // STA PassNbr
+    EvalExpr();              // JSR EvalExpr
+    X       = A;             // TAX - error token?
+    A       = saved_pass;    // PLA - Restore pass number
+    PassNbr = A;             // STA PassNbr
+    // RTS - return (with C flag set by EvalExpr)
+  }
+
+  //=================================================
+  // Phase 8.1: Initialization and Cleanup Functions
+  // Original: ASM2.S:555 (SaveZP), ASM2.S:570 (InitASM)
+  //=================================================
+
+  // Zero-page backup buffer (saves $60-$F1 range, 146 bytes)
+  uint8_t ZP_Backup[256];
+
+  //=================================================
+  // SaveZP - Save zero-page workspace to backup area
+  // Original: ASM2.S:555
+  // Saves all assembler zero-page variables ($60-$F1)
+  //=================================================
+  void SaveZP() {
+    // Original saves $92 (146) bytes starting from Z60-1 ($5F)
+    // We'll save all our zero-page variables to backup buffer
+
+    // Save $60-$6F: General Assembly Control Variables
+    ZP_Backup[0x60] = Z60;
+    ZP_Backup[0x60] = BCDNbr[0];
+    ZP_Backup[0x61] = BCDNbr[1];
+    ZP_Backup[0x62] = BCDNbr[2];
+    ZP_Backup[0x63] = StrtSymT & 0xFF;
+    ZP_Backup[0x64] = (StrtSymT >> 8) & 0xFF;
+    ZP_Backup[0x65] = EndSymT & 0xFF;
+    ZP_Backup[0x66] = (EndSymT >> 8) & 0xFF;
+    ZP_Backup[0x67] = PassNbr;
+    ZP_Backup[0x68] = ListingF;
+    ZP_Backup[0x69] = SubTtlF;
+    ZP_Backup[0x6A] = LineCnt;
+    ZP_Backup[0x6B] = PageNbr & 0xFF;
+    ZP_Backup[0x6C] = (PageNbr >> 8) & 0xFF;
+    ZP_Backup[0x6D] = FileNbr;
+    ZP_Backup[0x6E] = LogPL;
+    ZP_Backup[0x6F] = PhyPL;
+
+    // Save $70-$7F: Instruction Processing and Pointers
+    ZP_Backup[0x70] = SavIndX;
+    ZP_Backup[0x71] = PrtCol;
+    ZP_Backup[0x72] = EIStack;
+    ZP_Backup[0x73] = CancelF;
+    ZP_Backup[0x74] = NbrErrs & 0xFF;
+    ZP_Backup[0x75] = (NbrErrs >> 8) & 0xFF;
+    ZP_Backup[0x76] = PrSlot;
+    ZP_Backup[0x77] = AbortF;
+    ZP_Backup[0x78] = SavIndY;
+    ZP_Backup[0x79] = SrcP & 0xFF;
+    ZP_Backup[0x7A] = (SrcP >> 8) & 0xFF;
+    ZP_Backup[0x7B] = Src2P & 0xFF;
+    ZP_Backup[0x7C] = (Src2P >> 8) & 0xFF;
+    ZP_Backup[0x7D] = PC & 0xFF;
+    ZP_Backup[0x7E] = (PC >> 8) & 0xFF;
+    ZP_Backup[0x7F] = ObjPC & 0xFF;
+
+    // Save $80-$8F: File and Symbol Table Management
+    ZP_Backup[0x80] = (ObjPC >> 8) & 0xFF;
+    ZP_Backup[0x81] = CodeLen;
+    ZP_Backup[0x82] = AuxAryE;
+    ZP_Backup[0x83] = FileLen & 0xFF;
+    ZP_Backup[0x84] = (FileLen >> 8) & 0xFF;
+    ZP_Backup[0x85] = CurrORG & 0xFF;
+    ZP_Backup[0x86] = (CurrORG >> 8) & 0xFF;
+    ZP_Backup[0x87] = SymP & 0xFF;
+    ZP_Backup[0x88] = (SymP >> 8) & 0xFF;
+    ZP_Backup[0x89] = Delimitr;
+    ZP_Backup[0x8A] = DTEndCol;
+    ZP_Backup[0x8B] = StrType;
+    ZP_Backup[0x8C] = MemTop & 0xFF;
+    ZP_Backup[0x8D] = (MemTop >> 8) & 0xFF;
+    ZP_Backup[0x8E] = TotLines & 0xFF;
+    ZP_Backup[0x8F] = (TotLines >> 8) & 0xFF;
+
+    // Save $90-$9F: Code Generation and Expression Evaluation
+    ZP_Backup[0x90] = (TotLines >> 16) & 0xFF;
+    ZP_Backup[0x91] = (TotLines >> 24) & 0xFF;
+    ZP_Backup[0x92] = VidSlot;
+    ZP_Backup[0x93] = SaveA;
+    ZP_Backup[0x94] = SaveY;
+    ZP_Backup[0x95] = SaveX;
+    ZP_Backup[0x96] = DskListF;
+    ZP_Backup[0x97] = LstDBIdx;
+    ZP_Backup[0x98] = WinLeft;
+    ZP_Backup[0x99] = WinRight;
+    ZP_Backup[0x9A] = X6502F;
+    ZP_Backup[0x9B] = HighMem & 0xFF;
+    ZP_Backup[0x9C] = (HighMem >> 8) & 0xFF;
+    ZP_Backup[0x9D] = ExprAccF;
+    ZP_Backup[0x9E] = SortF;
+    ZP_Backup[0x9F] = NxtToken;
+
+    // Save $A0-$AF: Instruction Encoding and Loop Control
+    ZP_Backup[0xA0] = LstCodeF;
+    ZP_Backup[0xA1] = SymRefCh;
+    ZP_Backup[0xA2] = GMC[0];
+    ZP_Backup[0xA3] = GMC[1];
+    ZP_Backup[0xA4] = GMC[2];
+    ZP_Backup[0xA5] = GMC[3];
+    ZP_Backup[0xA6] = IsFwdRef;
+    ZP_Backup[0xA7] = NumCols;
+    ZP_Backup[0xA8] = SymIdx;
+    ZP_Backup[0xA9] = ERfield;
+    ZP_Backup[0xAA] = SymAddr & 0xFF;
+    ZP_Backup[0xAB] = (SymAddr >> 8) & 0xFF;
+    ZP_Backup[0xAC] = ValExpr;
+    ZP_Backup[0xAD] = ValExpr_hi;
+    ZP_Backup[0xAE] = ValExpr_2;
+    ZP_Backup[0xAF] = ValExpr_3;
+
+    // Save $B0-$BF: Symbol Processing and Code Generation
+    ZP_Backup[0xB0] = RLDEntP & 0xFF;
+    ZP_Backup[0xB1] = (RLDEntP >> 8) & 0xFF;
+    ZP_Backup[0xB2] = WrkP & 0xFF;
+    ZP_Backup[0xB3] = (WrkP >> 8) & 0xFF;
+    ZP_Backup[0xB4] = JJJ & 0xFF;
+    ZP_Backup[0xB5] = (JJJ >> 8) & 0xFF;
+    ZP_Backup[0xB6] = III & 0xFF;
+    ZP_Backup[0xB7] = (III >> 8) & 0xFF;
+    ZP_Backup[0xB8] = Length;
+    ZP_Backup[0xB9] = ModWrd & 0xFF;
+    ZP_Backup[0xBA] = (ModWrd >> 8) & 0xFF;
+    ZP_Backup[0xBB] = ModWrdL;
+    ZP_Backup[0xBC] = ModWrdH;
+    ZP_Backup[0xBD] = LenTIdx;
+    ZP_Backup[0xBE] = Filler;
+    ZP_Backup[0xBF] = SavLstF;
+
+    // Save $C0-$CF: File I/O and Macro Processing
+    ZP_Backup[0xC0] = GMCIdx;
+    ZP_Backup[0xC1] = RadixCh;
+    ZP_Backup[0xC2] = Jump & 0xFF;
+    ZP_Backup[0xC3] = (Jump >> 8) & 0xFF;
+    ZP_Backup[0xC4] = SavFByt;
+    ZP_Backup[0xC5] = BitsDig;
+    ZP_Backup[0xC6] = LabelF;
+    ZP_Backup[0xC7] = RecCnt & 0xFF;
+    ZP_Backup[0xC8] = (RecCnt >> 8) & 0xFF;
+    ZP_Backup[0xC9] = SubTIdx;
+    ZP_Backup[0xCA] = ZAB;
+    ZP_Backup[0xCB] = ErrorF;
+    ZP_Backup[0xCC] = msbF;
+    ZP_Backup[0xCD] = J_TH & 0xFF;
+    ZP_Backup[0xCE] = (J_TH >> 8) & 0xFF;
+    ZP_Backup[0xCF] = I_TH & 0xFF;
+
+    // Save $D0-$DF: Relocation and Symbol Table Management
+    ZP_Backup[0xD0] = (I_TH >> 8) & 0xFF;
+    ZP_Backup[0xD1] = EndianF;
+    ZP_Backup[0xD2] = Accum & 0xFF;
+    ZP_Backup[0xD3] = (Accum >> 8) & 0xFF;
+    ZP_Backup[0xD4] = Accum_2;
+    ZP_Backup[0xD5] = Accum_3;
+    ZP_Backup[0xD6] = NewPC & 0xFF;
+    ZP_Backup[0xD7] = (NewPC >> 8) & 0xFF;
+    ZP_Backup[0xD8] = SymPJ & 0xFF;
+    ZP_Backup[0xD9] = (SymPJ >> 8) & 0xFF;
+    ZP_Backup[0xDA] = Ret816F;
+    ZP_Backup[0xDB] = SymPI & 0xFF;
+    ZP_Backup[0xDC] = (SymPI >> 8) & 0xFF;
+    ZP_Backup[0xDD] = RepChar;
+    ZP_Backup[0xDE] = SymNbr;
+    ZP_Backup[0xDF] = SavSTS & 0xFF;
+
+    // Save $E0-$EF: Listing Control Flags
+    ZP_Backup[0xE0] = (SavSTS >> 8) & 0xFF;
+    ZP_Backup[0xE1] = GblAbsF;
+    ZP_Backup[0xE2] = DummyF;
+    ZP_Backup[0xE3] = SavPC & 0xFF;
+    ZP_Backup[0xE4] = (SavPC >> 8) & 0xFF;
+    ZP_Backup[0xE5] = SavObjPC & 0xFF;
+    ZP_Backup[0xE6] = (SavObjPC >> 8) & 0xFF;
+    ZP_Backup[0xE7] = CondAsmF;
+    ZP_Backup[0xE8] = TabTIdx;
+    ZP_Backup[0xE9] = SymFByte;
+    ZP_Backup[0xEA] = RelCodeF;
+    ZP_Backup[0xEB] = DskSrcF;
+    ZP_Backup[0xEC] = GenF;
+    ZP_Backup[0xED] = ObjDBIdx;
+    ZP_Backup[0xEE] = IDskSrcF;
+    ZP_Backup[0xEF] = MacroF;
+
+    // Save $F0+: Additional variables
+    ZP_Backup[0xF0] = MParmCnt;
+    ZP_Backup[0xF1] = MacArg;
+  }
+
+  //=================================================
+  // RestoreZP - Restore zero-page from backup area
+  // Original: ASM2.S (paired with SaveZP)
+  // Restores all assembler zero-page variables
+  //=================================================
+  void RestoreZP() {
+    // Restore $60-$6F: General Assembly Control Variables
+    Z60       = ZP_Backup[0x60];
+    BCDNbr[0] = ZP_Backup[0x60];
+    BCDNbr[1] = ZP_Backup[0x61];
+    BCDNbr[2] = ZP_Backup[0x62];
+    StrtSymT  = ZP_Backup[0x63] | (static_cast<uint16_t>(ZP_Backup[0x64]) << 8);
+    EndSymT   = ZP_Backup[0x65] | (static_cast<uint16_t>(ZP_Backup[0x66]) << 8);
+    PassNbr   = ZP_Backup[0x67];
+    ListingF  = ZP_Backup[0x68];
+    SubTtlF   = ZP_Backup[0x69];
+    LineCnt   = ZP_Backup[0x6A];
+    PageNbr   = ZP_Backup[0x6B] | (static_cast<uint16_t>(ZP_Backup[0x6C]) << 8);
+    FileNbr   = ZP_Backup[0x6D];
+    LogPL     = ZP_Backup[0x6E];
+    PhyPL     = ZP_Backup[0x6F];
+
+    // Restore $70-$7F: Instruction Processing and Pointers
+    SavIndX = ZP_Backup[0x70];
+    PrtCol  = ZP_Backup[0x71];
+    EIStack = ZP_Backup[0x72];
+    CancelF = ZP_Backup[0x73];
+    NbrErrs = ZP_Backup[0x74] | (static_cast<uint16_t>(ZP_Backup[0x75]) << 8);
+    PrSlot  = ZP_Backup[0x76];
+    AbortF  = ZP_Backup[0x77];
+    SavIndY = ZP_Backup[0x78];
+    SrcP    = ZP_Backup[0x79] | (static_cast<uint16_t>(ZP_Backup[0x7A]) << 8);
+    Src2P   = ZP_Backup[0x7B] | (static_cast<uint16_t>(ZP_Backup[0x7C]) << 8);
+    PC      = ZP_Backup[0x7D] | (static_cast<uint16_t>(ZP_Backup[0x7E]) << 8);
+    ObjPC   = ZP_Backup[0x7F] | (static_cast<uint16_t>(ZP_Backup[0x80]) << 8);
+
+    // Restore $80-$8F: File and Symbol Table Management
+    CodeLen  = ZP_Backup[0x81];
+    AuxAryE  = ZP_Backup[0x82];
+    FileLen  = ZP_Backup[0x83] | (static_cast<uint16_t>(ZP_Backup[0x84]) << 8);
+    CurrORG  = ZP_Backup[0x85] | (static_cast<uint16_t>(ZP_Backup[0x86]) << 8);
+    SymP     = ZP_Backup[0x87] | (static_cast<uint16_t>(ZP_Backup[0x88]) << 8);
+    Delimitr = ZP_Backup[0x89];
+    DTEndCol = ZP_Backup[0x8A];
+    StrType  = ZP_Backup[0x8B];
+    MemTop   = ZP_Backup[0x8C] | (static_cast<uint16_t>(ZP_Backup[0x8D]) << 8);
+    TotLines = ZP_Backup[0x8E] | (static_cast<uint16_t>(ZP_Backup[0x8F]) << 8) |
+               (static_cast<uint32_t>(ZP_Backup[0x90]) << 16) |
+               (static_cast<uint32_t>(ZP_Backup[0x91]) << 24);
+
+    // Restore $90-$9F: Code Generation and Expression Evaluation
+    VidSlot  = ZP_Backup[0x92];
+    SaveA    = ZP_Backup[0x93];
+    SaveY    = ZP_Backup[0x94];
+    SaveX    = ZP_Backup[0x95];
+    DskListF = ZP_Backup[0x96];
+    LstDBIdx = ZP_Backup[0x97];
+    WinLeft  = ZP_Backup[0x98];
+    WinRight = ZP_Backup[0x99];
+    X6502F   = ZP_Backup[0x9A];
+    HighMem  = ZP_Backup[0x9B] | (static_cast<uint16_t>(ZP_Backup[0x9C]) << 8);
+    ExprAccF = ZP_Backup[0x9D];
+    SortF    = ZP_Backup[0x9E];
+    NxtToken = ZP_Backup[0x9F];
+
+    // Restore $A0-$AF: Instruction Encoding and Loop Control
+    LstCodeF     = ZP_Backup[0xA0];
+    SymRefCh     = ZP_Backup[0xA1];
+    GMC[0]       = ZP_Backup[0xA2];
+    GMC[1]       = ZP_Backup[0xA3];
+    GMC[2]       = ZP_Backup[0xA4];
+    GMC[3]       = ZP_Backup[0xA5];
+    IsFwdRef     = ZP_Backup[0xA6];
+    NumCols      = ZP_Backup[0xA7];
+    SymIdx       = ZP_Backup[0xA8];
+    ERfield      = ZP_Backup[0xA9];
+    SymAddr      = ZP_Backup[0xAA] | (static_cast<uint16_t>(ZP_Backup[0xAB]) << 8);
+    ValExpr_word = ZP_Backup[0xAC] | (static_cast<uint16_t>(ZP_Backup[0xAD]) << 8);
+    ValExpr_2    = ZP_Backup[0xAE];
+    ValExpr_3    = ZP_Backup[0xAF];
+
+    // Restore $B0-$BF: Symbol Processing and Code Generation
+    RLDEntP = ZP_Backup[0xB0] | (static_cast<uint16_t>(ZP_Backup[0xB1]) << 8);
+    WrkP    = ZP_Backup[0xB2] | (static_cast<uint16_t>(ZP_Backup[0xB3]) << 8);
+    JJJ     = ZP_Backup[0xB4] | (static_cast<uint16_t>(ZP_Backup[0xB5]) << 8);
+    III     = ZP_Backup[0xB6] | (static_cast<uint16_t>(ZP_Backup[0xB7]) << 8);
+    Length  = ZP_Backup[0xB8];
+    ModWrd  = ZP_Backup[0xB9] | (static_cast<uint16_t>(ZP_Backup[0xBA]) << 8);
+    ModWrdL = ZP_Backup[0xBB];
+    ModWrdH = ZP_Backup[0xBC];
+    LenTIdx = ZP_Backup[0xBD];
+    Filler  = ZP_Backup[0xBE];
+    SavLstF = ZP_Backup[0xBF];
+
+    // Restore $C0-$CF: File I/O and Macro Processing
+    GMCIdx  = ZP_Backup[0xC0];
+    RadixCh = ZP_Backup[0xC1];
+    Jump    = ZP_Backup[0xC2] | (static_cast<uint16_t>(ZP_Backup[0xC3]) << 8);
+    SavFByt = ZP_Backup[0xC4];
+    BitsDig = ZP_Backup[0xC5];
+    LabelF  = ZP_Backup[0xC6];
+    RecCnt  = ZP_Backup[0xC7] | (static_cast<uint16_t>(ZP_Backup[0xC8]) << 8);
+    SubTIdx = ZP_Backup[0xC9];
+    ZAB     = ZP_Backup[0xCA];
+    ErrorF  = ZP_Backup[0xCB];
+    msbF    = ZP_Backup[0xCC];
+    J_TH    = ZP_Backup[0xCD] | (static_cast<uint16_t>(ZP_Backup[0xCE]) << 8);
+    I_TH    = ZP_Backup[0xCF] | (static_cast<uint16_t>(ZP_Backup[0xD0]) << 8);
+
+    // Restore $D0-$DF: Relocation and Symbol Table Management
+    EndianF = ZP_Backup[0xD1];
+    Accum   = ZP_Backup[0xD2] | (static_cast<uint16_t>(ZP_Backup[0xD3]) << 8);
+    Accum_2 = ZP_Backup[0xD4];
+    Accum_3 = ZP_Backup[0xD5];
+    NewPC   = ZP_Backup[0xD6] | (static_cast<uint16_t>(ZP_Backup[0xD7]) << 8);
+    SymPJ   = ZP_Backup[0xD8] | (static_cast<uint16_t>(ZP_Backup[0xD9]) << 8);
+    Ret816F = static_cast<int8_t>(ZP_Backup[0xDA]);
+    SymPI   = ZP_Backup[0xDB] | (static_cast<uint16_t>(ZP_Backup[0xDC]) << 8);
+    RepChar = ZP_Backup[0xDD];
+    SymNbr  = ZP_Backup[0xDE];
+    SavSTS  = ZP_Backup[0xDF] | (static_cast<uint16_t>(ZP_Backup[0xE0]) << 8);
+
+    // Restore $E0-$EF: Listing Control Flags
+    GblAbsF  = ZP_Backup[0xE1];
+    DummyF   = ZP_Backup[0xE2];
+    SavPC    = ZP_Backup[0xE3] | (static_cast<uint16_t>(ZP_Backup[0xE4]) << 8);
+    SavObjPC = ZP_Backup[0xE5] | (static_cast<uint16_t>(ZP_Backup[0xE6]) << 8);
+    CondAsmF = ZP_Backup[0xE7];
+    TabTIdx  = ZP_Backup[0xE8];
+    SymFByte = ZP_Backup[0xE9];
+    RelCodeF = ZP_Backup[0xEA];
+    DskSrcF  = ZP_Backup[0xEB];
+    GenF     = ZP_Backup[0xEC];
+    ObjDBIdx = ZP_Backup[0xED];
+    IDskSrcF = ZP_Backup[0xEE];
+    MacroF   = ZP_Backup[0xEF];
+
+    // Restore $F0+: Additional variables
+    MParmCnt = ZP_Backup[0xF0];
+    MacArg   = ZP_Backup[0xF1];
+  }
+
+  //=================================================
+  // InitASM - Initialize assembler state for new session
+  // Original: ASM2.S:570
+  // Sets up default values for all assembler variables
+  //=================================================
+  void InitASM() {
+    // Clear error/warning counters (ASM2.S:596-605)
+    NbrErrs  = 0x0000;
+    NbrWarns = 0x0000;
+
+    // Clear line counter (JSR ZeroLnCnt)
+    BCDNbr[0] = 0x00;
+    BCDNbr[1] = 0x00;
+    BCDNbr[2] = 0x00;
+
+    // Set default flags (ASM2.S:596-614)
+    MacroF   = 0x00;  // STY MacroF - Macros disabled
+    ErrorF   = 0x00;  // STY ErrorF - No error
+    DummyF   = 0x00;  // STY DummyF - No dummy section
+    SubTtlF  = 0x00;  // STY SubTtlF - No subtitle
+    GenF     = 0x00;  // STY GenF - Generation enabled, memory mode
+    RelCodeF = 0x00;  // No relocatable code by default
+    CondAsmF = 0x00;  // No conditional assembly
+
+    // Clear subtitle buffer
+    SubTitle[0] = 0x00;  // STY SubTitle - Delimiter=0
+
+    // Set ListingF to $FF (LST ON by default)
+    // Original: DEY (Y=-1); STY ListingF
+    ListingF = 0xFF;
+
+    // Set LogPL to 60 (ASM2.S:620)
+    LogPL = 60;
+
+    // Initialize page number
+    PageNbr = 0x0000;  // STY PageNbr, STY PageNbr+1
+    PhyPL   = 0x00;
+
+    // Initialize Program Counter and Object PC
+    PC    = 0x0000;
+    ObjPC = 0x0000;
+
+    // Clear GMC buffer (machine code generation buffer)
+    GMC[0] = 0x00;
+    GMC[1] = 0x00;
+    GMC[2] = 0x00;
+    GMC[3] = 0x00;
+
+    // Initialize symbol table pointers
+    // In the original, this depends on memory layout (ASM2.S:643-660)
+    // For now, set both to same value indicating empty table
+    // The actual memory address would be set up based on buffer allocation
+    StrtSymT = 0x1E00;    // Example address (would be computed from buffers)
+    EndSymT  = StrtSymT;  // Empty table: start == end
+
+    // Clear all 256 entries of HeaderT hash table to $0000
+    if (HeaderT_ptr != nullptr) {
+      for (int i = 0; i < 256; i++) {
+        HeaderT_ptr[i * 2]     = 0x00;
+        HeaderT_ptr[i * 2 + 1] = 0x00;
+      }
     }
 
-    //=================================================
-    // START of Assembler's Tables
-    //=================================================
-
-    // ($D3D4) Table of Ptrs to messages incl. error msgs
-    // Ref page 219 Workbench
-    const char         LD50F[] = "UNDEFINED      IDENTIFIER";
-    const char         LD524[] = "DUPLICATE      IDENTIFIER";
-    const char         LD539[] = "UNDEFINED      OPCODE";
-    const char         LD54A[] = "OVERFLOW";
-    const char         LD553[] = "RELATIVE       EXPRSN OPERATOR";
-    const char         LD56C[] = "EXPRESSION     SYNTAX";
-    const char         LD57E[] = "EQUATE         SYNTAX";
-    const char         LD58C[] = "INVALID        IDENTIFIER";
-    const char         LD59F[] = "DSECT/DEND";
-    const char         LD5AA[] = "SYMBOL/RLD     TABLE FULL";
-    const char         LD5C0[] = "ASSEMBLER      PARAMETER";
-    const char         LD5D4[] = "INCLUDE/CHN    NESTING";
-    const char         LD5E8[] = "MACRO          NESTING";
-    const char         LD5F6[] = "MACRO          ARGUMENT";
-    const char         LD605[] = "ADDRESS        MODE";
-    const char         LD612[] = "RESERVED       IDENTIFIER";
-    const char         LD626[] = "MACRO          FILE NOT FOUND";
-    const char         LD63B[] = "DIRECTIVE      OPERAND";
-    const char         LD64D[] = "BRANCH         RANGE";
-    const char         LD65A[] = "BYTE           OVERFLOW";
-    const char         LD668[] = "INDIRECT       SYNTAX";
-    const char         LD678[] = "INDEXING       SYNTAX";
-    const char         LD688[] = "INDIRECT       REQUIRES ZPAGE";
-    const char         LD6A0[] = "INVALID        AFTER 1ST IDENTIFIER";
-    const char         LD6BD[] = "SW16           REGISTER";
-    const char         LD6CB[] = "INVALID        DELIMITER";
-    const char         LD6DD[] = "OBJ            BUFFER OVERFLOW";
-    const char         LD6F1[] = "OBJ            BUFFER CONFLICT";
-    const char         LD705[] = "INVALID        FROM INCLUDE";
-    const char         LD71A[] = "BUFFER         SIZE";
-    const char         LD726[] = ">255           EXTRNS/ENTRYS";
-    const char         LD739[] = "DUPLICATE      EXT/ENT";
-    const std::uint8_t LD74B[] = {'S', 'W', 'E', 'E', 'T', '1', '6', ' ', ' ', ' ', ' ',
-                                  ' ', ' ', ' ', 'O', 'P', 'C', 'O', 'D', 'E', 0x01};
-    const std::uint8_t LD75A[] = {'E', 'X', 'T', 'R', 'N', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'U',
-                                  'S', 'E', 'D', ' ', 'A', 'S', ' ', 'Z', 'X', 'T', 'R', 'N', 0x01};
-    const char         LD76E[] = "ORG            MUST BE > $100";
-    const char         LD781[] = "6502X          ADRS MODE/OPCODE";
-
-    const std::uint8_t* ErrMsgT[] = {
-        reinterpret_cast<const std::uint8_t*>(LD50F),  // 0
-        reinterpret_cast<const std::uint8_t*>(LD524),  // 2
-        reinterpret_cast<const std::uint8_t*>(LD539),  // 4
-        reinterpret_cast<const std::uint8_t*>(LD54A),  // 6
-        reinterpret_cast<const std::uint8_t*>(LD553),  // 8
-        reinterpret_cast<const std::uint8_t*>(LD56C),  // A
-        reinterpret_cast<const std::uint8_t*>(LD57E),  // C
-        reinterpret_cast<const std::uint8_t*>(LD58C),  // E
-        reinterpret_cast<const std::uint8_t*>(LD59F),  // 10
-        reinterpret_cast<const std::uint8_t*>(LD5AA),  // 12
-        reinterpret_cast<const std::uint8_t*>(LD5C0),  // 14
-        reinterpret_cast<const std::uint8_t*>(LD5D4),  // 16
-        reinterpret_cast<const std::uint8_t*>(LD5E8),  // 18
-        reinterpret_cast<const std::uint8_t*>(LD5F6),  // 1A
-        reinterpret_cast<const std::uint8_t*>(LD605),  // 1C
-        reinterpret_cast<const std::uint8_t*>(LD612),  // 1E
-        reinterpret_cast<const std::uint8_t*>(LD626),  // 20
-        nullptr,                                       // 22 - none?
-        reinterpret_cast<const std::uint8_t*>(LD63B),  // 24
-        reinterpret_cast<const std::uint8_t*>(LD64D),  // 26
-        reinterpret_cast<const std::uint8_t*>(LD65A),  // 28
-        reinterpret_cast<const std::uint8_t*>(LD668),  // 2A
-        reinterpret_cast<const std::uint8_t*>(LD678),  // 2C
-        reinterpret_cast<const std::uint8_t*>(LD688),  // 2E
-        reinterpret_cast<const std::uint8_t*>(LD6A0),  // 30
-        reinterpret_cast<const std::uint8_t*>(LD6BD),  // 32
-        reinterpret_cast<const std::uint8_t*>(LD6CB),  // 34
-        reinterpret_cast<const std::uint8_t*>(LD6DD),  // 36
-        reinterpret_cast<const std::uint8_t*>(LD6F1),  // 38
-        reinterpret_cast<const std::uint8_t*>(LD705),  // 3A
-        reinterpret_cast<const std::uint8_t*>(LD71A),  // 3C
-        reinterpret_cast<const std::uint8_t*>(LD726),  // 3E
-        reinterpret_cast<const std::uint8_t*>(LD739),  // 40
-        reinterpret_cast<const std::uint8_t*>(LD74B),  // 42
-        reinterpret_cast<const std::uint8_t*>(LD75A),  // 44
-        reinterpret_cast<const std::uint8_t*>(LD76E),  // 46
-        reinterpret_cast<const std::uint8_t*>(LD781),  // 48
-    };
-
-    const std::uint8_t FileTxt[]  = "               # ELIF";  // FILE #
-    const std::uint8_t ASErrTxt[] = "               ERRORS IN THIS ASSEMBLY";
-    const std::uint8_t SuccTxt[]  = "**             SUCCESSFUL ASSEMBLY := NO ERRORS";
-    const std::uint8_t WarnTxt[]  = "               WARNINGS IN THIS ASSEMBLY";
-    const std::uint8_t CreatTxt[] = {'*', '*', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-                                     ' ', ' ', ' ', ' ', ' ', 'A', 'S', 'S', 'E', 'M',
-                                     'B', 'L', 'E', 'R', ' ', 'C', 'R', 'E', 'A', 'T',
-                                     'E', 'D', ' ', 'O', 'N', ' ', 0x01};
-    const std::uint8_t FSPCTxt[] = {'*', '*', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-                                    ' ', ' ', 'F', 'R', 'E', 'E', ' ', 'S', 'P', 'A', 'C', 'E', ' ',
-                                    'P', 'A', 'G', 'E', ' ', 'C', 'O', 'U', 'N', 'T', 0x01};
-    const std::uint8_t TotLnTxt[] = {'*', '*', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-                                     ' ', ' ', ' ', ' ', ' ', 'T', 'O', 'T', 'A', 'L',
-                                     ' ', 'L', 'I', 'N', 'E', 'S', ' ', 'A', 'S', 'S',
-                                     'E', 'M', 'B', 'L', 'E', 'D', ' ', 0x01};
-    const std::uint8_t ContTxt[]  = {'P', 'R', 'E', 'S', 'S', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-                                     ' ', ' ', ' ', 'R', 'E', 'T', 'U', 'R', 'N', ' ', 'T', 'O',
-                                     ' ', 'C', 'O', 'N', 'T', 'I', 'N', 'U', 'E', 0x01};
-    const std::uint8_t AbortTxt[] = {'A', 'S', 'S', 'E', 'M', 'B', 'L', 'Y', ' ', ' ',
-                                     ' ', ' ', ' ', ' ', ' ', 'A', 'B', 'O', 'R', 'T',
-                                     'E', 'D', '.', ' ', 'P', 'R', 'E', 'S', 'S', ' ',
-                                     'R', 'E', 'T', 'U', 'R', 'N', 0x01};
-    const std::uint8_t InLinTxt[] = "ENIL           NI RORRE          ";
-
-    const std::uint8_t LD798[] = "-----          NEXT OBJECT FILE NAME IS ";
-    const std::uint8_t LD7B7[] = {0x0D, 'S', 'O', 'U', 'R', 'C', 'E', ' ', ' ', ' ', ' ',
-                                  ' ',  ' ', ' ', ' ', 'F', 'I', 'L', 'E', ' ', '#'};
-    const std::uint8_t LD7C7[] = {0x0D, ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-                                  ' ',  ' ', ' ', ' ', 'I', 'N', 'C', 'L', 'U', 'D',
-                                  'E',  ' ', 'F', 'I', 'L', 'E', ' ', '#'};
-
-    //=================================================
-    // Table for operand parser (47 bytes)
-    //=================================================
-    const std::uint8_t AModTkns[] = {
-        0xA3, 0x00, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
-        0xA0, 0xA0, 0x05, 0xA8, 0x00, 0xAC, 0xD8, 0xA9, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
-        0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0x02, 0x0F, 0x06, 0x19, 0xA9, 0xAC, 0xD9,
-        0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
-        0x02, 0x0D, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
-        0xA0, 0xA0, 0x06, 0x02, 0x11, 0x13, 0x04, 0x15, 0x8D, 0x15, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
-        0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xBB, 0x15, 0x00, 0xA0, 0xA0,
-        0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0x02, 0x03,
-        0x01, 0xAC, 0xD8, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
-        0xA0, 0xA0, 0xA0, 0x02, 0x07, 0x09, 0xD9, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
-        0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0x02, 0x17, 0x0B,
-    };
-
-    const std::uint8_t AModCmds[] = {
-        0x12, 0x00, 0xB4, 0x00, 0x51, 0x00, 0x2A, 0xAA, 0xAA, 0xB4, 0x28, 0x00,
-        0xAE, 0x00, 0xAA, 0x3E, 0xAA, 0xB4, 0xAE, 0x00, 0xB4, 0x50, 0x50, 0x00,
-        0x00, 0x53, 0x00, 0x55, 0x00, 0x66, 0x00, 0x00, 0x79, 0x78, 0x00, 0x00,
-        0xB4, 0x8D, 0xB4, 0x8C, 0x00, 0x00, 0xAC, 0xB4, 0x9F, 0x00, 0x00,
-    };
-
-    //=================================================
-    // ($D835) 6502/X6502 Opcode Translation table  213 bytes
-    //=================================================
-    constexpr std::size_t ADCOps  = 0;
-    constexpr std::size_t ANDOps  = 9;
-    constexpr std::size_t ASLOps  = 18;
-    constexpr std::size_t BITOps  = 26;
-    constexpr std::size_t CLROps  = 38;
-    constexpr std::size_t CMPOps  = 42;
-    constexpr std::size_t CPXOps  = 51;
-    constexpr std::size_t CPYOps  = 54;
-    constexpr std::size_t DECOps  = 57;
-    constexpr std::size_t EOROps  = 64;
-    constexpr std::size_t INCOps  = 73;
-    constexpr std::size_t JMPOps  = 80;
-    constexpr std::size_t JSROps  = 83;
-    constexpr std::size_t LDAOps  = 84;
-    constexpr std::size_t LDXOps  = 93;
-    constexpr std::size_t LDYOps  = 99;
-    constexpr std::size_t LSROps  = 104;
-    constexpr std::size_t NOPOps  = 109;
-    constexpr std::size_t ORAOps  = 110;
-    constexpr std::size_t PSHOps  = 119;
-    constexpr std::size_t ROLOps  = 127;
-    constexpr std::size_t ROROps  = 132;
-    constexpr std::size_t SBCOps  = 139;
-    constexpr std::size_t STAOps  = 151;
-    constexpr std::size_t STXOps  = 160;
-    constexpr std::size_t STYOps  = 164;
-    constexpr std::size_t STZOps  = 168;
-    constexpr std::size_t TRBOps  = 175;
-    constexpr std::size_t TSBOps  = 177;
-    constexpr std::size_t SW16Ops = 183;
-
-    const std::uint8_t OpcodeT[] = {
-        0x6D, 0x65, 0x69, 0x75, 0x7D, 0x79, 0x71, 0x61, 0x72, 0x2D, 0x25, 0x29, 0x35, 0x3D, 0x39,
-        0x31, 0x21, 0x32, 0x0E, 0x06, 0x0A, 0x16, 0x1E, 0x90, 0xB0, 0xF0, 0x2C, 0x24, 0x89, 0x34,
-        0x3C, 0x30, 0xD0, 0x10, 0x80, 0x00, 0x50, 0x70, 0x18, 0xD8, 0x58, 0xB8, 0xCD, 0xC5, 0xC9,
-        0xD5, 0xDD, 0xD9, 0xD1, 0xC1, 0xD2, 0xEC, 0xE4, 0xE0, 0xCC, 0xC4, 0xC0, 0xCE, 0xC6, 0x3A,
-        0xD6, 0xDE, 0xCA, 0x88, 0x4D, 0x45, 0x49, 0x55, 0x5D, 0x59, 0x51, 0x41, 0x52, 0xEE, 0xE6,
-        0x1A, 0xF6, 0xFE, 0xE8, 0xC8, 0x4C, 0x6C, 0x7C, 0x20, 0xAD, 0xA5, 0xA9, 0xB5, 0xBD, 0xB9,
-        0xB1, 0xA1, 0xB2, 0xAE, 0xA6, 0xA2, 0xB6, 0x00, 0xBE, 0xAC, 0xA4, 0xA0, 0xB4, 0xBC, 0x4E,
-        0x46, 0x4A, 0x56, 0x5E, 0xEA, 0x0D, 0x05, 0x09, 0x15, 0x1D, 0x19, 0x11, 0x01, 0x12, 0x48,
-        0x08, 0xDA, 0x5A, 0x68, 0x28, 0xFA, 0x7A, 0x2E, 0x26, 0x2A, 0x36, 0x3E, 0x6E, 0x66, 0x6A,
-        0x76, 0x7E, 0x40, 0x60, 0xED, 0xE5, 0xE9, 0xF5, 0xFD, 0xF9, 0xF1, 0xE1, 0xF2, 0x38, 0xF8,
-        0x78, 0x8D, 0x85, 0x00, 0x95, 0x9D, 0x99, 0x91, 0x81, 0x92, 0x8E, 0x86, 0x00, 0x96, 0x8C,
-        0x84, 0x00, 0x94, 0x9C, 0x64, 0x00, 0x74, 0x9E, 0xAA, 0xA8, 0x1C, 0x14, 0x0C, 0x04, 0xBA,
-        0x8A, 0x9A, 0x98, 0xA0, 0x03, 0x0A, 0x05, 0x08, 0x02, 0x09, 0x07, 0x04, 0x01, 0x0E, 0x0C,
-        0x0F, 0x06, 0x0D, 0xD0, 0xF0, 0xE0, 0x20, 0x60, 0x40, 0x80, 0xC0, 0x00, 0x0B, 0x30, 0x50,
-        0x70, 0x90, 0xB0,
-    };
-
-    //=================================================
-    // ($D90A) 213 bytes cycle times
-    //=================================================
-    const std::uint8_t CycTimes[] = {
-        4,    3,    2,    4,    4,    4,    5,    6,    5,    4,    3,    2,    4,    4,    4,
-        5,    6,    5,    6,    5,    2,    6,    7,    3,    3,    3,    4,    3,    2,    4,
-        4,    3,    3,    3,    3,    7,    3,    3,    2,    2,    2,    2,    4,    3,    2,
-        4,    4,    4,    5,    6,    5,    4,    3,    2,    4,    3,    2,    6,    5,    2,
-        6,    7,    2,    2,    4,    3,    2,    4,    4,    4,    5,    6,    5,    6,    5,
-        2,    6,    7,    2,    2,    3,    5,    6,    6,    4,    3,    2,    4,    4,    4,
-        5,    6,    5,    4,    3,    2,    4,    0x29, 4,    4,    3,    2,    4,    4,    6,
-        5,    2,    6,    7,    2,    4,    3,    2,    4,    4,    4,    5,    6,    5,    3,
-        3,    3,    3,    4,    4,    4,    4,    6,    5,    2,    6,    7,    6,    5,    2,
-        6,    7,    6,    6,    4,    3,    2,    4,    4,    4,    5,    6,    5,    2,    2,
-        2,    4,    3,    0x29, 4,    5,    5,    6,    6,    5,    4,    3,    0x29, 4,    4,
-        3,    0x29, 4,    4,    3,    0x29, 4,    5,    2,    2,    6,    5,    6,    5,    2,
-        2,    2,    2,    0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29,
-        0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29,
-        0x29, 0x29, 0x29,
-    };
-
-    //=================================================
-    // ($D9DF) Char mapping
-    //=================================================
-    const std::uint8_t CharMap1[] = {
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43,
-        0x43, 0x43, 0x43, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x40, 0x40, 0x40, 0x40, 0x40,
-        0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0,
-        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
-        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01, 0x01, 0x01, 0x01, 0x01,
-    };
-
-    //=================================================
-    // Char mapping
-    //=================================================
-    const std::uint8_t CharMap2[] = {
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42,
-        0x42, 0x42, 0x42, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x40, 0x40, 0x40, 0x40, 0x40,
-        0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0,
-        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
-        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01, 0x01, 0x01, 0x01, 0x01,
-    };
-
-    //=================================================
-    // Directives/Mnemonics/Sweet16 table
-    //=================================================
-    // MnemTbl
-
-    // LtrA
-    const std::uint8_t LtrA[] = {
-        'A', 'D', DCI_end('C'), 0x03, 0xFF, static_cast<std::uint8_t>(ADCOps),
-        'A', 'D', DCI_end('D'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops),
-        'A', 'N', DCI_end('D'), 0x03, 0xFF, static_cast<std::uint8_t>(ANDOps),
-        'A', 'S', DCI_end('C'), 0x80, 0x00, 0x00,  // L8DD2-1
-        'A', 'S', DCI_end('L'), 0x02, 0x1B, static_cast<std::uint8_t>(ASLOps),
-    };
-
-    // LtrB
-    const std::uint8_t LtrB[] = {
-        'B',
-        DCI_end('C'),
-        0x48,
-        0x03,
-        static_cast<std::uint8_t>(SW16Ops + 1),
-        'B',
-        'C',
-        DCI_end('C'),
-        0x08,
-        0x03,
-        0x17,
-        'B',
-        'C',
-        DCI_end('S'),
-        0x08,
-        0x03,
-        0x18,
-        'B',
-        'E',
-        DCI_end('Q'),
-        0x08,
-        0x03,
-        0x19,
-        'B',
-        'G',
-        DCI_end('E'),
-        0x08,
-        0x03,
-        0x18,
-        'B',
-        'I',
-        DCI_end('T'),
-        0x00,
-        0x1F,
-        static_cast<std::uint8_t>(BITOps),
-        'B',
-        DCI_end('K'),
-        0x60,
-        0x00,
-        static_cast<std::uint8_t>(SW16Ops + 2),
-        'B',
-        'L',
-        DCI_end('T'),
-        0x08,
-        0x03,
-        0x17,
-        'B',
-        DCI_end('M'),
-        0x48,
-        0x03,
-        static_cast<std::uint8_t>(SW16Ops + 3),
-        'B',
-        'M',
-        DCI_end('1'),
-        0x48,
-        0x03,
-        static_cast<std::uint8_t>(SW16Ops + 4),
-        'B',
-        'M',
-        DCI_end('I'),
-        0x08,
-        0x03,
-        0x1F,
-        'B',
-        'N',
-        DCI_end('C'),
-        0x48,
-        0x03,
-        static_cast<std::uint8_t>(SW16Ops + 5),
-        'B',
-        'N',
-        DCI_end('E'),
-        0x08,
-        0x03,
-        0x20,
-        'B',
-        'N',
-        'M',
-        DCI_end('1'),
-        0x48,
-        0x03,
-        static_cast<std::uint8_t>(SW16Ops + 6),
-        'B',
-        'N',
-        DCI_end('Z'),
-        0x48,
-        0x03,
-        static_cast<std::uint8_t>(SW16Ops + 7),
-        'B',
-        DCI_end('P'),
-        0x48,
-        0x03,
-        static_cast<std::uint8_t>(SW16Ops + 8),
-        'B',
-        'P',
-        DCI_end('L'),
-        0x08,
-        0x03,
-        0x21,
-        'B',
-        DCI_end('R'),
-        0x48,
-        0x03,
-        static_cast<std::uint8_t>(SW16Ops + 9),
-        'B',
-        'R',
-        DCI_end('A'),
-        0x08,
-        0x03,
-        0x22,
-        'B',
-        'R',
-        DCI_end('K'),
-        0x20,
-        0x00,
-        0x23,
-        'B',
-        'R',
-        DCI_end('L'),
-        0x58,
-        0x03,
-        static_cast<std::uint8_t>(SW16Ops + 10),
-        'B',
-        DCI_end('S'),
-        0x48,
-        0x03,
-        static_cast<std::uint8_t>(SW16Ops + 11),
-        'B',
-        'S',
-        DCI_end('L'),
-        0x58,
-        0x03,
-        static_cast<std::uint8_t>(SW16Ops + 12),
-        'B',
-        'V',
-        DCI_end('C'),
-        0x08,
-        0x03,
-        0x24,
-        'B',
-        'V',
-        DCI_end('S'),
-        0x08,
-        0x03,
-        0x25,
-        'B',
-        DCI_end('Z'),
-        0x48,
-        0x03,
-        static_cast<std::uint8_t>(SW16Ops + 13),
-    };
-
-    // LtrC
-    const std::uint8_t LtrC[] = {
-        'C',
-        'H',
-        DCI_end('N'),
-        0x80,
-        0x00,
-        0x00,  // L928C-1
-        'C',
-        'H',
-        DCI_end('R'),
-        0x80,
-        0x00,
-        0x00,  // L8FC7-1
-        'C',
-        'L',
-        DCI_end('C'),
-        0x20,
-        0x00,
-        0x26,
-        'C',
-        'L',
-        DCI_end('D'),
-        0x20,
-        0x00,
-        0x27,
-        'C',
-        'L',
-        DCI_end('I'),
-        0x20,
-        0x00,
-        0x28,
-        'C',
-        'L',
-        DCI_end('V'),
-        0x20,
-        0x00,
-        0x29,
-        'C',
-        'M',
-        DCI_end('P'),
-        0x03,
-        0xFF,
-        static_cast<std::uint8_t>(CMPOps),
-        'C',
-        'P',
-        'I',
-        DCI_end('M'),
-        0x50,
-        0x01,
-        static_cast<std::uint8_t>(SW16Ops + 14),
-        'C',
-        'P',
-        DCI_end('R'),
-        0x40,
-        0x02,
-        static_cast<std::uint8_t>(SW16Ops + 15),
-        'C',
-        'P',
-        DCI_end('X'),
-        0x00,
-        0x07,
-        static_cast<std::uint8_t>(CPXOps),
-        'C',
-        'P',
-        DCI_end('Y'),
-        0x00,
-        0x07,
-        static_cast<std::uint8_t>(CPYOps),
-    };
-
-    // LtrD
-    const std::uint8_t LtrD[] = {
-        'D',          'A',          'T',
-        DCI_end('E'), 0x80,         0x00,
-        0x00,  // L901D-1
-        'D',          DCI_end('B'), 0x80,
-        0x00,         0x00,  // L8CC3-1
-        'D',          'C',          DCI_end('I'),
-        0x80,         0x00,         0x00,  // L8E54-1
-        'D',          'C',          DCI_end('R'),
-        0x40,         0x02,         static_cast<std::uint8_t>(SW16Ops + 16),
-        'D',          'D',          DCI_end('B'),
-        0x80,         0x00,         0x00,  // L8DCD-1
-        'D',          'E',          DCI_end('C'),
-        0x02,         0x1B,         static_cast<std::uint8_t>(DECOps),
-        'D',          'E',          DCI_end('F'),
-        0x81,         0x00,         0x00,  // L9144-1
-        'D',          'E',          'N',
-        DCI_end('D'), 0x80,         0x00,
-        0x00,  // L908E-1
-        'D',          'E',          DCI_end('X'),
-        0x20,         0x00,         0x3E,
-        'D',          'E',          DCI_end('Y'),
-        0x20,         0x00,         0x3F,
-        'D',          'F',          DCI_end('B'),
-        0x80,         0x00,         0x00,  // L8CC3-1
-        'D',          DCI_end('O'), 0x81,
-        0x00,         0x00,  // L90B7-1
-        'D',          DCI_end('S'), 0x81,
-        0x00,         0x00,  // L8C0E-1
-        'D',          'S',          'E',
-        'C',          DCI_end('T'), 0x80,
-        0x00,         0x00,  // L9065-1
-        'D',          DCI_end('W'), 0x80,
-        0x00,         0x00,  // L8D67-1
-    };
-
-    // LtrE
-    const std::uint8_t LtrE[] = {
-        'E',  'L',  'S',          DCI_end('E'), 0x80,         0x00,
-        0x00,  // L90CB-1
-        'E',  'N',  'T',          'R',          DCI_end('Y'), 0x81,
-        0x00, 0x00,  // L9144-1
-        'E',  'O',  DCI_end('R'), 0x03,         0xFF,         static_cast<std::uint8_t>(EOROps),
-        'E',  'Q',  DCI_end('U'), 0x81,         0x00,         0x00,  // L8A31-1
-        'E',  'X',  'T',          'R',          DCI_end('N'), 0x81,
-        0x00, 0x00,  // L91A8-1
-    };
-
-    // LtrF
-    const std::uint8_t LtrF[] = {
-        'F', 'A', 'I',          DCI_end('L'), 0x80, 0x00, 0x00,  // L9215-1
-        'F', 'I', DCI_end('N'), 0x80,         0x00, 0x00,        // L90D7-1
-    };
-
-    // LtrI
-    const std::uint8_t LtrI[] = {
-        'I',          'B',          'U',
-        'F',          'S',          'I',
-        DCI_end('Z'), 0x81,         0x00,
-        0x00,  // L93C4-1
-        'I',          'D',          'N',
-        'U',          DCI_end('M'), 0x80,
-        0x00,         0x00,  // L905E-1
-        'I',          'F',          'E',
-        DCI_end('Q'), 0x81,         0x00,
-        0x00,  // L90DE-1
-        'I',          'F',          'G',
-        DCI_end('E'), 0x81,         0x00,
-        0x00,  // L90FC-1
-        'I',          'F',          'G',
-        DCI_end('T'), 0x81,         0x00,
-        0x00,  // L90EB-1
-        'I',          'F',          'N',
-        DCI_end('E'), 0x81,         0x00,
-        0x00,  // L90B7-1
-        'I',          'F',          'L',
-        DCI_end('E'), 0x81,         0x00,
-        0x00,  // L9112-1
-        'I',          'F',          'L',
-        DCI_end('T'), 0x81,         0x00,
-        0x00,  // L9107-1
-        'I',          'N',          DCI_end('C'),
-        0x02,         0x1B,         static_cast<std::uint8_t>(INCOps),
-        'I',          'N',          'C',
-        'L',          'U',          'D',
-        DCI_end('E'), 0x80,         0x00,
-        0x00,  // L9360-1
-        'I',          'N',          DCI_end('R'),
-        0x40,         0x02,         static_cast<std::uint8_t>(SW16Ops + 17),
-        'I',          'N',          'T',
-        'E',          'R',          DCI_end('P'),
-        0x81,         0x00,         0x00,  // L9131-1
-        'I',          'N',          DCI_end('X'),
-        0x20,         0x00,         0x4E,
-        'I',          'N',          DCI_end('Y'),
-        0x20,         0x00,         0x4F,
-    };
-
-    // LtrJ
-    const std::uint8_t LtrJ[] = {
-        'J', 'M', DCI_end('P'), 0x11, 0x01, static_cast<std::uint8_t>(JMPOps),
-        'J', 'S', DCI_end('R'), 0x10, 0x01, static_cast<std::uint8_t>(JSROps),
-    };
-
-    // LtrL
-    const std::uint8_t LtrL[] = {
-        'L',  DCI_end('D'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops + 18), 'L',
-        'D',  DCI_end('A'), 0x03, 0xFF, static_cast<std::uint8_t>(LDAOps),       'L',
-        'D',  DCI_end('D'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops + 19), 'L',
-        'D',  DCI_end('I'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops + 20), 'L',
-        'D',  DCI_end('P'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops + 21), 'L',
-        'D',  DCI_end('X'), 0x04, 0x27, static_cast<std::uint8_t>(LDXOps),       'L',
-        'D',  DCI_end('Y'), 0x00, 0x1F, static_cast<std::uint8_t>(LDYOps),       'L',
-        'S',  DCI_end('L'), 0x02, 0x1B, static_cast<std::uint8_t>(ASLOps),       'L',
-        'S',  DCI_end('R'), 0x02, 0x1B, static_cast<std::uint8_t>(LSROps),       'L',
-        'S',  DCI_end('T'), 0x80, 0x00,
-        0x00,  // L8ECA-1
-    };
-
-    // LtrM
-    const std::uint8_t LtrM[] = {
-        'M', 'A', 'C',          'L',  'I',  DCI_end('B'), 0x80, 0x00, 0x00,  // L937F-1
-        'M', 'S', DCI_end('B'), 0x80, 0x00, 0x00,                            // L8E66-1
-    };
-
-    // LtrN
-    const std::uint8_t LtrN[] = {
-        'N', 'O', DCI_end('P'), 0x20, 0x00, 0x6D,
-    };
-
-    // LtrO
-    const std::uint8_t LtrO[] = {
-        'O', 'B', DCI_end('J'), 0x81, 0x00, 0x00,  // L8BAD-1
-        'O', 'R', DCI_end('A'), 0x03, 0xFF, static_cast<std::uint8_t>(ORAOps),
-        'O', 'R', DCI_end('G'), 0x81, 0x00, 0x00,  // L8A82-1
-    };
-
-    // LtrP
-    const std::uint8_t LtrP[] = {
-        'P',
-        'A',
-        'G',
-        DCI_end('E'),
-        0x80,
-        0x00,
-        0x00,  // DoPage-1
-        'P',
-        'A',
-        'U',
-        'S',
-        DCI_end('E'),
-        0x80,
-        0x00,
-        0x00,  // L927A-1
-        'P',
-        'H',
-        DCI_end('A'),
-        0x20,
-        0x00,
-        0x77,
-        'P',
-        'H',
-        DCI_end('P'),
-        0x20,
-        0x00,
-        0x78,
-        'P',
-        'H',
-        DCI_end('X'),
-        0x20,
-        0x00,
-        0x79,
-        'P',
-        'H',
-        DCI_end('Y'),
-        0x20,
-        0x00,
-        0x7A,
-        'P',
-        'L',
-        DCI_end('A'),
-        0x20,
-        0x00,
-        0x7B,
-        'P',
-        'L',
-        DCI_end('P'),
-        0x20,
-        0x00,
-        0x7C,
-        'P',
-        'L',
-        DCI_end('X'),
-        0x20,
-        0x00,
-        0x7D,
-        'P',
-        'L',
-        DCI_end('Y'),
-        0x20,
-        0x00,
-        0x7E,
-        'P',
-        'O',
-        DCI_end('P'),
-        0x40,
-        0x02,
-        static_cast<std::uint8_t>(SW16Ops + 21),
-        'P',
-        'O',
-        'P',
-        DCI_end('D'),
-        0x40,
-        0x02,
-        static_cast<std::uint8_t>(SW16Ops + 22),
-    };
-
-    // LtrR
-    const std::uint8_t LtrR[] = {
-        'R',
-        'E',
-        DCI_end('F'),
-        0x81,
-        0x00,
-        0x00,  // L91A8-1
-        'R',
-        'E',
-        DCI_end('L'),
-        0x80,
-        0x00,
-        0x00,  // L9126-1
-        'R',
-        'E',
-        DCI_end('P'),
-        0x80,
-        0x00,
-        0x00,  // L8FA3-1
-        'R',
-        'O',
-        DCI_end('L'),
-        0x02,
-        0x1B,
-        static_cast<std::uint8_t>(ROLOps),
-        'R',
-        'O',
-        DCI_end('R'),
-        0x02,
-        0x1B,
-        static_cast<std::uint8_t>(ROROps),
-        'R',
-        DCI_end('S'),
-        0x60,
-        0x00,
-        static_cast<std::uint8_t>(SW16Ops + 24),
-        'R',
-        'T',
-        DCI_end('I'),
-        0x20,
-        0x00,
-        0x89,
-        'R',
-        'T',
-        DCI_end('N'),
-        0x60,
-        0x00,
-        0x23,
-        'R',
-        'T',
-        DCI_end('S'),
-        0x20,
-        0x00,
-        0x8A,
-    };
-
-    // LtrS
-    const std::uint8_t LtrS[] = {
-        'S',
-        'B',
-        DCI_end('C'),
-        0x03,
-        0xFF,
-        static_cast<std::uint8_t>(SBCOps),
-        'S',
-        'B',
-        'T',
-        DCI_end('L'),
-        0x80,
-        0x00,
-        0x00,  // L8F61-1
-        'S',
-        'B',
-        'U',
-        'F',
-        'S',
-        'I',
-        DCI_end('Z'),
-        0x81,
-        0x00,
-        0x00,  // L93C7-1
-        'S',
-        'E',
-        DCI_end('C'),
-        0x20,
-        0x00,
-        0x94,
-        'S',
-        'E',
-        DCI_end('D'),
-        0x20,
-        0x00,
-        0x95,
-        'S',
-        'E',
-        DCI_end('I'),
-        0x20,
-        0x00,
-        0x96,
-        'S',
-        'E',
-        DCI_end('T'),
-        0xC0,
-        0x00,
-        0x00,  // L94C0-1
-        'S',
-        'K',
-        DCI_end('P'),
-        0x80,
-        0x00,
-        0x00,  // L8FEA-1
-        'S',
-        DCI_end('T'),
-        0x40,
-        0x02,
-        static_cast<std::uint8_t>(SW16Ops + 25),
-        'S',
-        'T',
-        DCI_end('A'),
-        0x03,
-        0xFB,
-        static_cast<std::uint8_t>(STAOps),
-        'S',
-        'T',
-        DCI_end('D'),
-        0x40,
-        0x02,
-        static_cast<std::uint8_t>(SW16Ops + 27),
-        'S',
-        'T',
-        DCI_end('I'),
-        0x40,
-        0x02,
-        static_cast<std::uint8_t>(SW16Ops + 26),
-        'S',
-        'T',
-        DCI_end('P'),
-        0x40,
-        0x02,
-        static_cast<std::uint8_t>(SW16Ops + 28),
-        'S',
-        'T',
-        DCI_end('R'),
-        0x80,
-        0x00,
-        0x00,  // L8E94-1
-        'S',
-        'T',
-        DCI_end('X'),
-        0x04,
-        0x03,
-        static_cast<std::uint8_t>(STXOps),
-        'S',
-        'T',
-        DCI_end('Y'),
-        0x00,
-        0x0B,
-        static_cast<std::uint8_t>(STYOps),
-        'S',
-        'T',
-        DCI_end('Z'),
-        0x00,
-        0x1B,
-        static_cast<std::uint8_t>(STZOps),
-        'S',
-        'U',
-        DCI_end('B'),
-        0x40,
-        0x02,
-        static_cast<std::uint8_t>(SW16Ops + 29),
-        'S',
-        'Y',
-        DCI_end('S'),
-        0x81,
-        0x00,
-        0x00,  // L9131-1
-        'S',
-        'W',
-        '1',
-        DCI_end('6'),
-        0xC0,
-        0x00,
-        0x00,  // L946F-1
-    };
-
-    // LtrT
-    const std::uint8_t LtrT[] = {
-        'T',  'A', DCI_end('X'), 0x20,         0x00, 0xAD,
-        'T',  'A', DCI_end('Y'), 0x20,         0x00, 0xAE,
-        'T',  'I', 'M',          DCI_end('E'), 0x80, 0x00,
-        0x00,  // L905E-1
-        'T',  'R', DCI_end('B'), 0x00,         0x03, static_cast<std::uint8_t>(TRBOps),
-        'T',  'S', DCI_end('B'), 0x00,         0x03, static_cast<std::uint8_t>(TSBOps),
-        'T',  'S', DCI_end('X'), 0x20,         0x00, 0xB3,
-        'T',  'X', DCI_end('A'), 0x20,         0x00, 0xB4,
-        'T',  'X', DCI_end('S'), 0x20,         0x00, 0xB5,
-        'T',  'Y', DCI_end('A'), 0x20,         0x00, 0xB6,
-    };
-
-    // LtrX
-    const std::uint8_t LtrX[] = {
-        'X', '6', '5', '0', DCI_end('2'), 0x81, 0x00, 0x00,  // L9139-1
-    };
-
-    // LtrZ
-    const std::uint8_t LtrZ[] = {
-        'Z', 'D', 'E', DCI_end('F'), 0x81,         0x00, 0x00,        // L9140-1
-        'Z', 'R', 'E', DCI_end('F'), 0x81,         0x00, 0x00,        // L91A4-1
-        'Z', 'X', 'T', 'R',          DCI_end('N'), 0x81, 0x00, 0x00,  // L91A4-1
-    };
-
-    // Dot directives
-    const std::uint8_t DotDrtv[] = {
-        '.',  'A',  'S',  'C',          'I',          DCI_end('I'), 0x80,         0x00,
-        0x00,  // L8DD2-1
-        '.',  'B',  'L',  'O',          'C',          DCI_end('K'), 0x81,         0x00,
-        0x00,                                                                            // L8C0E-1
-        '.',  'B',  'Y',  'T',          DCI_end('E'), 0x80,         0x00,         0x00,  // L8CC3-1
-        '.',  'D',  'B',  'Y',          'T',          DCI_end('E'), 0x80,         0x00,
-        0x00,                                                              // L8DCD-1
-        '.',  'D',  'E',  DCI_end('F'), 0x81,         0x00,         0x00,  // L9144-1
-        '.',  'E',  'Q',  DCI_end('U'), 0x81,         0x00,         0x00,  // L8A31-1
-        '.',  'I',  'N',  'C',          'L',          'U',          'D',          DCI_end('E'),
-        0x80, 0x00, 0x00,                                                                // L9360-1
-        '.',  'L',  'I',  'S',          DCI_end('T'), 0x80,         0x00,         0x00,  // L8F3D-1
-        '.',  'N',  'O',  'L',          'I',          'S',          DCI_end('T'), 0x80,
-        0x00, 0x00,                                                                      // L8F3A-1
-        '.',  'O',  'R',  DCI_end('G'), 0x81,         0x00,         0x00,                // L8A82-1
-        '.',  'P',  'A',  'G',          DCI_end('E'), 0x80,         0x00,         0x00,  // DoPage-1
-        '.',  'R',  'E',  DCI_end('F'), 0x81,         0x00,         0x00,                // L91A8-1
-        '.',  'S',  'K',  'I',          DCI_end('P'), 0x80,         0x00,         0x00,  // L8FEA-1
-        '.',  'T',  'I',  'T',          'L',          DCI_end('E'), 0x80,         0x00,
-        0x00,                                                                            // L8F61-1
-        '.',  'W',  'O',  'R',          DCI_end('D'), 0x80,         0x00,         0x00,  // L8D67-1
-        0x00, 0x00, 0x00, 0x00,                                                          // unused
-    };
-
-    // Table of ptrs to first letter subtables
-    const std::uint8_t* Tbl1stLet[] = {
-        DotDrtv, LtrA, LtrB,    LtrC,    LtrD,    LtrE,    LtrF, nullptr, nullptr,
-        LtrI,    LtrJ, nullptr, LtrL,    LtrM,    LtrN,    LtrO, LtrP,    nullptr,
-        LtrR,    LtrS, LtrT,    nullptr, nullptr, nullptr, LtrX, nullptr, LtrZ,
-    };
-
-    // MnemTbl points at LtrA
-    const std::uint8_t* MnemTbl = LtrA;
-
-    // Assembler's creation date and time
-    const char LDF3F[] = "30-APR-85";
-    const char LDF48[] = "22:46          ";
-
-    // Area to preserve the zero page locations $60-$F1
-    std::uint8_t SvZPArea[0x92] = {};
-
-    // ($DFE0) Unidentified data block
-    const std::uint16_t DFE0Data[] = {
-        0xD581, 0xD589, 0xD58E, 0xD546, 0xA023, 0xA048, 0xA308, 0xDCC7,
-        0x9BF8, 0xA071, 0xB9AF, 0x9B18, 0x9B6D, 0xDDC0, 0x9F49, 0xC8D3,
-    };
-
-  }  // namespace
+    // Initialize other state
+    CancelF = 0xFF;  // DEY; STY CancelF - $FF
+    LineCnt = 0xFE;  // DEY; STY LineCnt - $FE
+    SW16F   = 0xFF;  // DEY; STY SW16F - SW16 opcodes valid
+    PassNbr = 0x00;  // Start at Pass 1
+  }
 
   //=================================================
-  // Test Helper Functions - Exported for Unit Testing
+  // CleanupAsm - Cleanup assembler state after session
+  // Original: ASM2.S:79 (CleanUp label)
+  // For now, this is a stub - full cleanup will be in Phase 9+
   //=================================================
-  namespace EdAsmNg {
-    namespace Asm {
+  void CleanupAsm() {
+    // Original performs:
+    // - Close source files (ClsFile for INCLUDE, MACRO)
+    // - Flush object code buffer (FlushObj)
+    // - Close object file
+    // - Flush listing buffer (if disk listing)
+    // - Close listing file
+    //
+    // For Phase 8.1, we keep this as a stub
+    // Full file I/O cleanup will be implemented in later phases
+  }
 
-      void ResetErrorState() {
-        NbrErrs  = 0;
-        NbrWarns = 0;
-        ErrorF   = 0;
-        ErrNbr4  = 0;
-        std::memset(ErrInfoT, 0, sizeof(ErrInfoT));
+  //=================================================
+  // START of Assembler's Tables
+  //=================================================
+
+  // ($D3D4) Table of Ptrs to messages incl. error msgs
+  // Ref page 219 Workbench
+  const char         LD50F[] = "UNDEFINED      IDENTIFIER";
+  const char         LD524[] = "DUPLICATE      IDENTIFIER";
+  const char         LD539[] = "UNDEFINED      OPCODE";
+  const char         LD54A[] = "OVERFLOW";
+  const char         LD553[] = "RELATIVE       EXPRSN OPERATOR";
+  const char         LD56C[] = "EXPRESSION     SYNTAX";
+  const char         LD57E[] = "EQUATE         SYNTAX";
+  const char         LD58C[] = "INVALID        IDENTIFIER";
+  const char         LD59F[] = "DSECT/DEND";
+  const char         LD5AA[] = "SYMBOL/RLD     TABLE FULL";
+  const char         LD5C0[] = "ASSEMBLER      PARAMETER";
+  const char         LD5D4[] = "INCLUDE/CHN    NESTING";
+  const char         LD5E8[] = "MACRO          NESTING";
+  const char         LD5F6[] = "MACRO          ARGUMENT";
+  const char         LD605[] = "ADDRESS        MODE";
+  const char         LD612[] = "RESERVED       IDENTIFIER";
+  const char         LD626[] = "MACRO          FILE NOT FOUND";
+  const char         LD63B[] = "DIRECTIVE      OPERAND";
+  const char         LD64D[] = "BRANCH         RANGE";
+  const char         LD65A[] = "BYTE           OVERFLOW";
+  const char         LD668[] = "INDIRECT       SYNTAX";
+  const char         LD678[] = "INDEXING       SYNTAX";
+  const char         LD688[] = "INDIRECT       REQUIRES ZPAGE";
+  const char         LD6A0[] = "INVALID        AFTER 1ST IDENTIFIER";
+  const char         LD6BD[] = "SW16           REGISTER";
+  const char         LD6CB[] = "INVALID        DELIMITER";
+  const char         LD6DD[] = "OBJ            BUFFER OVERFLOW";
+  const char         LD6F1[] = "OBJ            BUFFER CONFLICT";
+  const char         LD705[] = "INVALID        FROM INCLUDE";
+  const char         LD71A[] = "BUFFER         SIZE";
+  const char         LD726[] = ">255           EXTRNS/ENTRYS";
+  const char         LD739[] = "DUPLICATE      EXT/ENT";
+  const std::uint8_t LD74B[] = {'S', 'W', 'E', 'E', 'T', '1', '6', ' ', ' ', ' ', ' ',
+                                ' ', ' ', ' ', 'O', 'P', 'C', 'O', 'D', 'E', 0x01};
+  const std::uint8_t LD75A[] = {'E', 'X', 'T', 'R', 'N', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'U',
+                                'S', 'E', 'D', ' ', 'A', 'S', ' ', 'Z', 'X', 'T', 'R', 'N', 0x01};
+  const char         LD76E[] = "ORG            MUST BE > $100";
+  const char         LD781[] = "6502X          ADRS MODE/OPCODE";
+
+  const std::uint8_t* ErrMsgT[] = {
+      reinterpret_cast<const std::uint8_t*>(LD50F),  // 0
+      reinterpret_cast<const std::uint8_t*>(LD524),  // 2
+      reinterpret_cast<const std::uint8_t*>(LD539),  // 4
+      reinterpret_cast<const std::uint8_t*>(LD54A),  // 6
+      reinterpret_cast<const std::uint8_t*>(LD553),  // 8
+      reinterpret_cast<const std::uint8_t*>(LD56C),  // A
+      reinterpret_cast<const std::uint8_t*>(LD57E),  // C
+      reinterpret_cast<const std::uint8_t*>(LD58C),  // E
+      reinterpret_cast<const std::uint8_t*>(LD59F),  // 10
+      reinterpret_cast<const std::uint8_t*>(LD5AA),  // 12
+      reinterpret_cast<const std::uint8_t*>(LD5C0),  // 14
+      reinterpret_cast<const std::uint8_t*>(LD5D4),  // 16
+      reinterpret_cast<const std::uint8_t*>(LD5E8),  // 18
+      reinterpret_cast<const std::uint8_t*>(LD5F6),  // 1A
+      reinterpret_cast<const std::uint8_t*>(LD605),  // 1C
+      reinterpret_cast<const std::uint8_t*>(LD612),  // 1E
+      reinterpret_cast<const std::uint8_t*>(LD626),  // 20
+      nullptr,                                       // 22 - none?
+      reinterpret_cast<const std::uint8_t*>(LD63B),  // 24
+      reinterpret_cast<const std::uint8_t*>(LD64D),  // 26
+      reinterpret_cast<const std::uint8_t*>(LD65A),  // 28
+      reinterpret_cast<const std::uint8_t*>(LD668),  // 2A
+      reinterpret_cast<const std::uint8_t*>(LD678),  // 2C
+      reinterpret_cast<const std::uint8_t*>(LD688),  // 2E
+      reinterpret_cast<const std::uint8_t*>(LD6A0),  // 30
+      reinterpret_cast<const std::uint8_t*>(LD6BD),  // 32
+      reinterpret_cast<const std::uint8_t*>(LD6CB),  // 34
+      reinterpret_cast<const std::uint8_t*>(LD6DD),  // 36
+      reinterpret_cast<const std::uint8_t*>(LD6F1),  // 38
+      reinterpret_cast<const std::uint8_t*>(LD705),  // 3A
+      reinterpret_cast<const std::uint8_t*>(LD71A),  // 3C
+      reinterpret_cast<const std::uint8_t*>(LD726),  // 3E
+      reinterpret_cast<const std::uint8_t*>(LD739),  // 40
+      reinterpret_cast<const std::uint8_t*>(LD74B),  // 42
+      reinterpret_cast<const std::uint8_t*>(LD75A),  // 44
+      reinterpret_cast<const std::uint8_t*>(LD76E),  // 46
+      reinterpret_cast<const std::uint8_t*>(LD781),  // 48
+  };
+
+  const std::uint8_t FileTxt[]  = "               # ELIF";  // FILE #
+  const std::uint8_t ASErrTxt[] = "               ERRORS IN THIS ASSEMBLY";
+  const std::uint8_t SuccTxt[]  = "**             SUCCESSFUL ASSEMBLY := NO ERRORS";
+  const std::uint8_t WarnTxt[]  = "               WARNINGS IN THIS ASSEMBLY";
+  const std::uint8_t CreatTxt[] = {'*', '*', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
+                                   ' ', ' ', 'A', 'S', 'S', 'E', 'M', 'B', 'L', 'E', 'R', ' ', 'C',
+                                   'R', 'E', 'A', 'T', 'E', 'D', ' ', 'O', 'N', ' ', 0x01};
+  const std::uint8_t FSPCTxt[]  = {'*', '*', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
+                                   ' ', ' ', 'F', 'R', 'E', 'E', ' ', 'S', 'P', 'A', 'C', 'E', ' ',
+                                   'P', 'A', 'G', 'E', ' ', 'C', 'O', 'U', 'N', 'T', 0x01};
+  const std::uint8_t TotLnTxt[] = {'*', '*', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
+                                   ' ', ' ', 'T', 'O', 'T', 'A', 'L', ' ', 'L', 'I', 'N', 'E', 'S',
+                                   ' ', 'A', 'S', 'S', 'E', 'M', 'B', 'L', 'E', 'D', ' ', 0x01};
+  const std::uint8_t ContTxt[]  = {'P', 'R', 'E', 'S', 'S', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
+                                   ' ', ' ', ' ', 'R', 'E', 'T', 'U', 'R', 'N', ' ', 'T', 'O',
+                                   ' ', 'C', 'O', 'N', 'T', 'I', 'N', 'U', 'E', 0x01};
+  const std::uint8_t AbortTxt[] = {'A', 'S', 'S', 'E', 'M', 'B', 'L', 'Y', ' ', ' ', ' ', ' ', ' ',
+                                   ' ', ' ', 'A', 'B', 'O', 'R', 'T', 'E', 'D', '.', ' ', 'P', 'R',
+                                   'E', 'S', 'S', ' ', 'R', 'E', 'T', 'U', 'R', 'N', 0x01};
+  const std::uint8_t InLinTxt[] = "ENIL           NI RORRE          ";
+
+  const std::uint8_t LD798[] = "-----          NEXT OBJECT FILE NAME IS ";
+  const std::uint8_t LD7B7[] = {0x0D, 'S', 'O', 'U', 'R', 'C', 'E', ' ', ' ', ' ', ' ',
+                                ' ',  ' ', ' ', ' ', 'F', 'I', 'L', 'E', ' ', '#'};
+  const std::uint8_t LD7C7[] = {0x0D, ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
+                                ' ',  ' ', ' ', ' ', 'I', 'N', 'C', 'L', 'U', 'D',
+                                'E',  ' ', 'F', 'I', 'L', 'E', ' ', '#'};
+
+  //=================================================
+  // Table for operand parser (47 bytes)
+  //=================================================
+  const std::uint8_t AModTkns[] = {
+      0xA3, 0x00, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
+      0xA0, 0xA0, 0x05, 0xA8, 0x00, 0xAC, 0xD8, 0xA9, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
+      0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0x02, 0x0F, 0x06, 0x19, 0xA9, 0xAC, 0xD9,
+      0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
+      0x02, 0x0D, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
+      0xA0, 0xA0, 0x06, 0x02, 0x11, 0x13, 0x04, 0x15, 0x8D, 0x15, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
+      0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xBB, 0x15, 0x00, 0xA0, 0xA0,
+      0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0x02, 0x03,
+      0x01, 0xAC, 0xD8, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
+      0xA0, 0xA0, 0xA0, 0x02, 0x07, 0x09, 0xD9, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
+      0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0x02, 0x17, 0x0B,
+  };
+
+  const std::uint8_t AModCmds[] = {
+      0x12, 0x00, 0xB4, 0x00, 0x51, 0x00, 0x2A, 0xAA, 0xAA, 0xB4, 0x28, 0x00,
+      0xAE, 0x00, 0xAA, 0x3E, 0xAA, 0xB4, 0xAE, 0x00, 0xB4, 0x50, 0x50, 0x00,
+      0x00, 0x53, 0x00, 0x55, 0x00, 0x66, 0x00, 0x00, 0x79, 0x78, 0x00, 0x00,
+      0xB4, 0x8D, 0xB4, 0x8C, 0x00, 0x00, 0xAC, 0xB4, 0x9F, 0x00, 0x00,
+  };
+
+  //=================================================
+  // ($D835) 6502/X6502 Opcode Translation table  213 bytes
+  //=================================================
+  constexpr std::size_t ADCOps  = 0;
+  constexpr std::size_t ANDOps  = 9;
+  constexpr std::size_t ASLOps  = 18;
+  constexpr std::size_t BITOps  = 26;
+  constexpr std::size_t CLROps  = 38;
+  constexpr std::size_t CMPOps  = 42;
+  constexpr std::size_t CPXOps  = 51;
+  constexpr std::size_t CPYOps  = 54;
+  constexpr std::size_t DECOps  = 57;
+  constexpr std::size_t EOROps  = 64;
+  constexpr std::size_t INCOps  = 73;
+  constexpr std::size_t JMPOps  = 80;
+  constexpr std::size_t JSROps  = 83;
+  constexpr std::size_t LDAOps  = 84;
+  constexpr std::size_t LDXOps  = 93;
+  constexpr std::size_t LDYOps  = 99;
+  constexpr std::size_t LSROps  = 104;
+  constexpr std::size_t NOPOps  = 109;
+  constexpr std::size_t ORAOps  = 110;
+  constexpr std::size_t PSHOps  = 119;
+  constexpr std::size_t ROLOps  = 127;
+  constexpr std::size_t ROROps  = 132;
+  constexpr std::size_t SBCOps  = 139;
+  constexpr std::size_t STAOps  = 151;
+  constexpr std::size_t STXOps  = 160;
+  constexpr std::size_t STYOps  = 164;
+  constexpr std::size_t STZOps  = 168;
+  constexpr std::size_t TRBOps  = 175;
+  constexpr std::size_t TSBOps  = 177;
+  constexpr std::size_t SW16Ops = 183;
+
+  const std::uint8_t OpcodeT[] = {
+      0x6D, 0x65, 0x69, 0x75, 0x7D, 0x79, 0x71, 0x61, 0x72, 0x2D, 0x25, 0x29, 0x35, 0x3D, 0x39,
+      0x31, 0x21, 0x32, 0x0E, 0x06, 0x0A, 0x16, 0x1E, 0x90, 0xB0, 0xF0, 0x2C, 0x24, 0x89, 0x34,
+      0x3C, 0x30, 0xD0, 0x10, 0x80, 0x00, 0x50, 0x70, 0x18, 0xD8, 0x58, 0xB8, 0xCD, 0xC5, 0xC9,
+      0xD5, 0xDD, 0xD9, 0xD1, 0xC1, 0xD2, 0xEC, 0xE4, 0xE0, 0xCC, 0xC4, 0xC0, 0xCE, 0xC6, 0x3A,
+      0xD6, 0xDE, 0xCA, 0x88, 0x4D, 0x45, 0x49, 0x55, 0x5D, 0x59, 0x51, 0x41, 0x52, 0xEE, 0xE6,
+      0x1A, 0xF6, 0xFE, 0xE8, 0xC8, 0x4C, 0x6C, 0x7C, 0x20, 0xAD, 0xA5, 0xA9, 0xB5, 0xBD, 0xB9,
+      0xB1, 0xA1, 0xB2, 0xAE, 0xA6, 0xA2, 0xB6, 0x00, 0xBE, 0xAC, 0xA4, 0xA0, 0xB4, 0xBC, 0x4E,
+      0x46, 0x4A, 0x56, 0x5E, 0xEA, 0x0D, 0x05, 0x09, 0x15, 0x1D, 0x19, 0x11, 0x01, 0x12, 0x48,
+      0x08, 0xDA, 0x5A, 0x68, 0x28, 0xFA, 0x7A, 0x2E, 0x26, 0x2A, 0x36, 0x3E, 0x6E, 0x66, 0x6A,
+      0x76, 0x7E, 0x40, 0x60, 0xED, 0xE5, 0xE9, 0xF5, 0xFD, 0xF9, 0xF1, 0xE1, 0xF2, 0x38, 0xF8,
+      0x78, 0x8D, 0x85, 0x00, 0x95, 0x9D, 0x99, 0x91, 0x81, 0x92, 0x8E, 0x86, 0x00, 0x96, 0x8C,
+      0x84, 0x00, 0x94, 0x9C, 0x64, 0x00, 0x74, 0x9E, 0xAA, 0xA8, 0x1C, 0x14, 0x0C, 0x04, 0xBA,
+      0x8A, 0x9A, 0x98, 0xA0, 0x03, 0x0A, 0x05, 0x08, 0x02, 0x09, 0x07, 0x04, 0x01, 0x0E, 0x0C,
+      0x0F, 0x06, 0x0D, 0xD0, 0xF0, 0xE0, 0x20, 0x60, 0x40, 0x80, 0xC0, 0x00, 0x0B, 0x30, 0x50,
+      0x70, 0x90, 0xB0,
+  };
+
+  //=================================================
+  // ($D90A) 213 bytes cycle times
+  //=================================================
+  const std::uint8_t CycTimes[] = {
+      4,    3,    2,    4,    4,    4,    5,    6,    5,    4,    3,    2,    4,    4,    4,
+      5,    6,    5,    6,    5,    2,    6,    7,    3,    3,    3,    4,    3,    2,    4,
+      4,    3,    3,    3,    3,    7,    3,    3,    2,    2,    2,    2,    4,    3,    2,
+      4,    4,    4,    5,    6,    5,    4,    3,    2,    4,    3,    2,    6,    5,    2,
+      6,    7,    2,    2,    4,    3,    2,    4,    4,    4,    5,    6,    5,    6,    5,
+      2,    6,    7,    2,    2,    3,    5,    6,    6,    4,    3,    2,    4,    4,    4,
+      5,    6,    5,    4,    3,    2,    4,    0x29, 4,    4,    3,    2,    4,    4,    6,
+      5,    2,    6,    7,    2,    4,    3,    2,    4,    4,    4,    5,    6,    5,    3,
+      3,    3,    3,    4,    4,    4,    4,    6,    5,    2,    6,    7,    6,    5,    2,
+      6,    7,    6,    6,    4,    3,    2,    4,    4,    4,    5,    6,    5,    2,    2,
+      2,    4,    3,    0x29, 4,    5,    5,    6,    6,    5,    4,    3,    0x29, 4,    4,
+      3,    0x29, 4,    4,    3,    0x29, 4,    5,    2,    2,    6,    5,    6,    5,    2,
+      2,    2,    2,    0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29,
+      0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29, 0x29,
+      0x29, 0x29, 0x29,
+  };
+
+  //=================================================
+  // ($D9DF) Char mapping
+  //=================================================
+  const std::uint8_t CharMap1[] = {
+      0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+      0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+      0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+      0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+      0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43,
+      0x43, 0x43, 0x43, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x40, 0x40, 0x40, 0x40, 0x40,
+      0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0,
+      0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+      0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01, 0x01, 0x01, 0x01, 0x01,
+  };
+
+  //=================================================
+  // Char mapping
+  //=================================================
+  const std::uint8_t CharMap2[] = {
+      0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+      0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+      0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+      0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+      0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42,
+      0x42, 0x42, 0x42, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x40, 0x40, 0x40, 0x40, 0x40,
+      0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0,
+      0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+      0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01, 0x01, 0x01, 0x01, 0x01,
+  };
+
+  //=================================================
+  // Directives/Mnemonics/Sweet16 table
+  //=================================================
+  // MnemTbl
+
+  // LtrA
+  const std::uint8_t LtrA[] = {
+      'A', 'D', DCI_end('C'), 0x03, 0xFF, static_cast<std::uint8_t>(ADCOps),
+      'A', 'D', DCI_end('D'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops),
+      'A', 'N', DCI_end('D'), 0x03, 0xFF, static_cast<std::uint8_t>(ANDOps),
+      'A', 'S', DCI_end('C'), 0x80, 0x00, 0x00,  // L8DD2-1
+      'A', 'S', DCI_end('L'), 0x02, 0x1B, static_cast<std::uint8_t>(ASLOps),
+  };
+
+  // LtrB
+  const std::uint8_t LtrB[] = {
+      'B',
+      DCI_end('C'),
+      0x48,
+      0x03,
+      static_cast<std::uint8_t>(SW16Ops + 1),
+      'B',
+      'C',
+      DCI_end('C'),
+      0x08,
+      0x03,
+      0x17,
+      'B',
+      'C',
+      DCI_end('S'),
+      0x08,
+      0x03,
+      0x18,
+      'B',
+      'E',
+      DCI_end('Q'),
+      0x08,
+      0x03,
+      0x19,
+      'B',
+      'G',
+      DCI_end('E'),
+      0x08,
+      0x03,
+      0x18,
+      'B',
+      'I',
+      DCI_end('T'),
+      0x00,
+      0x1F,
+      static_cast<std::uint8_t>(BITOps),
+      'B',
+      DCI_end('K'),
+      0x60,
+      0x00,
+      static_cast<std::uint8_t>(SW16Ops + 2),
+      'B',
+      'L',
+      DCI_end('T'),
+      0x08,
+      0x03,
+      0x17,
+      'B',
+      DCI_end('M'),
+      0x48,
+      0x03,
+      static_cast<std::uint8_t>(SW16Ops + 3),
+      'B',
+      'M',
+      DCI_end('1'),
+      0x48,
+      0x03,
+      static_cast<std::uint8_t>(SW16Ops + 4),
+      'B',
+      'M',
+      DCI_end('I'),
+      0x08,
+      0x03,
+      0x1F,
+      'B',
+      'N',
+      DCI_end('C'),
+      0x48,
+      0x03,
+      static_cast<std::uint8_t>(SW16Ops + 5),
+      'B',
+      'N',
+      DCI_end('E'),
+      0x08,
+      0x03,
+      0x20,
+      'B',
+      'N',
+      'M',
+      DCI_end('1'),
+      0x48,
+      0x03,
+      static_cast<std::uint8_t>(SW16Ops + 6),
+      'B',
+      'N',
+      DCI_end('Z'),
+      0x48,
+      0x03,
+      static_cast<std::uint8_t>(SW16Ops + 7),
+      'B',
+      DCI_end('P'),
+      0x48,
+      0x03,
+      static_cast<std::uint8_t>(SW16Ops + 8),
+      'B',
+      'P',
+      DCI_end('L'),
+      0x08,
+      0x03,
+      0x21,
+      'B',
+      DCI_end('R'),
+      0x48,
+      0x03,
+      static_cast<std::uint8_t>(SW16Ops + 9),
+      'B',
+      'R',
+      DCI_end('A'),
+      0x08,
+      0x03,
+      0x22,
+      'B',
+      'R',
+      DCI_end('K'),
+      0x20,
+      0x00,
+      0x23,
+      'B',
+      'R',
+      DCI_end('L'),
+      0x58,
+      0x03,
+      static_cast<std::uint8_t>(SW16Ops + 10),
+      'B',
+      DCI_end('S'),
+      0x48,
+      0x03,
+      static_cast<std::uint8_t>(SW16Ops + 11),
+      'B',
+      'S',
+      DCI_end('L'),
+      0x58,
+      0x03,
+      static_cast<std::uint8_t>(SW16Ops + 12),
+      'B',
+      'V',
+      DCI_end('C'),
+      0x08,
+      0x03,
+      0x24,
+      'B',
+      'V',
+      DCI_end('S'),
+      0x08,
+      0x03,
+      0x25,
+      'B',
+      DCI_end('Z'),
+      0x48,
+      0x03,
+      static_cast<std::uint8_t>(SW16Ops + 13),
+  };
+
+  // LtrC
+  const std::uint8_t LtrC[] = {
+      'C',
+      'H',
+      DCI_end('N'),
+      0x80,
+      0x00,
+      0x00,  // L928C-1
+      'C',
+      'H',
+      DCI_end('R'),
+      0x80,
+      0x00,
+      0x00,  // L8FC7-1
+      'C',
+      'L',
+      DCI_end('C'),
+      0x20,
+      0x00,
+      0x26,
+      'C',
+      'L',
+      DCI_end('D'),
+      0x20,
+      0x00,
+      0x27,
+      'C',
+      'L',
+      DCI_end('I'),
+      0x20,
+      0x00,
+      0x28,
+      'C',
+      'L',
+      DCI_end('V'),
+      0x20,
+      0x00,
+      0x29,
+      'C',
+      'M',
+      DCI_end('P'),
+      0x03,
+      0xFF,
+      static_cast<std::uint8_t>(CMPOps),
+      'C',
+      'P',
+      'I',
+      DCI_end('M'),
+      0x50,
+      0x01,
+      static_cast<std::uint8_t>(SW16Ops + 14),
+      'C',
+      'P',
+      DCI_end('R'),
+      0x40,
+      0x02,
+      static_cast<std::uint8_t>(SW16Ops + 15),
+      'C',
+      'P',
+      DCI_end('X'),
+      0x00,
+      0x07,
+      static_cast<std::uint8_t>(CPXOps),
+      'C',
+      'P',
+      DCI_end('Y'),
+      0x00,
+      0x07,
+      static_cast<std::uint8_t>(CPYOps),
+  };
+
+  // LtrD
+  const std::uint8_t LtrD[] = {
+      'D',          'A',          'T',
+      DCI_end('E'), 0x80,         0x00,
+      0x00,  // L901D-1
+      'D',          DCI_end('B'), 0x80,
+      0x00,         0x00,  // L8CC3-1
+      'D',          'C',          DCI_end('I'),
+      0x80,         0x00,         0x00,  // L8E54-1
+      'D',          'C',          DCI_end('R'),
+      0x40,         0x02,         static_cast<std::uint8_t>(SW16Ops + 16),
+      'D',          'D',          DCI_end('B'),
+      0x80,         0x00,         0x00,  // L8DCD-1
+      'D',          'E',          DCI_end('C'),
+      0x02,         0x1B,         static_cast<std::uint8_t>(DECOps),
+      'D',          'E',          DCI_end('F'),
+      0x81,         0x00,         0x00,  // L9144-1
+      'D',          'E',          'N',
+      DCI_end('D'), 0x80,         0x00,
+      0x00,  // L908E-1
+      'D',          'E',          DCI_end('X'),
+      0x20,         0x00,         0x3E,
+      'D',          'E',          DCI_end('Y'),
+      0x20,         0x00,         0x3F,
+      'D',          'F',          DCI_end('B'),
+      0x80,         0x00,         0x00,  // L8CC3-1
+      'D',          DCI_end('O'), 0x81,
+      0x00,         0x00,  // L90B7-1
+      'D',          DCI_end('S'), 0x81,
+      0x00,         0x00,  // L8C0E-1
+      'D',          'S',          'E',
+      'C',          DCI_end('T'), 0x80,
+      0x00,         0x00,  // L9065-1
+      'D',          DCI_end('W'), 0x80,
+      0x00,         0x00,  // L8D67-1
+  };
+
+  // LtrE
+  const std::uint8_t LtrE[] = {
+      'E',  'L',  'S',          DCI_end('E'), 0x80,         0x00,
+      0x00,  // L90CB-1
+      'E',  'N',  'T',          'R',          DCI_end('Y'), 0x81,
+      0x00, 0x00,  // L9144-1
+      'E',  'O',  DCI_end('R'), 0x03,         0xFF,         static_cast<std::uint8_t>(EOROps),
+      'E',  'Q',  DCI_end('U'), 0x81,         0x00,         0x00,  // L8A31-1
+      'E',  'X',  'T',          'R',          DCI_end('N'), 0x81,
+      0x00, 0x00,  // L91A8-1
+  };
+
+  // LtrF
+  const std::uint8_t LtrF[] = {
+      'F', 'A', 'I',          DCI_end('L'), 0x80, 0x00, 0x00,  // L9215-1
+      'F', 'I', DCI_end('N'), 0x80,         0x00, 0x00,        // L90D7-1
+  };
+
+  // LtrI
+  const std::uint8_t LtrI[] = {
+      'I',          'B',          'U',
+      'F',          'S',          'I',
+      DCI_end('Z'), 0x81,         0x00,
+      0x00,  // L93C4-1
+      'I',          'D',          'N',
+      'U',          DCI_end('M'), 0x80,
+      0x00,         0x00,  // L905E-1
+      'I',          'F',          'E',
+      DCI_end('Q'), 0x81,         0x00,
+      0x00,  // L90DE-1
+      'I',          'F',          'G',
+      DCI_end('E'), 0x81,         0x00,
+      0x00,  // L90FC-1
+      'I',          'F',          'G',
+      DCI_end('T'), 0x81,         0x00,
+      0x00,  // L90EB-1
+      'I',          'F',          'N',
+      DCI_end('E'), 0x81,         0x00,
+      0x00,  // L90B7-1
+      'I',          'F',          'L',
+      DCI_end('E'), 0x81,         0x00,
+      0x00,  // L9112-1
+      'I',          'F',          'L',
+      DCI_end('T'), 0x81,         0x00,
+      0x00,  // L9107-1
+      'I',          'N',          DCI_end('C'),
+      0x02,         0x1B,         static_cast<std::uint8_t>(INCOps),
+      'I',          'N',          'C',
+      'L',          'U',          'D',
+      DCI_end('E'), 0x80,         0x00,
+      0x00,  // L9360-1
+      'I',          'N',          DCI_end('R'),
+      0x40,         0x02,         static_cast<std::uint8_t>(SW16Ops + 17),
+      'I',          'N',          'T',
+      'E',          'R',          DCI_end('P'),
+      0x81,         0x00,         0x00,  // L9131-1
+      'I',          'N',          DCI_end('X'),
+      0x20,         0x00,         0x4E,
+      'I',          'N',          DCI_end('Y'),
+      0x20,         0x00,         0x4F,
+  };
+
+  // LtrJ
+  const std::uint8_t LtrJ[] = {
+      'J', 'M', DCI_end('P'), 0x11, 0x01, static_cast<std::uint8_t>(JMPOps),
+      'J', 'S', DCI_end('R'), 0x10, 0x01, static_cast<std::uint8_t>(JSROps),
+  };
+
+  // LtrL
+  const std::uint8_t LtrL[] = {
+      'L',  DCI_end('D'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops + 18), 'L',
+      'D',  DCI_end('A'), 0x03, 0xFF, static_cast<std::uint8_t>(LDAOps),       'L',
+      'D',  DCI_end('D'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops + 19), 'L',
+      'D',  DCI_end('I'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops + 20), 'L',
+      'D',  DCI_end('P'), 0x40, 0x02, static_cast<std::uint8_t>(SW16Ops + 21), 'L',
+      'D',  DCI_end('X'), 0x04, 0x27, static_cast<std::uint8_t>(LDXOps),       'L',
+      'D',  DCI_end('Y'), 0x00, 0x1F, static_cast<std::uint8_t>(LDYOps),       'L',
+      'S',  DCI_end('L'), 0x02, 0x1B, static_cast<std::uint8_t>(ASLOps),       'L',
+      'S',  DCI_end('R'), 0x02, 0x1B, static_cast<std::uint8_t>(LSROps),       'L',
+      'S',  DCI_end('T'), 0x80, 0x00,
+      0x00,  // L8ECA-1
+  };
+
+  // LtrM
+  const std::uint8_t LtrM[] = {
+      'M', 'A', 'C',          'L',  'I',  DCI_end('B'), 0x80, 0x00, 0x00,  // L937F-1
+      'M', 'S', DCI_end('B'), 0x80, 0x00, 0x00,                            // L8E66-1
+  };
+
+  // LtrN
+  const std::uint8_t LtrN[] = {
+      'N', 'O', DCI_end('P'), 0x20, 0x00, 0x6D,
+  };
+
+  // LtrO
+  const std::uint8_t LtrO[] = {
+      'O', 'B', DCI_end('J'), 0x81, 0x00, 0x00,  // L8BAD-1
+      'O', 'R', DCI_end('A'), 0x03, 0xFF, static_cast<std::uint8_t>(ORAOps),
+      'O', 'R', DCI_end('G'), 0x81, 0x00, 0x00,  // L8A82-1
+  };
+
+  // LtrP
+  const std::uint8_t LtrP[] = {
+      'P',
+      'A',
+      'G',
+      DCI_end('E'),
+      0x80,
+      0x00,
+      0x00,  // DoPage-1
+      'P',
+      'A',
+      'U',
+      'S',
+      DCI_end('E'),
+      0x80,
+      0x00,
+      0x00,  // L927A-1
+      'P',
+      'H',
+      DCI_end('A'),
+      0x20,
+      0x00,
+      0x77,
+      'P',
+      'H',
+      DCI_end('P'),
+      0x20,
+      0x00,
+      0x78,
+      'P',
+      'H',
+      DCI_end('X'),
+      0x20,
+      0x00,
+      0x79,
+      'P',
+      'H',
+      DCI_end('Y'),
+      0x20,
+      0x00,
+      0x7A,
+      'P',
+      'L',
+      DCI_end('A'),
+      0x20,
+      0x00,
+      0x7B,
+      'P',
+      'L',
+      DCI_end('P'),
+      0x20,
+      0x00,
+      0x7C,
+      'P',
+      'L',
+      DCI_end('X'),
+      0x20,
+      0x00,
+      0x7D,
+      'P',
+      'L',
+      DCI_end('Y'),
+      0x20,
+      0x00,
+      0x7E,
+      'P',
+      'O',
+      DCI_end('P'),
+      0x40,
+      0x02,
+      static_cast<std::uint8_t>(SW16Ops + 21),
+      'P',
+      'O',
+      'P',
+      DCI_end('D'),
+      0x40,
+      0x02,
+      static_cast<std::uint8_t>(SW16Ops + 22),
+  };
+
+  // LtrR
+  const std::uint8_t LtrR[] = {
+      'R',
+      'E',
+      DCI_end('F'),
+      0x81,
+      0x00,
+      0x00,  // L91A8-1
+      'R',
+      'E',
+      DCI_end('L'),
+      0x80,
+      0x00,
+      0x00,  // L9126-1
+      'R',
+      'E',
+      DCI_end('P'),
+      0x80,
+      0x00,
+      0x00,  // L8FA3-1
+      'R',
+      'O',
+      DCI_end('L'),
+      0x02,
+      0x1B,
+      static_cast<std::uint8_t>(ROLOps),
+      'R',
+      'O',
+      DCI_end('R'),
+      0x02,
+      0x1B,
+      static_cast<std::uint8_t>(ROROps),
+      'R',
+      DCI_end('S'),
+      0x60,
+      0x00,
+      static_cast<std::uint8_t>(SW16Ops + 24),
+      'R',
+      'T',
+      DCI_end('I'),
+      0x20,
+      0x00,
+      0x89,
+      'R',
+      'T',
+      DCI_end('N'),
+      0x60,
+      0x00,
+      0x23,
+      'R',
+      'T',
+      DCI_end('S'),
+      0x20,
+      0x00,
+      0x8A,
+  };
+
+  // LtrS
+  const std::uint8_t LtrS[] = {
+      'S',
+      'B',
+      DCI_end('C'),
+      0x03,
+      0xFF,
+      static_cast<std::uint8_t>(SBCOps),
+      'S',
+      'B',
+      'T',
+      DCI_end('L'),
+      0x80,
+      0x00,
+      0x00,  // L8F61-1
+      'S',
+      'B',
+      'U',
+      'F',
+      'S',
+      'I',
+      DCI_end('Z'),
+      0x81,
+      0x00,
+      0x00,  // L93C7-1
+      'S',
+      'E',
+      DCI_end('C'),
+      0x20,
+      0x00,
+      0x94,
+      'S',
+      'E',
+      DCI_end('D'),
+      0x20,
+      0x00,
+      0x95,
+      'S',
+      'E',
+      DCI_end('I'),
+      0x20,
+      0x00,
+      0x96,
+      'S',
+      'E',
+      DCI_end('T'),
+      0xC0,
+      0x00,
+      0x00,  // L94C0-1
+      'S',
+      'K',
+      DCI_end('P'),
+      0x80,
+      0x00,
+      0x00,  // L8FEA-1
+      'S',
+      DCI_end('T'),
+      0x40,
+      0x02,
+      static_cast<std::uint8_t>(SW16Ops + 25),
+      'S',
+      'T',
+      DCI_end('A'),
+      0x03,
+      0xFB,
+      static_cast<std::uint8_t>(STAOps),
+      'S',
+      'T',
+      DCI_end('D'),
+      0x40,
+      0x02,
+      static_cast<std::uint8_t>(SW16Ops + 27),
+      'S',
+      'T',
+      DCI_end('I'),
+      0x40,
+      0x02,
+      static_cast<std::uint8_t>(SW16Ops + 26),
+      'S',
+      'T',
+      DCI_end('P'),
+      0x40,
+      0x02,
+      static_cast<std::uint8_t>(SW16Ops + 28),
+      'S',
+      'T',
+      DCI_end('R'),
+      0x80,
+      0x00,
+      0x00,  // L8E94-1
+      'S',
+      'T',
+      DCI_end('X'),
+      0x04,
+      0x03,
+      static_cast<std::uint8_t>(STXOps),
+      'S',
+      'T',
+      DCI_end('Y'),
+      0x00,
+      0x0B,
+      static_cast<std::uint8_t>(STYOps),
+      'S',
+      'T',
+      DCI_end('Z'),
+      0x00,
+      0x1B,
+      static_cast<std::uint8_t>(STZOps),
+      'S',
+      'U',
+      DCI_end('B'),
+      0x40,
+      0x02,
+      static_cast<std::uint8_t>(SW16Ops + 29),
+      'S',
+      'Y',
+      DCI_end('S'),
+      0x81,
+      0x00,
+      0x00,  // L9131-1
+      'S',
+      'W',
+      '1',
+      DCI_end('6'),
+      0xC0,
+      0x00,
+      0x00,  // L946F-1
+  };
+
+  // LtrT
+  const std::uint8_t LtrT[] = {
+      'T',  'A', DCI_end('X'), 0x20,         0x00, 0xAD,
+      'T',  'A', DCI_end('Y'), 0x20,         0x00, 0xAE,
+      'T',  'I', 'M',          DCI_end('E'), 0x80, 0x00,
+      0x00,  // L905E-1
+      'T',  'R', DCI_end('B'), 0x00,         0x03, static_cast<std::uint8_t>(TRBOps),
+      'T',  'S', DCI_end('B'), 0x00,         0x03, static_cast<std::uint8_t>(TSBOps),
+      'T',  'S', DCI_end('X'), 0x20,         0x00, 0xB3,
+      'T',  'X', DCI_end('A'), 0x20,         0x00, 0xB4,
+      'T',  'X', DCI_end('S'), 0x20,         0x00, 0xB5,
+      'T',  'Y', DCI_end('A'), 0x20,         0x00, 0xB6,
+  };
+
+  // LtrX
+  const std::uint8_t LtrX[] = {
+      'X', '6', '5', '0', DCI_end('2'), 0x81, 0x00, 0x00,  // L9139-1
+  };
+
+  // LtrZ
+  const std::uint8_t LtrZ[] = {
+      'Z', 'D', 'E', DCI_end('F'), 0x81,         0x00, 0x00,        // L9140-1
+      'Z', 'R', 'E', DCI_end('F'), 0x81,         0x00, 0x00,        // L91A4-1
+      'Z', 'X', 'T', 'R',          DCI_end('N'), 0x81, 0x00, 0x00,  // L91A4-1
+  };
+
+  // Dot directives
+  const std::uint8_t DotDrtv[] = {
+      '.',  'A',  'S',  'C',          'I',          DCI_end('I'), 0x80,         0x00,
+      0x00,  // L8DD2-1
+      '.',  'B',  'L',  'O',          'C',          DCI_end('K'), 0x81,         0x00,
+      0x00,                                                                            // L8C0E-1
+      '.',  'B',  'Y',  'T',          DCI_end('E'), 0x80,         0x00,         0x00,  // L8CC3-1
+      '.',  'D',  'B',  'Y',          'T',          DCI_end('E'), 0x80,         0x00,
+      0x00,                                                              // L8DCD-1
+      '.',  'D',  'E',  DCI_end('F'), 0x81,         0x00,         0x00,  // L9144-1
+      '.',  'E',  'Q',  DCI_end('U'), 0x81,         0x00,         0x00,  // L8A31-1
+      '.',  'I',  'N',  'C',          'L',          'U',          'D',          DCI_end('E'),
+      0x80, 0x00, 0x00,                                                                // L9360-1
+      '.',  'L',  'I',  'S',          DCI_end('T'), 0x80,         0x00,         0x00,  // L8F3D-1
+      '.',  'N',  'O',  'L',          'I',          'S',          DCI_end('T'), 0x80,
+      0x00, 0x00,                                                                      // L8F3A-1
+      '.',  'O',  'R',  DCI_end('G'), 0x81,         0x00,         0x00,                // L8A82-1
+      '.',  'P',  'A',  'G',          DCI_end('E'), 0x80,         0x00,         0x00,  // DoPage-1
+      '.',  'R',  'E',  DCI_end('F'), 0x81,         0x00,         0x00,                // L91A8-1
+      '.',  'S',  'K',  'I',          DCI_end('P'), 0x80,         0x00,         0x00,  // L8FEA-1
+      '.',  'T',  'I',  'T',          'L',          DCI_end('E'), 0x80,         0x00,
+      0x00,                                                                            // L8F61-1
+      '.',  'W',  'O',  'R',          DCI_end('D'), 0x80,         0x00,         0x00,  // L8D67-1
+      0x00, 0x00, 0x00, 0x00,                                                          // unused
+  };
+
+  // Table of ptrs to first letter subtables
+  const std::uint8_t* Tbl1stLet[] = {
+      DotDrtv, LtrA, LtrB,    LtrC,    LtrD,    LtrE,    LtrF, nullptr, nullptr,
+      LtrI,    LtrJ, nullptr, LtrL,    LtrM,    LtrN,    LtrO, LtrP,    nullptr,
+      LtrR,    LtrS, LtrT,    nullptr, nullptr, nullptr, LtrX, nullptr, LtrZ,
+  };
+
+  // MnemTbl points at LtrA
+  const std::uint8_t* MnemTbl = LtrA;
+
+  // Assembler's creation date and time
+  const char LDF3F[] = "30-APR-85";
+  const char LDF48[] = "22:46          ";
+
+  // Area to preserve the zero page locations $60-$F1
+  std::uint8_t SvZPArea[0x92] = {};
+
+  // ($DFE0) Unidentified data block
+  const std::uint16_t DFE0Data[] = {
+      0xD581, 0xD589, 0xD58E, 0xD546, 0xA023, 0xA048, 0xA308, 0xDCC7,
+      0x9BF8, 0xA071, 0xB9AF, 0x9B18, 0x9B6D, 0xDDC0, 0x9F49, 0xC8D3,
+  };
+
+}  // namespace
+
+//=================================================
+// Test Helper Functions - Exported for Unit Testing
+//=================================================
+namespace EdAsmNg {
+  namespace Asm {
+
+    void ResetErrorState() {
+      NbrErrs  = 0;
+      NbrWarns = 0;
+      ErrorF   = 0;
+      ErrNbr4  = 0;
+      std::memset(ErrInfoT, 0, sizeof(ErrInfoT));
+    }
+
+    uint16_t GetErrorCount() {
+      return NbrErrs;
+    }
+
+    uint16_t GetWarningCount() {
+      return NbrWarns;
+    }
+
+    uint8_t GetErrorFlag() {
+      return ErrorF;
+    }
+
+    uint8_t GetErrNbr4() {
+      return ErrNbr4;
+    }
+
+    void SetVidSlot(uint8_t slot) {
+      VidSlot = slot;
+    }
+
+    void SetFileNbr(uint8_t file) {
+      FileNbr = file;
+    }
+
+    void SetBCDLineNumber(uint8_t hi, uint8_t lo) {
+      BCDNbr[1] = hi;
+      BCDNbr[0] = lo;
+    }
+
+    void SetLstWarns(uint8_t flags) {
+      LstWarns = flags;
+    }
+
+    struct ErrorInfo {
+      uint8_t fileNbr;
+      uint8_t errIndex;
+      uint8_t lineHi;
+      uint8_t lineLo;
+    };
+
+    ErrorInfo GetErrorInfo(int index) {
+      ErrorInfo info;
+      int       offset = index * 4;
+      if (offset >= 0 && offset < (int)sizeof(ErrInfoT) - 3) {
+        info.fileNbr  = ErrInfoT[offset];
+        info.errIndex = ErrInfoT[offset + 1];
+        info.lineHi   = ErrInfoT[offset + 2];
+        info.lineLo   = ErrInfoT[offset + 3];
+      } else {
+        info.fileNbr  = 0;
+        info.errIndex = 0;
+        info.lineHi   = 0;
+        info.lineLo   = 0;
       }
+      return info;
+    }
 
-      uint16_t GetErrorCount() {
-        return NbrErrs;
-      }
+    void RegAsmEW(uint8_t errorToken) {
+      ::RegAsmEW(errorToken);
+    }
 
-      uint16_t GetWarningCount() {
-        return NbrWarns;
-      }
+    void SaveErrInfo(uint8_t errorToken) {
+      ::SaveErrInfo(errorToken);
+    }
 
-      uint8_t GetErrorFlag() {
-        return ErrorF;
-      }
-
-      uint8_t GetErrNbr4() {
-        return ErrNbr4;
-      }
-
-      void SetVidSlot(uint8_t slot) {
-        VidSlot = slot;
-      }
-
-      void SetFileNbr(uint8_t file) {
-        FileNbr = file;
-      }
-
-      void SetBCDLineNumber(uint8_t hi, uint8_t lo) {
-        BCDNbr[1] = hi;
-        BCDNbr[0] = lo;
-      }
-
-      void SetLstWarns(uint8_t flags) {
-        LstWarns = flags;
-      }
-
-      struct ErrorInfo {
-        uint8_t fileNbr;
-        uint8_t errIndex;
-        uint8_t lineHi;
-        uint8_t lineLo;
-      };
-
-      ErrorInfo GetErrorInfo(int index) {
-        ErrorInfo info;
-        int       offset = index * 4;
-        if (offset >= 0 && offset < (int)sizeof(ErrInfoT) - 3) {
-          info.fileNbr  = ErrInfoT[offset];
-          info.errIndex = ErrInfoT[offset + 1];
-          info.lineHi   = ErrInfoT[offset + 2];
-          info.lineLo   = ErrInfoT[offset + 3];
-        } else {
-          info.fileNbr  = 0;
-          info.errIndex = 0;
-          info.lineHi   = 0;
-          info.lineLo   = 0;
-        }
-        return info;
-      }
-
-      void RegAsmEW(uint8_t errorToken) {
-        ::RegAsmEW(errorToken);
-      }
-
-      void SaveErrInfo(uint8_t errorToken) {
-        ::SaveErrInfo(errorToken);
-      }
-
+#if 0   // TODO: Phase 9+ - Test helpers for Phase 2-3 reference commented-out stub functions
       //=================================================
       // Phase 2: Mnemonic Dispatch Test Helpers
       //=================================================
@@ -7515,6 +7995,129 @@ namespace {
       void HndlSBTL() {
         ::HndlSBTL();
       }
+#endif  // Test helpers for Phase 2-3
 
-    }  // namespace Asm
-  }  // namespace EdAsmNg
+    //=================================================
+    // Phase 8.1: Initialization and Cleanup Test Helpers
+    //=================================================
+
+    // Line number accessor
+    uint16_t GetLineNum() {
+      // LineNum is stored as BCDNbr (3 bytes BCD format)
+      // For testing, we'll treat it as low 2 bytes
+      return (static_cast<uint16_t>(BCDNbr[1]) << 8) | BCDNbr[0];
+    }
+
+    void SetLineNum(uint16_t value) {
+      BCDNbr[0] = value & 0xFF;
+      BCDNbr[1] = (value >> 8) & 0xFF;
+    }
+
+    // MacroF accessor
+    uint8_t GetMacroF() {
+      return MacroF;
+    }
+
+    void SetMacroF(uint8_t value) {
+      MacroF = value;
+    }
+
+    // IfDefF accessor (CondAsmF)
+    uint8_t GetIfDefF() {
+      return CondAsmF;
+    }
+
+    void SetIfDefF(uint8_t value) {
+      CondAsmF = value;
+    }
+
+    // GenF accessor
+    uint8_t GetGenF() {
+      return GenF;
+    }
+
+    void SetGenF(uint8_t value) {
+      GenF = value;
+    }
+
+    // Symbol table pointers
+    uint16_t GetStrtSymT() {
+      return StrtSymT;
+    }
+
+    void SetStrtSymT(uint16_t value) {
+      StrtSymT = value;
+    }
+
+    uint16_t GetEndSymT() {
+      return EndSymT;
+    }
+
+    void SetEndSymT(uint16_t value) {
+      EndSymT = value;
+    }
+
+    // HeaderT accessor
+    uint16_t GetHeaderT(uint8_t index) {
+      if (HeaderT_ptr == nullptr) {
+        return 0x0000;
+      }
+      return (static_cast<uint16_t>(HeaderT_ptr[index * 2 + 1]) << 8) | HeaderT_ptr[index * 2];
+    }
+
+    void SetHeaderT(uint8_t index, uint16_t value) {
+      if (HeaderT_ptr == nullptr) {
+        return;
+      }
+      HeaderT_ptr[index * 2]     = value & 0xFF;
+      HeaderT_ptr[index * 2 + 1] = (value >> 8) & 0xFF;
+    }
+
+    // PC accessor
+    uint16_t GetPC() {
+      return PC;
+    }
+
+    void SetPC(uint16_t value) {
+      PC = value;
+    }
+
+    // ObjPC accessor
+    uint16_t GetObjPC() {
+      return ObjPC;
+    }
+
+    void SetObjPC(uint16_t value) {
+      ObjPC = value;
+    }
+
+    // GMC buffer accessors
+    uint8_t GetGMC(uint8_t index) {
+      if (index >= 4) return 0;
+      return GMC[index];
+    }
+
+    void SetGMC(uint8_t index, uint8_t value) {
+      if (index >= 4) return;
+      GMC[index] = value;
+    }
+
+    // Phase 8.1: Initialization and cleanup functions
+    void SaveZP() {
+      ::SaveZP();
+    }
+
+    void RestoreZP() {
+      ::RestoreZP();
+    }
+
+    void InitASM() {
+      ::InitASM();
+    }
+
+    void CleanupAsm() {
+      ::CleanupAsm();
+    }
+
+  }  // namespace Asm
+}  // namespace EdAsmNg

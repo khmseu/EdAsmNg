@@ -2527,3 +2527,312 @@ TEST_F(Phase76RELDirectiveTest, SetFromNonZero) {
 
   EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
 }
+
+//=================================================
+// Phase 8.1: Initialization and Cleanup Tests
+// Original: ASM2.S:555 (SaveZP), ASM2.S:570 (InitASM)
+//=================================================
+
+namespace EdAsmNg {
+  namespace Asm {
+    // Expose initialization functions for testing
+    void SaveZP();
+    void RestoreZP();
+    void InitASM();
+    void CleanupAsm();
+
+    // Expose zero-page variable getters/setters for testing
+    void     SetNumErrs(uint16_t value);
+    void     SetNumWarns(uint16_t value);
+    void     SetLineNum(uint16_t value);
+    uint16_t GetLineNum();
+    void     SetListingF(uint8_t value);
+    uint8_t  GetListingF();
+    void     SetMacroF(uint8_t value);
+    uint8_t  GetMacroF();
+    void     SetIfDefF(uint8_t value);
+    uint8_t  GetIfDefF();
+    void     SetSubTtlF(uint8_t value);
+    uint8_t  GetSubTtlF();
+    void     SetGenF(uint8_t value);
+    uint8_t  GetGenF();
+    void     SetRelCodeF(uint8_t value);
+    uint8_t  GetRelCodeF();
+    void     SetStrtSymT(uint16_t value);
+    uint16_t GetStrtSymT();
+    void     SetEndSymT(uint16_t value);
+    uint16_t GetEndSymT();
+    uint16_t GetHeaderT(uint8_t index);
+    void     SetHeaderT(uint8_t index, uint16_t value);
+    void     SetPC(uint16_t value);
+    uint16_t GetPC();
+    void     SetObjPC(uint16_t value);
+    uint16_t GetObjPC();
+    uint8_t  GetGMC(uint8_t index);
+    void     SetGMC(uint8_t index, uint8_t value);
+  }  // namespace Asm
+}  // namespace EdAsmNg
+
+class Phase81InitTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetErrorState();
+  }
+};
+
+TEST_F(Phase81InitTest, SaveRestoreZP_BasicVariables) {
+  // Original: ASM2.S:555 - SaveZP
+  // Test saving and restoring basic zero-page variables
+
+  // Set some test values
+  EdAsmNg::Asm::SetNumErrs(0x1234);
+  EdAsmNg::Asm::SetNumWarns(0x5678);
+  EdAsmNg::Asm::SetLineNum(0x9ABC);
+  EdAsmNg::Asm::SetListingF(0xAA);
+  EdAsmNg::Asm::SetMacroF(0xBB);
+  EdAsmNg::Asm::SetRelCodeF(0xCC);
+
+  // Save zero-page
+  EdAsmNg::Asm::SaveZP();
+
+  // Modify variables to different values
+  EdAsmNg::Asm::SetNumErrs(0xFFFF);
+  EdAsmNg::Asm::SetNumWarns(0xEEEE);
+  EdAsmNg::Asm::SetLineNum(0xDDDD);
+  EdAsmNg::Asm::SetListingF(0x11);
+  EdAsmNg::Asm::SetMacroF(0x22);
+  EdAsmNg::Asm::SetRelCodeF(0x33);
+
+  // Verify modifications took effect
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0xFFFF);
+  EXPECT_EQ(EdAsmNg::Asm::GetWarningCount(), 0xEEEE);
+  EXPECT_EQ(EdAsmNg::Asm::GetLineNum(), 0xDDDD);
+  EXPECT_EQ(EdAsmNg::Asm::GetListingF(), 0x11);
+  EXPECT_EQ(EdAsmNg::Asm::GetMacroF(), 0x22);
+  EXPECT_EQ(EdAsmNg::Asm::GetRelCodeF(), 0x33);
+
+  // Restore zero-page
+  EdAsmNg::Asm::RestoreZP();
+
+  // Verify original values are restored
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0x1234);
+  EXPECT_EQ(EdAsmNg::Asm::GetWarningCount(), 0x5678);
+  EXPECT_EQ(EdAsmNg::Asm::GetLineNum(), 0x9ABC);
+  EXPECT_EQ(EdAsmNg::Asm::GetListingF(), 0xAA);
+  EXPECT_EQ(EdAsmNg::Asm::GetMacroF(), 0xBB);
+  EXPECT_EQ(EdAsmNg::Asm::GetRelCodeF(), 0xCC);
+}
+
+TEST_F(Phase81InitTest, SaveRestoreZP_SymbolTablePointers) {
+  // Test saving and restoring symbol table pointers
+
+  EdAsmNg::Asm::SetStrtSymT(0x2000);
+  EdAsmNg::Asm::SetEndSymT(0x3000);
+  EdAsmNg::Asm::SetPC(0x4000);
+  EdAsmNg::Asm::SetObjPC(0x5000);
+
+  EdAsmNg::Asm::SaveZP();
+
+  EdAsmNg::Asm::SetStrtSymT(0xAAAA);
+  EdAsmNg::Asm::SetEndSymT(0xBBBB);
+  EdAsmNg::Asm::SetPC(0xCCCC);
+  EdAsmNg::Asm::SetObjPC(0xDDDD);
+
+  EdAsmNg::Asm::RestoreZP();
+
+  EXPECT_EQ(EdAsmNg::Asm::GetStrtSymT(), 0x2000);
+  EXPECT_EQ(EdAsmNg::Asm::GetEndSymT(), 0x3000);
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x4000);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5000);
+}
+
+TEST_F(Phase81InitTest, SaveRestoreZP_GMCBuffer) {
+  // Test saving and restoring GMC buffer (machine code generation)
+
+  EdAsmNg::Asm::SetGMC(0, 0xA9);  // LDA immediate
+  EdAsmNg::Asm::SetGMC(1, 0x42);
+  EdAsmNg::Asm::SetGMC(2, 0x85);
+  EdAsmNg::Asm::SetGMC(3, 0x60);
+
+  EdAsmNg::Asm::SaveZP();
+
+  EdAsmNg::Asm::SetGMC(0, 0xFF);
+  EdAsmNg::Asm::SetGMC(1, 0xFF);
+  EdAsmNg::Asm::SetGMC(2, 0xFF);
+  EdAsmNg::Asm::SetGMC(3, 0xFF);
+
+  EdAsmNg::Asm::RestoreZP();
+
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(0), 0xA9);
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(1), 0x42);
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(2), 0x85);
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(3), 0x60);
+}
+
+TEST_F(Phase81InitTest, InitASM_ClearsCounters) {
+  // Original: ASM2.S:570 - InitASM
+  // Test that InitASM clears error/warning/line counters
+
+  // Set non-zero values
+  EdAsmNg::Asm::SetNumErrs(0x9999);
+  EdAsmNg::Asm::SetNumWarns(0x8888);
+  EdAsmNg::Asm::SetLineNum(0x7777);
+
+  // Initialize
+  EdAsmNg::Asm::InitASM();
+
+  // Verify all counters are zeroed
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0x0000);
+  EXPECT_EQ(EdAsmNg::Asm::GetWarningCount(), 0x0000);
+  EXPECT_EQ(EdAsmNg::Asm::GetLineNum(), 0x0000);
+}
+
+TEST_F(Phase81InitTest, InitASM_SetsDefaultFlags) {
+  // Original: ASM2.S:570 - InitASM
+  // Test that InitASM sets default flag values
+
+  // Set non-default values
+  EdAsmNg::Asm::SetListingF(0x00);
+  EdAsmNg::Asm::SetMacroF(0xFF);
+  EdAsmNg::Asm::SetIfDefF(0xFF);
+  EdAsmNg::Asm::SetSubTtlF(0xFF);
+  EdAsmNg::Asm::SetGenF(0xFF);
+  EdAsmNg::Asm::SetRelCodeF(0xFF);
+
+  // Initialize
+  EdAsmNg::Asm::InitASM();
+
+  // Verify default flags
+  // ListingF = $FF (LST ON, MSB set) per original code
+  EXPECT_EQ(EdAsmNg::Asm::GetListingF(), 0xFF);
+  // MacroF = $00 (macros OFF)
+  EXPECT_EQ(EdAsmNg::Asm::GetMacroF(), 0x00);
+  // SubTtlF = $00 (no subtitle)
+  EXPECT_EQ(EdAsmNg::Asm::GetSubTtlF(), 0x00);
+  // GenF = $00 (generation enabled, memory mode)
+  EXPECT_EQ(EdAsmNg::Asm::GetGenF(), 0x00);
+  // RelCodeF = $00 (absolute mode)
+  EXPECT_EQ(EdAsmNg::Asm::GetRelCodeF(), 0x00);
+  // ErrorF = $00 (no error)
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorFlag(), 0x00);
+}
+
+TEST_F(Phase81InitTest, InitASM_InitializesSymbolTable) {
+  // Original: ASM2.S:570 - InitASM
+  // Test that InitASM initializes symbol table pointers
+
+  // Set non-zero values
+  EdAsmNg::Asm::SetStrtSymT(0x5555);
+  EdAsmNg::Asm::SetEndSymT(0x6666);
+  // Set some header table entries to non-zero
+  EdAsmNg::Asm::SetHeaderT(0, 0x1111);
+  EdAsmNg::Asm::SetHeaderT(1, 0x2222);
+  EdAsmNg::Asm::SetHeaderT(255, 0x3333);
+
+  // Initialize
+  EdAsmNg::Asm::InitASM();
+
+  // Verify symbol table is empty (StrtSymT == EndSymT)
+  uint16_t strtSymT = EdAsmNg::Asm::GetStrtSymT();
+  uint16_t endSymT  = EdAsmNg::Asm::GetEndSymT();
+  EXPECT_EQ(strtSymT, endSymT);
+  EXPECT_NE(strtSymT, 0x0000);  // Should point to valid memory
+
+  // Verify HeaderT entries are cleared to $0000
+  EXPECT_EQ(EdAsmNg::Asm::GetHeaderT(0), 0x0000);
+  EXPECT_EQ(EdAsmNg::Asm::GetHeaderT(1), 0x0000);
+  EXPECT_EQ(EdAsmNg::Asm::GetHeaderT(127), 0x0000);
+  EXPECT_EQ(EdAsmNg::Asm::GetHeaderT(255), 0x0000);
+}
+
+TEST_F(Phase81InitTest, InitASM_InitializesPC) {
+  // Test that InitASM initializes Program Counter
+
+  EdAsmNg::Asm::SetPC(0x9999);
+  EdAsmNg::Asm::SetObjPC(0x8888);
+
+  EdAsmNg::Asm::InitASM();
+
+  // PC and ObjPC should be zeroed (or left for ORG directive)
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x0000);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x0000);
+}
+
+TEST_F(Phase81InitTest, InitASM_ClearsGMCBuffer) {
+  // Test that InitASM clears machine code generation buffer
+
+  EdAsmNg::Asm::SetGMC(0, 0xAA);
+  EdAsmNg::Asm::SetGMC(1, 0xBB);
+  EdAsmNg::Asm::SetGMC(2, 0xCC);
+  EdAsmNg::Asm::SetGMC(3, 0xDD);
+
+  EdAsmNg::Asm::InitASM();
+
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(0), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(1), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(2), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::GetGMC(3), 0x00);
+}
+
+TEST_F(Phase81InitTest, InitASM_MultipleInitializations) {
+  // Test that InitASM can be called multiple times and properly resets each time
+
+  // First initialization
+  EdAsmNg::Asm::InitASM();
+
+  // Modify some values
+  EdAsmNg::Asm::SetNumErrs(0x0005);
+  EdAsmNg::Asm::SetNumWarns(0x0003);
+  EdAsmNg::Asm::SetListingF(0x00);
+  EdAsmNg::Asm::SetPC(0x8000);
+
+  // Second initialization
+  EdAsmNg::Asm::InitASM();
+
+  // Verify everything is reset properly
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0x0000);
+  EXPECT_EQ(EdAsmNg::Asm::GetWarningCount(), 0x0000);
+  EXPECT_EQ(EdAsmNg::Asm::GetListingF(), 0xFF);
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x0000);
+}
+
+TEST_F(Phase81InitTest, CleanupAsm_BasicStub) {
+  // Test that CleanupAsm can be called without errors
+  // For now, this is just a stub function
+
+  // Should not crash or cause issues
+  EdAsmNg::Asm::CleanupAsm();
+
+  // No specific assertions - just verifying it doesn't crash
+  SUCCEED();
+}
+
+TEST_F(Phase81InitTest, SaveRestoreMultipleTimes) {
+  // Test multiple save/restore cycles
+
+  // Set initial values
+  EdAsmNg::Asm::SetNumErrs(0x1111);
+  EdAsmNg::Asm::SetListingF(0xAA);
+
+  // First save
+  EdAsmNg::Asm::SaveZP();
+
+  // Modify and restore
+  EdAsmNg::Asm::SetNumErrs(0x2222);
+  EdAsmNg::Asm::RestoreZP();
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0x1111);
+
+  // Second save with new values
+  EdAsmNg::Asm::SetNumErrs(0x3333);
+  EdAsmNg::Asm::SetListingF(0xBB);
+  EdAsmNg::Asm::SaveZP();
+
+  // Modify and restore again
+  EdAsmNg::Asm::SetNumErrs(0x4444);
+  EdAsmNg::Asm::SetListingF(0xCC);
+  EdAsmNg::Asm::RestoreZP();
+
+  // Should restore the second saved state
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0x3333);
+  EXPECT_EQ(EdAsmNg::Asm::GetListingF(), 0xBB);
+}
