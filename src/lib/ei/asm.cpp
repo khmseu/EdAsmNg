@@ -1190,9 +1190,15 @@ namespace {
   //   // TODO: Save zero page area
   // }
 
-  // void SetupVec() {
-  //   // TODO: Setup/reset vectors
-  // }
+  void SetupVec() {
+    // TODO: Setup/reset vectors
+  }
+
+  void EvalExpr() {
+    // TODO: Phase 9+ - Evaluate expressions
+    // For now, set carry to indicate error
+    C = true;
+  }
 
   // void InitASM() {
   //   // TODO: Initialize assembler state
@@ -2241,14 +2247,8 @@ namespace {
     if (Y != 0) goto NxtField_start;  // (BNE) - loop until non-space or Y wraps
 
   L823D:
-    // CLC
-    A = Y;
-    A += SrcP;
-    SrcP = A;
-    A    = 0;
-    Y    = A;      // (Y)=0
-    A += SrcP_hi;  // with carry
-    SrcP_hi = A;
+    // Advance SrcP by Y and reset Y to 0
+    AdvSrcP();
   }
 
 #if 0
@@ -2525,6 +2525,24 @@ namespace {
   }
 
   //=================================================
+  // AdvSrcP - Advance source pointer by Y, reset Y to 0
+  // Used by NextRec and other parsing functions
+  // Original: ASM2.S (various locations)
+  // Entry: Y = offset to advance
+  // Exit: SrcP += Y, Y = 0
+  //=================================================
+  void AdvSrcP() {
+    // Emulate 6502 CLC / ADC with carry propagation
+    // CLC (clear carry)
+    std::uint16_t temp = static_cast<std::uint8_t>(SrcP & 0xFF) + Y;  // Add Y to low byte
+    SrcP               = (SrcP & 0xFF00) | (temp & 0xFF);             // Store low byte result
+    if (temp > 0xFF) {                                                // Check carry
+      SrcP += 0x100;                                                  // Add carry to high byte
+    }
+    Y = 0;
+  }
+
+  //=================================================
   // ChrGot/ChrGet - Character Scanner (using CharMap1)
   // Original: ASM2.S:1792
   // This subrtn is part of Scanner
@@ -2542,10 +2560,15 @@ namespace {
   // V=0 if char is non-hexdec
   // (X) - unchanged
   // (Y) - incr by 1 if 1st entry point else unchanged
+  //
+  // NOTE: In the actual 6502 code, ChrGet does INY first then falls through
+  // to ChrGot. However, for the emulation, we interpret ChrGet as getting
+  // the character at the current Y position and then incrementing Y, which
+  // matches the typical usage pattern in parsing code.
   //=================================================
   void ChrGet() {
-    Y++;
     ChrGot();
+    Y++;
   }
 
   void ChrGot() {
@@ -6704,18 +6727,163 @@ namespace {
 
   //=================================================
   // ($D9DF) Char mapping
+  // Original: ASM1.S:1397-1421
+  // This table is used by ChrGot/ChrGet to classify characters
+  // and set processor flags for character type detection.
+  // The byte values are meant to be loaded into the 6502 status register.
+  //
+  // Flag meanings (NV-B DIZC):
+  //   N (bit 7): Set for lowercase letters (0x80)
+  //   V (bit 6): Set for hex digits (0x40)
+  //   Z (bit 1): Set for decimal digits (0x02)
+  //   C (bit 0): Set for non-alphabetic (0x01)
+  //
+  // Character mappings:
+  //   '0'-'9' ($30-$39) --> 0x43 (0100 0011) - hex digit + decimal + non-alpha
+  //   'A'-'F' ($41-$46) --> 0x40 (0100 0000) - hex digit (uppercase)
+  //   'G'-'Z' ($47-$5A) --> 0x00 (0000 0000) - letter (uppercase, non-hex)
+  //   'a'-'f' ($61-$66) --> 0xC0 (1100 0000) - hex digit (lowercase) + lowercase
+  //   'g'-'z' ($67-$7A) --> 0x80 (1000 0000) - letter (lowercase, non-hex)
+  //   others            --> 0x01 (0000 0001) - non-alphabetic
   //=================================================
   const std::uint8_t CharMap1[] = {
-      0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-      0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-      0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-      0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-      0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43,
-      0x43, 0x43, 0x43, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x40, 0x40, 0x40, 0x40, 0x40,
-      0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0,
-      0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
-      0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01, 0x01, 0x01, 0x01, 0x01,
+      // 0x00-0x2F: Control chars and punctuation (48 bytes)
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      // 0x30-0x39: '0'-'9' (10 bytes)
+      0x43,
+      0x43,
+      0x43,
+      0x43,
+      0x43,
+      0x43,
+      0x43,
+      0x43,
+      0x43,
+      0x43,
+      // 0x3A-0x40: ':' to '@' (7 bytes)
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      // 0x41-0x46: 'A'-'F' (6 bytes)
+      0x40,
+      0x40,
+      0x40,
+      0x40,
+      0x40,
+      0x40,
+      // 0x47-0x5A: 'G'-'Z' (20 bytes)
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      // 0x5B-0x60: '[' to '`' (6 bytes)
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      // 0x61-0x66: 'a'-'f' (6 bytes)
+      0xC0,
+      0xC0,
+      0xC0,
+      0xC0,
+      0xC0,
+      0xC0,
+      // 0x67-0x7A: 'g'-'z' (20 bytes)
+      0x80,
+      0x80,
+      0x80,
+      0x80,
+      0x80,
+      0x80,
+      0x80,
+      0x80,
+      0x80,
+      0x80,
+      0x80,
+      0x80,
+      0x80,
+      0x80,
+      0x80,
+      0x80,
+      0x80,
+      0x80,
+      0x80,
+      0x80,
+      // 0x7B-0x7F: '{' to DEL (5 bytes)
+      0x01,
+      0x01,
+      0x01,
+      0x01,
+      0x01,
   };
 
   //=================================================
