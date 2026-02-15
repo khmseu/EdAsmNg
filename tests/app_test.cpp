@@ -3980,3 +3980,207 @@ TEST_F(Pass2Test, test_pass2_combined_pc_objpc_tracking) {
   EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x700F);
   EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x700F);
 }
+
+//=================================================
+// Phase 8.5.3: Relocatable & RLD Tests
+//=================================================
+
+namespace EdAsmNg {
+  namespace Asm {
+    void     AddRLDEnt();
+    uint16_t GetRLDEntryCount();
+    void     GetRLDEntry(int index, uint8_t* entry);
+    void     SetRelExprF(uint8_t value);
+    uint8_t  GetRelExprF();
+    void     SetRelCodeF(uint8_t value);
+    uint8_t  GetRelCodeF();
+    void     SetEndSymT(uint16_t value);
+    uint16_t GetEndSymT();
+    void     SetMemTop(uint16_t value);
+    uint16_t GetMemTop();
+    void     SetRLDEnd(uint16_t value);
+    uint16_t GetRLDEnd();
+    void     DoPass1();
+    void     DoPass2();
+    uint8_t  GetSymbolFlags(const char* name);
+  }  // namespace Asm
+}  // namespace EdAsmNg
+
+class Phase853RelocatableRLDTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetErrorState();
+    EdAsmNg::Asm::ResetDispatchState();
+    EdAsmNg::Asm::ResetAsmState();
+    EdAsmNg::Asm::SetPassNbr(0);  // Default to Pass 1
+    EdAsmNg::Asm::SetGenF(0x00);
+    EdAsmNg::Asm::SetRelCodeF(0x80);  // Enable relocatable code generation
+    EdAsmNg::Asm::SetEndSymT(0x0800);
+    EdAsmNg::Asm::SetMemTop(0x8000);  // Set high memory
+    EdAsmNg::Asm::SetRLDEnd(0x8000);  // RLD starts at MemTop
+    EdAsmNg::Asm::SetObjPC(0x1000);
+    EdAsmNg::Asm::SetPC(0x1000);
+  }
+};
+
+TEST_F(Phase853RelocatableRLDTest, DW_RelocatableSymbol_CreatesRLDEntry) {
+  // Test that DW directive with a relocatable symbol creates an RLD entry
+  // Define a relocatable symbol first, then use it in DW
+  const char* source =
+      "      REL\r"
+      "START EQU $2000\r"
+      "      DW START\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  // Run Pass 1 to define the symbol
+  EdAsmNg::Asm::DoPass1();
+
+  // Run Pass 2 to generate code and RLD entries
+  EdAsmNg::Asm::SetPassNbr(1);
+  EdAsmNg::Asm::SetObjPC(0x1000);
+  EdAsmNg::Asm::SetPC(0x1000);
+  EdAsmNg::Asm::SetRLDEnd(0x8000);
+  EdAsmNg::Asm::DoPass2();
+
+  // Verify RLD entry was created
+  uint16_t rldCount = EdAsmNg::Asm::GetRLDEntryCount();
+  EXPECT_GT(rldCount, 0);
+
+  // Verify PC advanced by 2 bytes
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x1002);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x1002);
+}
+
+TEST_F(Phase853RelocatableRLDTest, DFB_RelocatableSymbol_CreatesRLDEntry) {
+  // Test that DFB directive with a relocatable symbol (low byte) creates an RLD entry
+  const char* source =
+      "      REL\r"
+      "START EQU $2000\r"
+      "      DFB <START\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  // Run Pass 1
+  EdAsmNg::Asm::DoPass1();
+
+  // Run Pass 2
+  EdAsmNg::Asm::SetPassNbr(1);
+  EdAsmNg::Asm::SetObjPC(0x1000);
+  EdAsmNg::Asm::SetPC(0x1000);
+  EdAsmNg::Asm::SetRLDEnd(0x8000);
+  EdAsmNg::Asm::DoPass2();
+
+  // Verify RLD entry was created
+  uint16_t rldCount = EdAsmNg::Asm::GetRLDEntryCount();
+  EXPECT_GT(rldCount, 0);
+
+  // Verify PC advanced by 1 byte
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x1001);
+}
+
+TEST_F(Phase853RelocatableRLDTest, SymbolMarkedReferenced_AfterRLDEntry) {
+  // Test that symbol is marked as referenced when RLD entry is created
+  const char* source =
+      "      REL\r"
+      "START EQU $2000\r"
+      "      DW START\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::DoPass1();
+
+  // Check symbol flags before Pass 2
+  uint8_t flagsBefore = EdAsmNg::Asm::GetSymbolFlags("START");
+
+  // Run Pass 2
+  EdAsmNg::Asm::SetPassNbr(1);
+  EdAsmNg::Asm::SetObjPC(0x1000);
+  EdAsmNg::Asm::SetPC(0x1000);
+  EdAsmNg::Asm::SetRLDEnd(0x8000);
+  EdAsmNg::Asm::DoPass2();
+
+  // Check symbol flags after Pass 2
+  uint8_t flagsAfter = EdAsmNg::Asm::GetSymbolFlags("START");
+
+  // Unreferenced bit should be cleared (was set, now clear)
+  // Bit 6 ($40) is the unreferenced bit
+  EXPECT_NE(flagsBefore, flagsAfter);
+  EXPECT_EQ(flagsAfter & 0x40, 0);  // Unreferenced bit should be clear
+}
+
+TEST_F(Phase853RelocatableRLDTest, RLDEntry_BoundsCheck) {
+  // Test that RLD entry creation checks bounds vs EndSymT
+  EdAsmNg::Asm::SetEndSymT(0x7FFD);  // Very close to RLDEnd
+  EdAsmNg::Asm::SetRLDEnd(0x8000);
+
+  const char* source =
+      "      REL\r"
+      "START EQU $2000\r"
+      "      DW START\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::DoPass1();
+
+  // Run Pass 2 - should create error due to lack of space
+  EdAsmNg::Asm::SetPassNbr(1);
+  EdAsmNg::Asm::SetObjPC(0x1000);
+  EdAsmNg::Asm::SetRLDEnd(0x8000);
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::DoPass2();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Should have registered an error (Sym/RLD table full)
+  EXPECT_GT(errorsAfter, errorsBefore);
+}
+
+TEST_F(Phase853RelocatableRLDTest, IllegalRelocExpr_MultiplyRelocatable) {
+  // Test that illegal relocatable expressions produce errors
+  // You cannot multiply two relocatable symbols
+  const char* source =
+      "      REL\r"
+      "START EQU $2000\r"
+      "END   EQU $3000\r"
+      "      DW START*END\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::DoPass1();
+
+  // Run Pass 2
+  EdAsmNg::Asm::SetPassNbr(1);
+  EdAsmNg::Asm::SetObjPC(0x1000);
+  EdAsmNg::Asm::SetRLDEnd(0x8000);
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::DoPass2();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Should have registered an error (illegal relocatable expression)
+  EXPECT_GT(errorsAfter, errorsBefore);
+}
+
+TEST_F(Phase853RelocatableRLDTest, PCObjPC_ConsistentAfterRelocCode) {
+  // Test that PC and ObjPC remain consistent after emitting relocatable code
+  const char* source =
+      "      REL\r"
+      "      ORG $1000\r"
+      "START EQU $2000\r"
+      "      DW START\r"
+      "      DFB $AA\r"
+      "      DW START+1\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::DoPass1();
+
+  // Run Pass 2
+  EdAsmNg::Asm::SetPassNbr(1);
+  EdAsmNg::Asm::SetObjPC(0x1000);
+  EdAsmNg::Asm::SetPC(0x1000);
+  EdAsmNg::Asm::SetRLDEnd(0x8000);
+  EdAsmNg::Asm::DoPass2();
+
+  // After: DW (2 bytes) + DFB (1 byte) + DW (2 bytes) = 5 bytes
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x1005);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x1005);
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), EdAsmNg::Asm::GetObjPC());
+}
