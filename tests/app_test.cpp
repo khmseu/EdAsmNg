@@ -3437,6 +3437,28 @@ TEST_F(Phase84Pass1Test, test_pass1_label_after_org) {
   EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x8001);
 }
 
+TEST_F(Phase84Pass1Test, Pass1_EQU_DefinesSymbolValue) {
+  // EQU in Pass 1 should define the symbol's value without advancing PC
+  const char* source = "FOO EQU $1234\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  // Run Pass 1
+  EdAsmNg::Asm::DoPass1();
+
+  // Symbol should exist and have the EQU value
+  EXPECT_TRUE(EdAsmNg::Asm::HasSymbol("FOO"));
+
+  // Symbol flags should not indicate 'undefined'
+  uint8_t flags = EdAsmNg::Asm::GetSymbolFlags("FOO");
+  EXPECT_EQ((flags & 0x80), 0) << "Symbol still marked undefined";
+
+  // Value should be updated to the EQU's evaluated operand
+  EXPECT_EQ(EdAsmNg::Asm::GetSymbolValue("FOO"), 0x1234);
+
+  // EQU does not change PC
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x0000);
+}
+
 TEST_F(Phase84Pass1Test, Pass1_DuplicateLabel) {
   // Duplicate label should register an error and keep original address
   const char* source =

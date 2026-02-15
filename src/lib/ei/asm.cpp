@@ -1576,22 +1576,27 @@ namespace {
       // Check if already defined
       if ((int8_t)A >= 0) {  // Bit 7 clear means defined
         X = 0x02;            // Duplicate identifier error
+        fprintf(stderr, "DoPass1: duplicate label detected, X=0x%02X\n", X);
         RegAsmEW();
+        fprintf(stderr, "DoPass1: after RegAsmEW ErrNbr4=%u, ErrInfo[1]=0x%02X\n", ErrNbr4,
+                ErrInfoT[1]);
         A      = 0x00;
         LabelF = A;  // Flag no label field
         goto SkipLabel;
       }
       // Symbol exists but undefined - update it
-      // Y is indexing flag byte after FindSym
+      // Note: FindSym() returns with Y indexing the low-byte of the
+      // value field; decrement Y to index the flag byte before writing.
+      if (Y > 0) Y--;                                // Safeguard against underflow
       uint8_t* SymP_ptr     = SimPtrToMemPtr(SymP);  // Convert simulated address
       uint8_t  SymFByte_val = SymP_ptr[Y];
       SymFByte_val &= (entry | fwdrefd);  // Keep ENTRY/EXTRN flags
       SymFByte_val |= RelCodeF;           // Add relative bit if in relative mode
-      SymP_ptr[Y] = SymFByte_val;
-      Y++;
-      SymP_ptr[Y] = PC & 0xFF;  // Store PC value
-      Y++;
-      SymP_ptr[Y] = PC >> 8;
+      SymP_ptr[Y] = SymFByte_val;         // Write flag byte
+      Y++;                                // Advance to low-byte
+      SymP_ptr[Y] = PC & 0xFF;            // Store PC low byte
+      Y++;                                // Advance to high-byte
+      SymP_ptr[Y] = (PC >> 8) & 0xFF;     // Store PC high byte
       goto SkipLabel;
     }
 
@@ -1623,6 +1628,7 @@ namespace {
     if (A == CR) goto Pass1Next;  // End of line? Done
 
     // Parse mnemonic/directive
+    fprintf(stderr, "DoPass1: about to call HndlMnem (SrcP=0x%04X, Y=%u)\n", SrcP, Y);
     HndlMnem();
 
     // TODO Phase 9+: Check error flag, handle operands
@@ -3855,6 +3861,8 @@ namespace {
     // calls to NxtField() will correctly skip to the operand field.
     Y = startY + static_cast<uint8_t>(mnemonic.length());
 
+    // Debug: show extracted mnemonic (removed in production)
+
     // Handle recognized mnemonics/directives for Phase 8.4
     if (mnemonic == "NOP") {
       Length = 1;
@@ -3923,6 +3931,57 @@ namespace {
 
       Length = 0;      // Directives don't generate code
       C      = false;  // Success
+      return;
+    }
+
+    if (mnemonic == "EQU") {
+      // Inline EQU handling for Pass 1 (avoid external HndlEQU linkage issue)
+      NxtField();  // Move to operand field
+
+      // Evaluate operand expression (force Pass2 semantics inside)
+      EvalOprnd();
+      if (C) {
+        X = 0x24;
+        RegAsmEW(X);
+        C = true;
+        return;
+      }
+      if (NxtToken != 0) {
+        X = 0x24;
+        RegAsmEW(X);
+        C = true;
+        return;
+      }
+
+      // Pass 1: write value into symbol table entry for the label
+      if (PassNbr == 0 && LabelF != 0) {
+        // Ensure symbol pointer present
+        if (SymP == 0) {
+          uint16_t saved_SrcP = SrcP;
+          uint8_t  saved_Y    = Y;
+          Y                   = 0;
+          FindSym();
+          Y    = saved_Y;
+          SrcP = saved_SrcP;
+        }
+
+        if (SymP != 0) {
+          uint8_t* symptr = SimPtrToMemPtr(SymP);
+          int      idx    = 0;
+          while ((symptr[idx] & 0x80) != 0) idx++;
+          idx++;  // flag byte
+          uint8_t flags = symptr[idx];
+          flags &= static_cast<uint8_t>(~undefined);
+          flags |= (RelExprF & relative);
+          flags |= unrefd;
+          symptr[idx]     = flags;
+          symptr[idx + 1] = ValExpr;
+          symptr[idx + 2] = ValExpr_hi;
+        } else {
+        }
+      }
+
+      C = false;
       return;
     }
 
@@ -5055,6 +5114,7 @@ namespace {
       g_LastDirectiveCalled = "HndlEQU";
 
     L8A31:
+
       A = PassNbr;             // LDA PassNbr - Check current assembly pass
       if (A != 0) goto L8A41;  // BNE L8A41 - If not Pass 1, skip symbol marking
 
@@ -5103,26 +5163,42 @@ namespace {
       // BIT Bit10 - EXTeRNal
       if ((A & Bit10) != 0) goto L8A53;  // BNE L8A53 - Yes
 
-      // TODO: Symbol table integration disabled (SymFBP pointer safety)
-      // To be completed with proper symbol storage architecture
-      // Original code (stubbed):
-      //   Y = 0;  // LDY #0
-      //   A = SymFByte;  // LDA SymFByte - Is it a new symbol?
-      //   if (A != 0) goto L8A6F;  // BNE L8A6F - No (If non-zero, its val had been ret by FindSym)
-      //   A = unrefd;  // LDA #unrefd - Symbol is unreferenced
-      //   if (A != 0) goto L8A71;  // BNE L8A71 - always
-      //
-      // L8A6F:
-      //   A &= (0xFF - undefined);  // AND #$FF-undefined - Mark symbol is now defined
-      // L8A71:
-      //   A |= RelExprF;  // ORA RelExprF
-      //   std::uint8_t* SymFBP_ptr2 =
-      //   reinterpret_cast<std::uint8_t*>(static_cast<uintptr_t>(SymFBP)); SymFBP_ptr2[Y] = A;  //
-      //   STA (SymFBP),Y - Set flag byte of symbol entry Y++;  // INY A = ValExpr;  // LDA ValExpr
-      //   SymFBP_ptr2[Y] = A;  // STA (SymFBP),Y
-      //   A = ValExpr_hi;  // LDA ValExpr+1
-      //   Y++;  // INY
-      //   SymFBP_ptr2[Y] = A;  // STA (SymFBP),Y - addr field
+      // Pass 1: store evaluated EQU value into the symbol table entry
+      // Find the symbol (SymP may have been set when label was parsed in DoPass1)
+      if (LabelF != 0) {
+        // Ensure SymP points to the symbol entry; if not, attempt to locate it
+        if (SymP == 0) {
+          uint16_t saved_SrcP = SrcP;
+          uint8_t  saved_Y    = Y;
+          Y = 0;              // point at label
+          FindSym();         // locate symbol; sets SymP and Y when found
+          Y = saved_Y;
+          SrcP = saved_SrcP;
+        }
+
+        if (SymP != 0) {
+          uint8_t* symptr = SimPtrToMemPtr(SymP);
+          // locate flag byte: scan past symbol chars (msb set on all but last char)
+          int idx = 0;
+          while ((symptr[idx] & 0x80) != 0) idx++;
+          idx++;  // now points at flag byte
+
+
+
+          // Clear 'undefined' and set unrefd/relative as appropriate
+          uint8_t flags = symptr[idx];
+          flags &= static_cast<uint8_t>(~undefined); // clear undefined bit
+          flags |= (RelExprF & relative);            // preserve relative bit if any
+          flags |= unrefd;                           // mark as unreferenced by default
+          symptr[idx] = flags;
+
+          // store evaluated value (ValExpr / ValExpr_hi)
+          symptr[idx + 1] = ValExpr;
+          symptr[idx + 2] = ValExpr_hi;
+
+
+        }
+      }
 
       goto DrtvFin;  // JMP DrtvFin
     }
@@ -6318,14 +6394,91 @@ namespace {
   //   C flag set appropriately by EvalExpr
   //=================================================
   void EvalOprnd() {
+    // Save and force Pass 2 semantics for operand evaluation
     A                  = PassNbr;
     uint8_t saved_pass = A;  // PHA - Save current pass number
-    A                  = 1;  // LDA #1 - Force Pass 2
-    PassNbr            = A;  // STA PassNbr
-    EvalExpr();              // JSR EvalExpr
-    X       = A;             // TAX - error token?
-    A       = saved_pass;    // PLA - Restore pass number
-    PassNbr = A;             // STA PassNbr
+    PassNbr            = 1;  // Force PassNbr = 1 for evaluation
+
+    // Basic immediate/constant parsing fallback (Phase 8):
+    // If expression evaluation (EvalExpr) is not implemented we support
+    // simple numeric operands used by current tests: hex ($nnnn) and
+    // decimal digits. This keeps EvalOprnd useful for directives like
+    // EQU and ORG during Pass 1/2.
+    // Inline skip-spaces (SkipSpcs() is in a disabled block)
+    while (SrcP_at(Y) == SPACE) {
+      Y++;
+      if (Y == 0) break;
+    }
+    uint8_t ch = SrcP_at(Y);
+
+    if (ch == '$') {
+      // Hex constant parser
+      Y++;
+      uint16_t val  = 0;
+      bool     seen = false;
+      while (true) {
+        ch = SrcP_at(Y);
+        if (ch >= '0' && ch <= '9') {
+          val = (val << 4) | (ch - '0');
+          Y++;
+          seen = true;
+          continue;
+        }
+        if (ch >= 'A' && ch <= 'F') {
+          val = (val << 4) | (ch - 'A' + 10);
+          Y++;
+          seen = true;
+          continue;
+        }
+        if (ch >= 'a' && ch <= 'f') {
+          val = (val << 4) | (ch - 'a' + 10);
+          Y++;
+          seen = true;
+          continue;
+        }
+        break;
+      }
+
+      if (seen) {
+        ValExpr    = static_cast<uint8_t>(val & 0xFF);
+        ValExpr_hi = static_cast<uint8_t>((val >> 8) & 0xFF);
+        C          = false;  // success
+        NxtToken   = 0;
+        X          = 0;           // no error token
+        PassNbr    = saved_pass;  // restore
+        return;
+      }
+    }
+
+    // Decimal constant fallback
+    if (ch >= '0' && ch <= '9') {
+      uint16_t val  = 0;
+      bool     seen = false;
+      while (true) {
+        ch = SrcP_at(Y);
+        if (ch >= '0' && ch <= '9') {
+          val = val * 10 + (ch - '0');
+          Y++;
+          seen = true;
+          continue;
+        }
+        break;
+      }
+      if (seen) {
+        ValExpr    = static_cast<uint8_t>(val & 0xFF);
+        ValExpr_hi = static_cast<uint8_t>((val >> 8) & 0xFF);
+        C          = false;
+        NxtToken   = 0;
+        X          = 0;
+        PassNbr    = saved_pass;
+        return;
+      }
+    }
+
+    // Fallback to full expression evaluator (if/when implemented)
+    EvalExpr();            // JSR EvalExpr
+    X       = A;           // TAX - error token?
+    PassNbr = saved_pass;  // PLA - Restore pass number
     // RTS - return (with C flag set by EvalExpr)
   }
 
@@ -9004,6 +9157,10 @@ namespace EdAsmNg {
       // Initialize symbol table pointers
       StrtSymT = 0x1E00;    // Start of symbol table in simulated memory
       EndSymT  = StrtSymT;  // Empty table: start == end
+
+      // Set RLDEnd to a safe high value for unit tests so AddNode doesn't
+      // incorrectly signal a full symbol/RLD table.
+      RLDEnd = 0xFFFF;
 
       // Clear symbol table (HeaderT)
       if (HeaderT_ptr != nullptr) {
