@@ -3270,6 +3270,10 @@ namespace EdAsmNg {
     uint8_t  GetSymbolFlags(const char* name);
     int      GetSymbolCount();
 
+    // Dummy section control (test helper)
+    void    SetDummyF(uint8_t value);
+    uint8_t GetDummyF();
+
     // Reset assembler state for clean test environment
     void ResetAsmState();
   }  // namespace Asm
@@ -3334,6 +3338,43 @@ TEST_F(Phase84Pass1Test, test_pass1_label_with_nop) {
 
   // Verify PC incremented by 1 (NOP is 1 byte)
   EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x0001);
+}
+
+TEST_F(Phase84Pass1Test, test_pass1_label_with_colon) {
+  // Label terminated with a colon should be accepted
+  const char* source = "LOOP: NOP\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  EdAsmNg::Asm::DoPass1();
+
+  EXPECT_TRUE(EdAsmNg::Asm::HasSymbol("LOOP"));
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x0001);
+}
+
+TEST_F(Phase84Pass1Test, test_pass1_label_same_as_mnemonic) {
+  // EDASM original allows a label with the same name as a mnemonic
+  const char* source = "NOP NOP\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  EdAsmNg::Asm::DoPass1();
+
+  EXPECT_TRUE(EdAsmNg::Asm::HasSymbol("NOP"));
+  EXPECT_EQ(EdAsmNg::Asm::GetSymbolValue("NOP"), 0x0000);
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x0001);
+}
+
+TEST_F(Phase84Pass1Test, test_pass1_label_in_dummy_section_behavior) {
+  // When DummyF indicates DSECT (signed negative), symbol should be marked relative
+  const char* source = "DUMMY_LABEL NOP\r";
+
+  // Set DummyF to a negative (signed) value in order to indicate DSECT
+  EdAsmNg::Asm::SetDummyF(0x80);
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::DoPass1();
+
+  EXPECT_TRUE(EdAsmNg::Asm::HasSymbol("DUMMY_LABEL"));
+  EXPECT_NE((EdAsmNg::Asm::GetSymbolFlags("DUMMY_LABEL") & 0x20), 0);
 }
 
 TEST_F(Phase84Pass1Test, test_pass1_statement_no_label) {

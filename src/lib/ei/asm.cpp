@@ -1591,12 +1591,18 @@ namespace {
       uint8_t* SymP_ptr     = SimPtrToMemPtr(SymP);  // Convert simulated address
       uint8_t  SymFByte_val = SymP_ptr[Y];
       SymFByte_val &= (entry | fwdrefd);  // Keep ENTRY/EXTRN flags
-      SymFByte_val |= RelCodeF;           // Add relative bit if in relative mode
-      SymP_ptr[Y] = SymFByte_val;         // Write flag byte
-      Y++;                                // Advance to low-byte
-      SymP_ptr[Y] = PC & 0xFF;            // Store PC low byte
-      Y++;                                // Advance to high-byte
-      SymP_ptr[Y] = (PC >> 8) & 0xFF;     // Store PC high byte
+      // If DummyF indicates a DSECT (signed negative), mark symbol as relative;
+      // otherwise preserve existing RelCodeF behaviour.
+      if ((int8_t)DummyF < 0) {
+        SymFByte_val |= relative;
+      } else {
+        SymFByte_val |= RelCodeF;  // Add relative bit if in relative mode
+      }
+      SymP_ptr[Y] = SymFByte_val;      // Write flag byte
+      Y++;                             // Advance to low-byte
+      SymP_ptr[Y] = PC & 0xFF;         // Store PC low byte
+      Y++;                             // Advance to high-byte
+      SymP_ptr[Y] = (PC >> 8) & 0xFF;  // Store PC high byte
       goto SkipLabel;
     }
 
@@ -2303,7 +2309,11 @@ namespace {
     A = flag;                                    // PLA - Get flag byte that was passed
     if (A == (undefined | fwdrefd)) goto L8A00;  // CMP #undefined+fwdrefd / BEQ L8A00
     A |= RelExprF;                               // ORA RelExprF - relative if bit20=1
-    A |= unrefd;                                 // ORA #unrefd - Mark as unreferenced
+    // Minimal DSECT support: if DummyF is negative (signed), mark new symbols as relative
+    if ((int8_t)DummyF < 0) {
+      A |= relative;
+    }
+    A |= unrefd;  // ORA #unrefd - Mark as unreferenced
 
   L8A00:
     EndSymT_ptr[Y] = A;          // STA (EndSymT),Y - Set flag byte
@@ -3973,6 +3983,7 @@ namespace {
           uint8_t flags = symptr[idx];
           flags &= static_cast<uint8_t>(~undefined);
           flags |= (RelExprF & relative);
+          if ((int8_t)DummyF < 0) flags |= relative;
           flags |= unrefd;
           symptr[idx]     = flags;
           symptr[idx + 1] = ValExpr;
@@ -5189,6 +5200,7 @@ namespace {
           uint8_t flags = symptr[idx];
           flags &= static_cast<uint8_t>(~undefined); // clear undefined bit
           flags |= (RelExprF & relative);            // preserve relative bit if any
+          if ((int8_t)DummyF < 0) flags |= relative; // DSECT -> symbol is relative
           flags |= unrefd;                           // mark as unreferenced by default
           symptr[idx] = flags;
 
@@ -8212,6 +8224,15 @@ namespace EdAsmNg {
         return RelCodeF;
       }
 
+      // DummyF (DSECT) accessor for tests
+      void SetDummyF(uint8_t value) {
+        DummyF = value;
+      }
+
+      uint8_t GetDummyF() {
+        return DummyF;
+      }
+
       void SetEndSymT(uint16_t value) {
         EndSymT = value;
       }
@@ -8800,6 +8821,15 @@ namespace EdAsmNg {
       RelCodeF = value;
     }
 
+    // DummyF (DSECT) test accessors
+    void SetDummyF(uint8_t value) {
+      DummyF = value;
+    }
+
+    uint8_t GetDummyF() {
+      return DummyF;
+    }
+
     // SubTtlF accessor
     uint8_t GetSubTtlF() {
       return SubTtlF;
@@ -9148,6 +9178,7 @@ namespace EdAsmNg {
       PC       = 0;
       ObjPC    = 0;
       RelCodeF = 0;
+      DummyF   = 0;  // Clear DummyF (DSECT) for test isolation
       SymNbr   = 0;
       ErrorF   = 0;
 
