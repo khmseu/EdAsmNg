@@ -306,6 +306,7 @@ namespace {
   std::uint8_t  ZCF;       // Generic zero page location
   std::uint16_t SymNodeP;  // Symbol node pointer (used in symbol table printing)
   std::uint8_t  TotCnt;    // Total count of bytes generated
+  std::uint16_t SymFBP;    // Symbol Flag Byte Pointer (pointer to symbol's flag byte)
 
   // $D0-$DF: Relocation and Symbol Table Management
   std::uint16_t RLDEnd;     // Relocation Dictionary end pointer (2 bytes)
@@ -4413,20 +4414,169 @@ namespace {
     // Handler stubs for specific directives
     // These will be implemented in later phases
 
-    // .EQU directive handler stub
+    //=================================================
+    // L8A31 - EQU directive handler (ASM3.S lines 47-108)
+    // Assigns a value to a symbol (equate).
+    // Format: label EQU expression
+    // Pass 1: Add symbol to table with evaluated value
+    // Pass 2: Skip (no code generation)
+    //=================================================
     void HndlEQU() {
       g_LastDirectiveCalled = "HndlEQU";
-      // TODO: Implement EQU directive
-      // For now, just return via DrtvDone
-      DrtvDone();
+
+    L8A31:
+      A = PassNbr;             // LDA PassNbr - Check current assembly pass
+      if (A != 0) goto L8A41;  // BNE L8A41 - If not Pass 1, skip symbol marking
+
+      // Pass 1 processing: Mark symbol as defined
+      A = LabelF;              // LDA LabelF - Does source line have a label field?
+      if (A == 0) goto L8A53;  // BEQ L8A53 - No label, error condition
+
+      // TODO: Symbol table integration disabled (SymFBP pointer safety)
+      // To be completed with proper symbol storage architecture
+      // Original code (stubbed):
+      //   X = 0x00;  // LDX #$00
+      //   std::uint8_t* SymFBP_ptr =
+      //   reinterpret_cast<std::uint8_t*>(static_cast<uintptr_t>(SymFBP)); A = undefined;  // LDA
+      //   #undefined - Get undefined flag bit A |= SymFBP_ptr[X];  // ORA (SymFBP,X) - Set
+      //   undefined bit in symbol's flag byte SymFBP_ptr[X] = A;  // STA (SymFBP,X) - (SymFBP set
+      //   only during Pass 1)
+
+      // Process the operand expression to get the value
+    L8A41:
+      EvalOprnd();               // JSR EvalOprnd - Evaluate operand expression
+      if (C) goto L8A50;         // BCS L8A50 - If error, branch
+      A = NxtToken;              // LDA NxtToken - Check next token type
+      if (A != 0) goto L8A50;    // BNE L8A50 - If not space/CR, error (junk after operand)
+      A = PassNbr;               // LDA PassNbr - Check current pass
+      if (A != 0) goto DrtvFin;  // BNE DrtvFin - If Pass 2, done (SymFBP not set in Pass 2)
+      if (A == 0) goto L8A5E;    // BEQ L8A5E - Pass 1
+
+    L8A50:
+      X = 0x24;  // LDX #$24 - directive operand err
+      goto L8A53_skip_ldx;
+
+    L8A53:
+      X = 0x0C;  // LDX #$0C - equate err
+    L8A53_skip_ldx:
+      RegAsmEW(X);  // JSR RegAsmEW
+
+    DrtvFin:
+      A = ZAB;    // LDA ZAB - Same as DrtvDone!
+      Y = 0;      // LDY #0
+      C = false;  // CLC
+      return;     // RTS - Ret to HndlMnem
+
+      // External idfers can not be used to define the label
+    L8A5E:
+      A = ExprAccF;  // LDA ExprAccF - Expr's accumulated flag bits
+      // BIT Bit10 - EXTeRNal
+      if ((A & Bit10) != 0) goto L8A53;  // BNE L8A53 - Yes
+
+      // TODO: Symbol table integration disabled (SymFBP pointer safety)
+      // To be completed with proper symbol storage architecture
+      // Original code (stubbed):
+      //   Y = 0;  // LDY #0
+      //   A = SymFByte;  // LDA SymFByte - Is it a new symbol?
+      //   if (A != 0) goto L8A6F;  // BNE L8A6F - No (If non-zero, its val had been ret by FindSym)
+      //   A = unrefd;  // LDA #unrefd - Symbol is unreferenced
+      //   if (A != 0) goto L8A71;  // BNE L8A71 - always
+      //
+      // L8A6F:
+      //   A &= (0xFF - undefined);  // AND #$FF-undefined - Mark symbol is now defined
+      // L8A71:
+      //   A |= RelExprF;  // ORA RelExprF
+      //   std::uint8_t* SymFBP_ptr2 =
+      //   reinterpret_cast<std::uint8_t*>(static_cast<uintptr_t>(SymFBP)); SymFBP_ptr2[Y] = A;  //
+      //   STA (SymFBP),Y - Set flag byte of symbol entry Y++;  // INY A = ValExpr;  // LDA ValExpr
+      //   SymFBP_ptr2[Y] = A;  // STA (SymFBP),Y
+      //   A = ValExpr_hi;  // LDA ValExpr+1
+      //   Y++;  // INY
+      //   SymFBP_ptr2[Y] = A;  // STA (SymFBP),Y - addr field
+
+      goto DrtvFin;  // JMP DrtvFin
     }
 
-    // .ORG directive handler stub
+    //=================================================
+    // L8A82 - ORG directive handler (ASM3.S lines 109-180)
+    // At least one ORG must be declared or no object code will be generated.
+    // If REL code is to be generated, then the REL directive must precede
+    // the ORG directive
+    // Ref pg 93 on rel ORG
+    //=================================================
     void HndlORG() {
       g_LastDirectiveCalled = "HndlORG";
-      // TODO: Implement ORG directive
-      // For now, just return via DrtvDone
-      DrtvDone();
+
+    L8A82:
+      // Pass 2 skip: ORG only processes in Pass 1
+      A = PassNbr;                    // LDA PassNbr
+      if (A != 0) goto DrtvDone_ORG;  // BNE DrtvDone - Skip ORG in Pass 2
+
+      EvalOprnd();                 // JSR EvalOprnd
+      if (C) goto L8A50_ORG;       // BCS L8A50
+      A = NxtToken;                // LDA NxtToken - Is sp/cr?
+      if (A != 0) goto L8A50_ORG;  // BNE L8A50 - No
+
+      // Bounds validation: Check if ORG address is within valid range
+      // ValExpr must be < HighMem
+      A = ValExpr_hi;  // LDA ValExpr+1
+      // CMP HighMem+1
+      if (A > HighMem_hi) goto L8A50_ORG;  // Out of range
+      if (A < HighMem_hi) goto L8A9E;      // In range
+      // High bytes equal, check low byte
+      A = ValExpr;  // LDA ValExpr
+      // CMP HighMem
+      if (A >= static_cast<uint8_t>(HighMem)) goto L8A50_ORG;  // BCS - Out of range
+
+      // Original ASM3.S logic for disk mode, RelCodeF, CurrORG, and file flushing
+      // is deferred for Phase 5. This is a simplified stub that only handles
+      // absolute ORG in Pass 1. Full implementation requires:
+      // - Relative code mode (REL directive) support
+      // - Disk file I/O for object code output
+      // - Buffer flushing when ORG changes location
+      // - CurrORG tracking for relative addressing
+      // See ASM3.S lines 109-180 for complete original logic
+      A = PassNbr;             // LDA PassNbr - Pass 1?
+      if (A == 0) goto L8A9E;  // BEQ L8A9E - Yes
+      // BIT DummyF - R we in a dummy section?
+      if ((int8_t)DummyF < 0) goto L8A9E;  // BMI L8A9E - Yes
+      A = RelExprF;                        // LDA RelExprF
+      if (A == 0) goto L8A9A;              // BEQ L8A9A - expr's val is abs
+      // JMP L8B2F - Handle relative ORG (stub for now)
+      // For Phase 5, we'll just do simple absolute ORG
+      goto L8A9E;
+
+    L8A9A:
+      // BIT GenF
+      if ((GenF & 0x40) != 0) goto L8AA1;  // BVS L8AA1 - Output MC to disk
+    L8A9E:
+      goto SetPC_ORG;  // JMP SetPC - NB. (ObjPC) is not changed
+
+    L8AA1:
+      // File I/O operations - stubbed for Phase 5 (see comment above)
+      // This section handles disk file management for ORG
+      // For now, we just update PC
+      goto SetPC_ORG;
+
+    L8A50_ORG:
+      X = 0x24;     // LDX #$24 - directive operand err
+      RegAsmEW(X);  // JSR RegAsmEW
+      goto DrtvFin_ORG;
+
+    SetPC_ORG:
+      // SetPC - Set Program Counter from ValExpr (ASM3.S line 264)
+      A  = ValExpr;                   // LDA ValExpr
+      PC = (PC & 0xFF00) | A;         // STA PC - PC=new ORG Addr
+      A  = ValExpr_hi;                // LDA ValExpr+1
+      PC = (PC & 0x00FF) | (A << 8);  // STA PC+1
+      goto DrtvFin_ORG;               // JMP DrtvFin
+
+    DrtvDone_ORG:
+    DrtvFin_ORG:
+      A = ZAB;    // LDA ZAB
+      Y = 0;      // LDY #0
+      C = false;  // CLC
+      return;     // RTS
     }
 
     // .BYTE/.DFB directive handler stub
@@ -5876,6 +6026,80 @@ namespace {
         // Call HndlMnem to dispatch
         return HndlMnem();
       }
+
+      //=================================================
+      // Phase 5: EQU and ORG Test Helpers
+      //=================================================
+
+      // Symbol table access
+      int GetSymbolCount() {
+        // Count non-null entries in symbol table
+        // For now, return a placeholder
+        // TODO: Implement proper symbol counting when symbol table is populated
+        return 0;
+      }
+
+      uint16_t GetSymbolValue(const char* name) {
+        // Look up symbol by name and return its value
+        // TODO: Implement when symbol table lookup is complete
+        return 0;
+      }
+
+      bool FindSymbol(const char* name) {
+        // Check if symbol exists in table
+        // TODO: Implement when symbol table lookup is complete
+        return false;
+      }
+
+      // Address control
+      uint16_t GetCurAdr() {
+        return PC;
+      }
+
+      void SetCurAdr(uint16_t addr) {
+        PC = addr;
+      }
+
+      // Label field control
+      void SetLabelF(uint8_t value) {
+        LabelF = value;
+      }
+
+      uint8_t GetLabelF() {
+        return LabelF;
+      }
+
+      // Symbol table control
+      void InitSymbolTable() {
+        // Initialize symbol table for testing
+        // Set up StrtSymT and EndSymT
+        StrtSymT = 0x0800;  // Standard start
+        EndSymT  = 0x0800;  // Empty initially
+
+        // Zero out hash table if allocated
+        if (HeaderT_ptr != nullptr) {
+          std::memset(HeaderT_ptr, 0, 256);
+        }
+      }
+
+      void ClearSymbolTable() {
+        // Reset symbol table to empty state
+        EndSymT = StrtSymT;
+        if (HeaderT_ptr != nullptr) {
+          std::memset(HeaderT_ptr, 0, 256);
+        }
+      }
+
+      void SetSymFBP(uint16_t ptr) {
+        SymFBP = ptr;
+      }
+
+      uint16_t GetSymFBP() {
+        return SymFBP;
+      }
+
+      // Direct handler calls (already forward declared)
+      // HndlEQU and HndlORG are called directly from test code
 
     }  // namespace Asm
   }  // namespace EdAsmNg
