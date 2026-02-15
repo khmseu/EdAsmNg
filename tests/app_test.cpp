@@ -421,8 +421,8 @@ TEST_F(MnemonicDispatchTest, ValidMnemonic6502BCS) {
 
 TEST_F(MnemonicDispatchTest, UnsupportedDirectiveFallback) {
   // Test directives that are recognized but have no handler stub
-  // For example: .PAGE, .TITLE, .SKIP, etc. (in table but not dispatched)
-  EdAsmNg::Asm::SetupSourceLine(".PAGE");
+  // For example: .SKIP, .DPAGE, etc. (in table but not dispatched)
+  EdAsmNg::Asm::SetupSourceLine(".SKIP");
 
   bool success = EdAsmNg::Asm::HndlMnem();
   EXPECT_FALSE(success);  // Should return failure (C=1)
@@ -433,6 +433,89 @@ TEST_F(MnemonicDispatchTest, UnsupportedDirectiveFallback) {
 
   // Verify no handler was invoked (fallback path was taken)
   EXPECT_STREQ(EdAsmNg::Asm::GetLastDirectiveCalled(), "");
+}
+
+//=================================================
+// Phase 7: Directive Dispatch Tests
+//=================================================
+
+TEST_F(MnemonicDispatchTest, PAGE_DotDirective_RoutesToDoPage) {
+  // Test that .PAGE directive routes to DoPage handler
+  EdAsmNg::Asm::SetupSourceLine(".PAGE");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);  // Directive should be recognized and dispatched
+
+  // Verify DoPage was called
+  EXPECT_STREQ(EdAsmNg::Asm::GetLastDirectiveCalled(), "DoPage");
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(MnemonicDispatchTest, PAGE_NonDotDirective_RoutesToDoPage) {
+  // Test that PAGE (non-dot) directive routes to DoPage handler
+  EdAsmNg::Asm::SetupSourceLine("PAGE");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);  // Directive should be recognized and dispatched
+
+  // Verify DoPage was called
+  EXPECT_STREQ(EdAsmNg::Asm::GetLastDirectiveCalled(), "DoPage");
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(MnemonicDispatchTest, LIST_DotDirective_RoutesToHndlLIST) {
+  // Test that .LIST directive routes to HndlLIST handler (toggle on)
+  EdAsmNg::Asm::SetupSourceLine(".LIST");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+
+  // Verify handler was called
+  EXPECT_STREQ(EdAsmNg::Asm::GetLastDirectiveCalled(), "HndlLIST");
+}
+
+TEST_F(MnemonicDispatchTest, LST_NonDotDirective_RoutesToHndlLST) {
+  // Test that LST (non-dot) directive routes to HndlLST handler
+  EdAsmNg::Asm::SetupSourceLine("LST");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+
+  // Verify handler was called
+  EXPECT_STREQ(EdAsmNg::Asm::GetLastDirectiveCalled(), "HndlLST");
+}
+
+TEST_F(MnemonicDispatchTest, TITLE_DotDirective_RoutesToHndlSBTL) {
+  // Test that .TITLE directive routes to HndlSBTL handler
+  EdAsmNg::Asm::SetupSourceLine(".TITLE");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+
+  // Verify handler was called
+  EXPECT_STREQ(EdAsmNg::Asm::GetLastDirectiveCalled(), "HndlSBTL");
+}
+
+TEST_F(MnemonicDispatchTest, SBTL_NonDotDirective_RoutesToHndlSBTL) {
+  // Test that SBTL (non-dot) directive routes to HndlSBTL handler
+  EdAsmNg::Asm::SetupSourceLine("SBTL");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+
+  // Verify handler was called
+  EXPECT_STREQ(EdAsmNg::Asm::GetLastDirectiveCalled(), "HndlSBTL");
+}
+
+TEST_F(MnemonicDispatchTest, NOLIST_NonDotDirective_RoutesToHndlNOLIST) {
+  // Test that NOLIST (non-dot) directive routes to HndlNOLIST handler
+  EdAsmNg::Asm::SetupSourceLine("NOLIST");
+
+  bool success = EdAsmNg::Asm::HndlMnem();
+  EXPECT_TRUE(success);
+
+  // Verify no errors
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
 }
 
 //=================================================
@@ -1624,4 +1707,823 @@ TEST_F(Phase6DataDirectiveTest, DCI_LongerString) {
 
   EXPECT_EQ(EdAsmNg::Asm::GetCurAdr(), 0x3005);
   EXPECT_EQ(errorsAfter, errorsBefore);
+}
+
+//=================================================
+// Phase 7.2: LST Directive Tests
+//=================================================
+
+// Helper functions for Phase 7.2 testing
+namespace EdAsmNg {
+  namespace Asm {
+    // Listing flag accessors
+    uint8_t GetListingF();
+    void    SetListingF(uint8_t value);
+    uint8_t GetLstCyc();
+    void    SetLstCyc(uint8_t value);
+    uint8_t GetLstUnAsm();
+    void    SetLstUnAsm(uint8_t value);
+    uint8_t GetLstExpMac();
+    void    SetLstExpMac(uint8_t value);
+    uint8_t GetLstWarns();
+    void    SetLstWarns(uint8_t value);
+    uint8_t GetLstGCode();
+    void    SetLstGCode(uint8_t value);
+    uint8_t GetLstASym();
+    void    SetLstASym(uint8_t value);
+    uint8_t GetLstVSym();
+    void    SetLstVSym(uint8_t value);
+    uint8_t GetLst6Cols();
+    void    SetLst6Cols(uint8_t value);
+
+    // Direct handler call
+    void HndlLST();
+  }  // namespace Asm
+}  // namespace EdAsmNg
+
+class Phase72LSTDirectiveTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetErrorState();
+    EdAsmNg::Asm::ResetDispatchState();
+    EdAsmNg::Asm::SetPassNbr(0);  // Default to Pass 1
+  }
+};
+
+//=================================================
+// LST ON/OFF Tests
+//=================================================
+
+TEST_F(Phase72LSTDirectiveTest, LST_ON) {
+  // LST ON should set ListingF MSB
+  EdAsmNg::Asm::SetListingF(0x00);  // Start with listing OFF
+  EdAsmNg::Asm::SetupSourceLine("ON");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlLST();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // ListingF should have MSB set ($80 or higher)
+  EXPECT_GE(EdAsmNg::Asm::GetListingF(), 0x80);
+  EXPECT_EQ(errorsAfter, errorsBefore);  // No errors
+}
+
+TEST_F(Phase72LSTDirectiveTest, LST_OFF) {
+  // LST OFF should clear ListingF MSB
+  EdAsmNg::Asm::SetListingF(0xFF);  // Start with listing ON
+  EdAsmNg::Asm::SetupSourceLine("OFF");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlLST();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // ListingF should have MSB clear ($7F or lower)
+  EXPECT_LE(EdAsmNg::Asm::GetListingF(), 0x7F);
+  EXPECT_EQ(errorsAfter, errorsBefore);  // No errors
+}
+
+//=================================================
+// Listing Option Enable Tests
+//=================================================
+
+TEST_F(Phase72LSTDirectiveTest, OptionsEnable_SingleOption) {
+  // LST C (enable cycle count)
+  EdAsmNg::Asm::SetLstCyc(0x00);  // Start disabled
+  EdAsmNg::Asm::SetupSourceLine("C");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlLST();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // LstCyc should have MSB set
+  EXPECT_GE(EdAsmNg::Asm::GetLstCyc(), 0x80);
+  EXPECT_EQ(errorsAfter, errorsBefore);
+}
+
+TEST_F(Phase72LSTDirectiveTest, OptionsEnable_MultipleOptions) {
+  // LST C,U,E (enable cycle, unasm, expand)
+  EdAsmNg::Asm::SetLstCyc(0x00);
+  EdAsmNg::Asm::SetLstUnAsm(0x00);
+  EdAsmNg::Asm::SetLstExpMac(0x00);
+  EdAsmNg::Asm::SetupSourceLine("C,U,E");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlLST();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // All three flags should have MSB set
+  EXPECT_GE(EdAsmNg::Asm::GetLstCyc(), 0x80);
+  EXPECT_GE(EdAsmNg::Asm::GetLstUnAsm(), 0x80);
+  EXPECT_GE(EdAsmNg::Asm::GetLstExpMac(), 0x80);
+  EXPECT_EQ(errorsAfter, errorsBefore);
+}
+
+TEST_F(Phase72LSTDirectiveTest, OptionsEnable_WithPlusPrefix) {
+  // LST +C (explicitly enable with + prefix)
+  EdAsmNg::Asm::SetLstCyc(0x00);
+  EdAsmNg::Asm::SetupSourceLine("+C");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlLST();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  EXPECT_GE(EdAsmNg::Asm::GetLstCyc(), 0x80);
+  EXPECT_EQ(errorsAfter, errorsBefore);
+}
+
+//=================================================
+// Listing Option Disable Tests
+//=================================================
+
+TEST_F(Phase72LSTDirectiveTest, OptionsDisable_SingleOption) {
+  // LST -C (disable cycle count)
+  EdAsmNg::Asm::SetLstCyc(0xFF);  // Start enabled
+  EdAsmNg::Asm::SetupSourceLine("-C");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlLST();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // LstCyc should have MSB clear
+  EXPECT_LE(EdAsmNg::Asm::GetLstCyc(), 0x7F);
+  EXPECT_EQ(errorsAfter, errorsBefore);
+}
+
+TEST_F(Phase72LSTDirectiveTest, OptionsDisable_MultipleOptions) {
+  // LST -C,-U,-E (disable multiple options)
+  EdAsmNg::Asm::SetLstCyc(0xFF);
+  EdAsmNg::Asm::SetLstUnAsm(0xFF);
+  EdAsmNg::Asm::SetLstExpMac(0xFF);
+  EdAsmNg::Asm::SetupSourceLine("-C,-U,-E");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlLST();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // All three flags should have MSB clear
+  EXPECT_LE(EdAsmNg::Asm::GetLstCyc(), 0x7F);
+  EXPECT_LE(EdAsmNg::Asm::GetLstUnAsm(), 0x7F);
+  EXPECT_LE(EdAsmNg::Asm::GetLstExpMac(), 0x7F);
+  EXPECT_EQ(errorsAfter, errorsBefore);
+}
+
+//=================================================
+// Mixed Enable/Disable Tests
+//=================================================
+
+TEST_F(Phase72LSTDirectiveTest, OptionsMixed) {
+  // LST +C,-U,E (mixed enable/disable)
+  EdAsmNg::Asm::SetLstCyc(0x00);     // Start disabled
+  EdAsmNg::Asm::SetLstUnAsm(0xFF);   // Start enabled
+  EdAsmNg::Asm::SetLstExpMac(0x00);  // Start disabled
+  EdAsmNg::Asm::SetupSourceLine("+C,-U,E");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlLST();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // C should be enabled, U should be disabled, E should be enabled
+  EXPECT_GE(EdAsmNg::Asm::GetLstCyc(), 0x80);
+  EXPECT_LE(EdAsmNg::Asm::GetLstUnAsm(), 0x7F);
+  EXPECT_GE(EdAsmNg::Asm::GetLstExpMac(), 0x80);
+  EXPECT_EQ(errorsAfter, errorsBefore);
+}
+
+//=================================================
+// All Options Test
+//=================================================
+
+TEST_F(Phase72LSTDirectiveTest, AllOptions) {
+  // LST C,U,E,W,G,A,V,S (all 8 options)
+  EdAsmNg::Asm::SetLstCyc(0x00);
+  EdAsmNg::Asm::SetLstUnAsm(0x00);
+  EdAsmNg::Asm::SetLstExpMac(0x00);
+  EdAsmNg::Asm::SetLstWarns(0x00);
+  EdAsmNg::Asm::SetLstGCode(0x00);
+  EdAsmNg::Asm::SetLstASym(0x00);
+  EdAsmNg::Asm::SetLstVSym(0x00);
+  EdAsmNg::Asm::SetLst6Cols(0x00);
+  EdAsmNg::Asm::SetupSourceLine("C,U,E,W,G,A,V,S");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlLST();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // All 8 flags should have MSB set
+  EXPECT_GE(EdAsmNg::Asm::GetLstCyc(), 0x80);
+  EXPECT_GE(EdAsmNg::Asm::GetLstUnAsm(), 0x80);
+  EXPECT_GE(EdAsmNg::Asm::GetLstExpMac(), 0x80);
+  EXPECT_GE(EdAsmNg::Asm::GetLstWarns(), 0x80);
+  EXPECT_GE(EdAsmNg::Asm::GetLstGCode(), 0x80);
+  EXPECT_GE(EdAsmNg::Asm::GetLstASym(), 0x80);
+  EXPECT_GE(EdAsmNg::Asm::GetLstVSym(), 0x80);
+  EXPECT_GE(EdAsmNg::Asm::GetLst6Cols(), 0x80);
+  EXPECT_EQ(errorsAfter, errorsBefore);
+}
+
+//=================================================
+// Error Tests
+//=================================================
+
+TEST_F(Phase72LSTDirectiveTest, InvalidOption) {
+  // LST X (invalid option letter)
+  EdAsmNg::Asm::SetupSourceLine("X");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlLST();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Should register a directive operand error
+  EXPECT_GT(errorsAfter, errorsBefore);
+}
+
+TEST_F(Phase72LSTDirectiveTest, InvalidOption_NonAlphabetic) {
+  // LST 123 (non-alphabetic character)
+  EdAsmNg::Asm::SetupSourceLine("123");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlLST();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Should register error for non-alphabetic character
+  EXPECT_GT(errorsAfter, errorsBefore);
+}
+
+//=================================================
+// Phase 7.3: NOLIST and PAGE Directives Tests
+//=================================================
+
+// Helper functions for Phase 7.3 testing
+namespace EdAsmNg {
+  namespace Asm {
+    // Handler functions
+    void HndlNOLIST();
+    void DoPage();
+
+    // PassNbr accessor (already exists)
+    uint8_t GetPassNbr();
+  }  // namespace Asm
+}  // namespace EdAsmNg
+
+class Phase73NOLISTandPAGEDirectiveTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetErrorState();
+    EdAsmNg::Asm::ResetDispatchState();
+    EdAsmNg::Asm::SetPassNbr(0);  // Default to Pass 1
+  }
+};
+
+//=================================================
+// NOLIST Tests
+//=================================================
+
+TEST_F(Phase73NOLISTandPAGEDirectiveTest, NOLIST_DisablesListing) {
+  // Set ListingF to $FF initially (listing ON)
+  EdAsmNg::Asm::SetListingF(0xFF);
+
+  // Call NOLIST (no setup line needed - ignores operand)
+  EdAsmNg::Asm::SetupSourceLine("");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlNOLIST();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Verify ListingF MSB is clear ($7F or lower)
+  EXPECT_LE(EdAsmNg::Asm::GetListingF(), 0x7F);
+  EXPECT_EQ(errorsAfter, errorsBefore);  // No errors
+}
+
+TEST_F(Phase73NOLISTandPAGEDirectiveTest, NOLIST_WithOperandIgnored) {
+  // Set ListingF to $80 (listing ON with MSB set)
+  EdAsmNg::Asm::SetListingF(0x80);
+
+  // Call NOLIST with operand "ON" (should be ignored)
+  EdAsmNg::Asm::SetupSourceLine("ON");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlNOLIST();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Verify ListingF MSB is clear
+  EXPECT_LE(EdAsmNg::Asm::GetListingF(), 0x7F);
+  EXPECT_EQ(errorsAfter, errorsBefore);  // No errors (operand ignored)
+}
+
+//=================================================
+// PAGE Tests
+//=================================================
+
+TEST_F(Phase73NOLISTandPAGEDirectiveTest, PAGE_Pass1NoOp) {
+  // Set PassNbr to 0 (Pass 1)
+  EdAsmNg::Asm::SetPassNbr(0);
+
+  // Call PAGE
+  EdAsmNg::Asm::SetupSourceLine("");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::DoPage();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Verify no side effects (no output, no errors)
+  EXPECT_EQ(errorsAfter, errorsBefore);
+  EXPECT_EQ(EdAsmNg::Asm::GetPassNbr(), 0);  // Pass still 0
+}
+
+TEST_F(Phase73NOLISTandPAGEDirectiveTest, PAGE_Pass2Stubbed) {
+  // Set PassNbr to 1 (Pass 2)
+  EdAsmNg::Asm::SetPassNbr(1);
+
+  // Call PAGE
+  EdAsmNg::Asm::SetupSourceLine("");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::DoPage();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Verify no errors (output is stubbed)
+  // Full behavior will be tested in Phase 8 when listing I/O is implemented
+  EXPECT_EQ(errorsAfter, errorsBefore);
+  EXPECT_EQ(EdAsmNg::Asm::GetPassNbr(), 1);  // Pass still 1
+}
+
+TEST_F(Phase73NOLISTandPAGEDirectiveTest, PAGE_WithOperandIgnored) {
+  // Set PassNbr to 0
+  EdAsmNg::Asm::SetPassNbr(0);
+
+  // Call PAGE with operand "42"
+  EdAsmNg::Asm::SetupSourceLine("42");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::DoPage();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Verify no errors
+  EXPECT_EQ(errorsAfter, errorsBefore);
+}
+
+//=================================================
+// Phase 7.4: SBTL (Subtitle) Directive Tests
+//=================================================
+
+// Helper functions for Phase 7.4 testing
+namespace EdAsmNg {
+  namespace Asm {
+    // Handler function
+    void HndlSBTL();
+
+    // Accessors
+    uint8_t     GetSubTtlF();
+    void        SetSubTtlF(uint8_t value);
+    const char* GetSubTitle();
+    void        ClearSubTitle();
+  }  // namespace Asm
+}  // namespace EdAsmNg
+
+class Phase74SBTLDirectiveTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetErrorState();
+    EdAsmNg::Asm::ResetDispatchState();
+    EdAsmNg::Asm::SetPassNbr(1);    // Default to Pass 2 (parsing is done in Pass 2+)
+    EdAsmNg::Asm::SetSubTtlF(0);    // Clear subtitle flag
+    EdAsmNg::Asm::ClearSubTitle();  // Clear subtitle buffer
+  }
+};
+
+//=================================================
+// SBTL Tests
+//=================================================
+
+TEST_F(Phase74SBTLDirectiveTest, NoString) {
+  // Set SubTtlF to $00 initially
+  EdAsmNg::Asm::SetSubTtlF(0x00);
+  EdAsmNg::Asm::SetPassNbr(1);  // Pass 2
+
+  // Call SBTL with empty operand (just CR)
+  EdAsmNg::Asm::SetupSourceLine("");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlSBTL();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Verify SubTtlF is $40 (encountered but no string)
+  EXPECT_EQ(EdAsmNg::Asm::GetSubTtlF(), 0x40);
+  EXPECT_EQ(errorsAfter, errorsBefore);  // No errors
+
+  // Note: DoPage should be called (implementation detail - stubbed behavior)
+}
+
+TEST_F(Phase74SBTLDirectiveTest, SimpleString) {
+  // Call SBTL with operand: /My Title/
+  EdAsmNg::Asm::SetPassNbr(1);  // Pass 2
+  EdAsmNg::Asm::SetupSourceLine("/My Title/");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlSBTL();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Verify SubTtlF is $FF (string stored)
+  EXPECT_EQ(EdAsmNg::Asm::GetSubTtlF(), 0xFF);
+  EXPECT_EQ(errorsAfter, errorsBefore);  // No errors
+
+  // Verify SubTitle buffer contains "My Title"
+  EXPECT_STREQ(EdAsmNg::Asm::GetSubTitle(), "My Title");
+}
+
+TEST_F(Phase74SBTLDirectiveTest, DifferentDelimiter) {
+  // Call SBTL with operand: |Custom|
+  EdAsmNg::Asm::SetPassNbr(1);  // Pass 2
+  EdAsmNg::Asm::SetupSourceLine("|Custom|");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlSBTL();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Verify SubTtlF is $FF
+  EXPECT_EQ(EdAsmNg::Asm::GetSubTtlF(), 0xFF);
+  EXPECT_EQ(errorsAfter, errorsBefore);  // No errors
+
+  // Verify SubTitle buffer contains "Custom"
+  EXPECT_STREQ(EdAsmNg::Asm::GetSubTitle(), "Custom");
+}
+
+TEST_F(Phase74SBTLDirectiveTest, MaxLength) {
+  // Call SBTL with operand: / + 35 chars + /
+  EdAsmNg::Asm::SetPassNbr(1);                                      // Pass 2
+  std::string maxString = "/12345678901234567890123456789012345/";  // Exactly 35 chars
+  EdAsmNg::Asm::SetupSourceLine(maxString.c_str());
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlSBTL();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Verify SubTtlF is $FF
+  EXPECT_EQ(EdAsmNg::Asm::GetSubTtlF(), 0xFF);
+  EXPECT_EQ(errorsAfter, errorsBefore);  // No errors
+
+  // Verify SubTitle buffer contains exactly 35 chars
+  EXPECT_STREQ(EdAsmNg::Asm::GetSubTitle(), "12345678901234567890123456789012345");
+}
+
+TEST_F(Phase74SBTLDirectiveTest, UnterminatedString) {
+  // Call SBTL with operand: /Unterminated (no closing delimiter, CR only)
+  EdAsmNg::Asm::SetPassNbr(1);  // Pass 2
+  EdAsmNg::Asm::SetupSourceLine("/Unterminated");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlSBTL();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Verify error is registered (directive operand error)
+  EXPECT_GT(errorsAfter, errorsBefore);
+}
+
+TEST_F(Phase74SBTLDirectiveTest, ExceededMaxLength) {
+  // Call SBTL with operand: / + 40 chars (more than 35)
+  EdAsmNg::Asm::SetPassNbr(1);                                            // Pass 2
+  std::string longString = "/1234567890123456789012345678901234567890/";  // 40 chars
+  EdAsmNg::Asm::SetupSourceLine(longString.c_str());
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlSBTL();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Verify error is registered (directive operand error)
+  // When max is reached, next char must be delimiter, if CR instead => error
+  EXPECT_GT(errorsAfter, errorsBefore);
+}
+
+TEST_F(Phase74SBTLDirectiveTest, NonSpaceAfter) {
+  // Call SBTL with operand: /Title/ garbage
+  EdAsmNg::Asm::SetPassNbr(1);  // Pass 2
+  EdAsmNg::Asm::SetupSourceLine("/Title/ garbage");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlSBTL();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Verify error is registered (directive operand error)
+  EXPECT_GT(errorsAfter, errorsBefore);
+}
+
+TEST_F(Phase74SBTLDirectiveTest, WithDelimiterInString) {
+  // Call SBTL with operand: |It's a title|
+  EdAsmNg::Asm::SetPassNbr(1);  // Pass 2
+  EdAsmNg::Asm::SetupSourceLine("|It's a title|");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlSBTL();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Verify SubTtlF is $FF
+  EXPECT_EQ(EdAsmNg::Asm::GetSubTtlF(), 0xFF);
+  EXPECT_EQ(errorsAfter, errorsBefore);  // No errors
+
+  // Verify SubTitle contains "It's a title"
+  EXPECT_STREQ(EdAsmNg::Asm::GetSubTitle(), "It's a title");
+}
+
+TEST_F(Phase74SBTLDirectiveTest, Pass1NoOp) {
+  // In Pass 1, SBTL should set flag but not parse string (optimization)
+  EdAsmNg::Asm::SetPassNbr(0);  // Pass 1
+  EdAsmNg::Asm::SetupSourceLine("/My Title/");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlSBTL();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Verify SubTtlF is $40 (encountered, but string not parsed in Pass 1)
+  EXPECT_EQ(EdAsmNg::Asm::GetSubTtlF(), 0x40);
+  EXPECT_EQ(errorsAfter, errorsBefore);  // No errors
+}
+
+//=================================================
+// Phase 7.5: OBJ Directive Tests
+//=================================================
+
+// Test helper function declarations for Phase 7.5
+namespace EdAsmNg {
+  namespace Asm {
+    void     HndlOBJ();
+    void     SetRelCodeF(uint8_t value);
+    uint8_t  GetRelCodeF();
+    void     SetEndSymT(uint16_t value);
+    uint16_t GetEndSymT();
+    void     SetMemTop(uint16_t value);
+    uint16_t GetMemTop();
+    void     SetRLDEnd(uint16_t value);
+    uint16_t GetRLDEnd();
+  }  // namespace Asm
+}  // namespace EdAsmNg
+
+class Phase75OBJDirectiveTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetErrorState();
+    EdAsmNg::Asm::ResetDispatchState();
+    EdAsmNg::Asm::SetPassNbr(0);  // Default to Pass 1
+    EdAsmNg::Asm::SetGenF(0x00);
+    EdAsmNg::Asm::SetRelCodeF(0x00);
+    EdAsmNg::Asm::SetEndSymT(0x0800);  // Default symbol table end
+    EdAsmNg::Asm::SetObjPC(0x0000);
+    EdAsmNg::Asm::SetMemTop(0x0000);
+    EdAsmNg::Asm::SetRLDEnd(0x0000);
+  }
+};
+
+TEST_F(Phase75OBJDirectiveTest, SuppressGeneration) {
+  // OBJ 0 should suppress code generation (GenF = $80)
+  EdAsmNg::Asm::SetupSourceLine("0");
+
+  EdAsmNg::Asm::HndlOBJ();
+
+  // Verify GenF has N bit set ($80 = suppress generation)
+  EXPECT_EQ(EdAsmNg::Asm::GetGenF(), 0x80);
+
+  // Verify no errors
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(Phase75OBJDirectiveTest, SetAddress) {
+  // OBJ 4096 should set ObjPC, MemTop, RLDEnd to 0x1000
+  EdAsmNg::Asm::SetupSourceLine("4096");
+
+  EdAsmNg::Asm::HndlOBJ();
+
+  // Verify all three address variables are set correctly
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x1000);
+  EXPECT_EQ(EdAsmNg::Asm::GetMemTop(), 0x1000);
+  EXPECT_EQ(EdAsmNg::Asm::GetRLDEnd(), 0x1000);
+
+  // Verify GenF is clear (generation enabled)
+  EXPECT_EQ(EdAsmNg::Asm::GetGenF(), 0x00);
+
+  // Verify no errors
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(Phase75OBJDirectiveTest, SetAddressHighRange) {
+  // OBJ 45056 ($B000, typical ProDOS load address)
+  EdAsmNg::Asm::SetupSourceLine("$B000");
+
+  EdAsmNg::Asm::HndlOBJ();
+
+  // Verify all three address variables are set
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0xB000);
+  EXPECT_EQ(EdAsmNg::Asm::GetMemTop(), 0xB000);
+  EXPECT_EQ(EdAsmNg::Asm::GetRLDEnd(), 0xB000);
+
+  // Verify GenF is clear
+  EXPECT_EQ(EdAsmNg::Asm::GetGenF(), 0x00);
+
+  // Verify no errors
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(Phase75OBJDirectiveTest, ErrorRELModeActive) {
+  // If REL mode is active (RelCodeF MSB set), OBJ should error
+  EdAsmNg::Asm::SetRelCodeF(0x80);  // REL mode active
+  EdAsmNg::Asm::SetupSourceLine("4096");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlOBJ();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Verify error was registered
+  EXPECT_GT(errorsAfter, errorsBefore);
+
+  // Verify state is unchanged (no side effects on error)
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x0000);  // Should remain at initial value
+  EXPECT_EQ(EdAsmNg::Asm::GetMemTop(), 0x0000);
+  EXPECT_EQ(EdAsmNg::Asm::GetRLDEnd(), 0x0000);
+}
+
+TEST_F(Phase75OBJDirectiveTest, ErrorAddressBelowSymbolTable) {
+  // If address < EndSymT, should error
+  EdAsmNg::Asm::SetEndSymT(0x2000);
+  EdAsmNg::Asm::SetupSourceLine("$1000");  // Below EndSymT
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlOBJ();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Verify error was registered
+  EXPECT_GT(errorsAfter, errorsBefore);
+
+  // Verify state is unchanged
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x0000);
+  EXPECT_EQ(EdAsmNg::Asm::GetMemTop(), 0x0000);
+  EXPECT_EQ(EdAsmNg::Asm::GetRLDEnd(), 0x0000);
+}
+
+TEST_F(Phase75OBJDirectiveTest, AddressEqualsEndSymT) {
+  // Boundary case: address == EndSymT should succeed
+  EdAsmNg::Asm::SetEndSymT(0x1000);
+  EdAsmNg::Asm::SetupSourceLine("$1000");  // Equal to EndSymT
+
+  EdAsmNg::Asm::HndlOBJ();
+
+  // Verify success (no error)
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+
+  // Verify state is set correctly
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x1000);
+  EXPECT_EQ(EdAsmNg::Asm::GetMemTop(), 0x1000);
+  EXPECT_EQ(EdAsmNg::Asm::GetRLDEnd(), 0x1000);
+  EXPECT_EQ(EdAsmNg::Asm::GetGenF(), 0x00);
+}
+
+TEST_F(Phase75OBJDirectiveTest, DiskOutputModeIgnored) {
+  // If GenF V-bit is set (disk output mode), OBJ should be ignored
+  EdAsmNg::Asm::SetGenF(0x40);  // V-bit set (disk output mode)
+  EdAsmNg::Asm::SetupSourceLine("4096");
+
+  EdAsmNg::Asm::HndlOBJ();
+
+  // Verify GenF is unchanged (OBJ was ignored)
+  EXPECT_EQ(EdAsmNg::Asm::GetGenF(), 0x40);
+
+  // Verify addresses are not set
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x0000);
+  EXPECT_EQ(EdAsmNg::Asm::GetMemTop(), 0x0000);
+
+  // Verify no errors (not an error, just ignored)
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(Phase75OBJDirectiveTest, ParseError) {
+  // Invalid expression should cause parse error
+  EdAsmNg::Asm::SetupSourceLine("");  // No operand
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlOBJ();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Verify error was registered (operand parse error)
+  EXPECT_GT(errorsAfter, errorsBefore);
+}
+
+//=================================================
+// Phase 7.6: REL Directive Tests
+//=================================================
+
+// Test helper function declarations for Phase 7.6
+namespace EdAsmNg {
+  namespace Asm {
+    void HndlREL();
+  }  // namespace Asm
+}  // namespace EdAsmNg
+
+class Phase76RELDirectiveTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetErrorState();
+    EdAsmNg::Asm::ResetDispatchState();
+    EdAsmNg::Asm::SetPassNbr(0);  // Default to Pass 1
+    EdAsmNg::Asm::SetGenF(0x00);
+    EdAsmNg::Asm::SetRelCodeF(0x00);
+  }
+};
+
+TEST_F(Phase76RELDirectiveTest, EnableMode) {
+  // L9126 - REL directive should set RelCodeF MSB
+  // Original: ASM3.S:1168-1179
+
+  // Set RelCodeF to $00 initially (REL not active)
+  EdAsmNg::Asm::SetRelCodeF(0x00);
+  EdAsmNg::Asm::SetupSourceLine("");  // REL takes no operand
+
+  EdAsmNg::Asm::HndlREL();
+
+  // Verify RelCodeF MSB is set ($80 or higher)
+  uint8_t relCodeF = EdAsmNg::Asm::GetRelCodeF();
+  EXPECT_GE(relCodeF, 0x80);  // MSB must be set
+
+  // Verify no errors
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(Phase76RELDirectiveTest, ModeAlreadyOn) {
+  // REL when RelCodeF is already set should maintain the flag
+
+  // Set RelCodeF to $FF (REL already active)
+  EdAsmNg::Asm::SetRelCodeF(0xFF);
+  EdAsmNg::Asm::SetupSourceLine("");  // REL takes no operand
+
+  EdAsmNg::Asm::HndlREL();
+
+  // Verify RelCodeF is still set (MSB = 1)
+  uint8_t relCodeF = EdAsmNg::Asm::GetRelCodeF();
+  EXPECT_GE(relCodeF, 0x80);  // MSB must still be set
+
+  // Verify no errors
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(Phase76RELDirectiveTest, WithOperandIgnored) {
+  // REL should ignore any operand (unlike OBJ)
+
+  EdAsmNg::Asm::SetRelCodeF(0x00);
+  EdAsmNg::Asm::SetupSourceLine("123");  // Operand should be ignored
+
+  EdAsmNg::Asm::HndlREL();
+
+  // Verify RelCodeF MSB is set regardless of operand
+  uint8_t relCodeF = EdAsmNg::Asm::GetRelCodeF();
+  EXPECT_GE(relCodeF, 0x80);
+
+  // Verify no errors (operand is ignored, not an error)
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(Phase76RELDirectiveTest, SetRELThenOBJError) {
+  // After REL is set, OBJ directive should detect conflict and error
+
+  // First set REL mode
+  EdAsmNg::Asm::SetRelCodeF(0x00);
+  EdAsmNg::Asm::SetupSourceLine("");
+  EdAsmNg::Asm::HndlREL();
+
+  // Verify REL is set
+  EXPECT_GE(EdAsmNg::Asm::GetRelCodeF(), 0x80);
+
+  // Now try OBJ (should error because REL is active)
+  EdAsmNg::Asm::SetupSourceLine("4096");
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlOBJ();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Verify OBJ detected REL conflict and errored
+  EXPECT_GT(errorsAfter, errorsBefore);
+}
+
+TEST_F(Phase76RELDirectiveTest, SetFromZero) {
+  // Test SEC;ROR behavior: $00 -> $80
+
+  EdAsmNg::Asm::SetRelCodeF(0x00);
+  EdAsmNg::Asm::SetupSourceLine("");
+
+  EdAsmNg::Asm::HndlREL();
+
+  // Verify exactly $80 (SEC sets carry, ROR rotates it into MSB)
+  uint8_t relCodeF = EdAsmNg::Asm::GetRelCodeF();
+  EXPECT_EQ(relCodeF, 0x80);
+
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
+}
+
+TEST_F(Phase76RELDirectiveTest, SetFromNonZero) {
+  // Test SEC;ROR behavior with non-zero initial value
+
+  EdAsmNg::Asm::SetRelCodeF(0x02);  // Initial value with bit 1 set
+  EdAsmNg::Asm::SetupSourceLine("");
+
+  EdAsmNg::Asm::HndlREL();
+
+  // SEC sets carry, ROR rotates: $02 >> 1 with carry in = $81
+  uint8_t relCodeF = EdAsmNg::Asm::GetRelCodeF();
+  EXPECT_EQ(relCodeF, 0x81);
+
+  EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
 }

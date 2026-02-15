@@ -57,6 +57,7 @@ namespace {
   // Forward Declarations (for functions used before defined)
   //=================================================
   void ChrGot();
+  void ChrGot2();
   void HashFn();
   void GAdrMod();
   void GOpAdr();
@@ -74,6 +75,8 @@ namespace {
   void DrtvDone();
   void HndlEQU();
   void HndlORG();
+  void HndlOBJ();
+  void HndlREL();
   void HndlBYTE();
   void HndlWORD();
   void HndlBLOCK();
@@ -86,6 +89,11 @@ namespace {
   void HndlASC();
   void HndlASC_Core();
   void HndlDCI();
+  void HndlLST();
+  void HndlLIST();
+  void HndlNOLIST();
+  void DoPage();
+  void HndlSBTL();
 
   // Extern array declarations (defined later in file)
   extern const std::uint8_t CharMap1[];
@@ -139,14 +147,15 @@ namespace {
   std::uint8_t  BCDNbr[3];  // Source file line numbers in BCD format ($60-$62, 3 bytes)
   std::uint16_t StrtSymT;   // Start address of symbol table (2 bytes: $63-$64)
   std::uint16_t EndSymT;    // Current end address of symbol table (2 bytes: $65-$66)
-  std::uint8_t  PassNbr;    // Current assembly pass: 0=Pass1, 1=Pass2, 2=Pass3
-  std::uint8_t  ListingF;   // Listing flag: $80=LST ON, $00=LST OFF
-  std::uint8_t  SubTtlF;    // Subtitle flag: $00=none, $40=SBTL cmd, $FF=subtitle string
-  std::uint8_t  LineCnt;    // Number of lines printed on current page
-  std::uint16_t PageNbr;    // Current page number (2 bytes: $6B-$6C)
-  std::uint8_t  FileNbr;    // Current file number in assembly
-  std::uint8_t  LogPL;      // Logical page length (lines per page)
-  std::uint8_t  PhyPL;      // Physical page length (actual printer lines)
+#define EndSymT_hi (reinterpret_cast<std::uint8_t*>(&EndSymT)[1])  // High byte access for EndSymT
+  std::uint8_t  PassNbr;   // Current assembly pass: 0=Pass1, 1=Pass2, 2=Pass3
+  std::uint8_t  ListingF;  // Listing flag: $80=LST ON, $00=LST OFF
+  std::uint8_t  SubTtlF;   // Subtitle flag: $00=none, $40=SBTL cmd, $FF=subtitle string
+  std::uint8_t  LineCnt;   // Number of lines printed on current page
+  std::uint16_t PageNbr;   // Current page number (2 bytes: $6B-$6C)
+  std::uint8_t  FileNbr;   // Current file number in assembly
+  std::uint8_t  LogPL;     // Logical page length (lines per page)
+  std::uint8_t  PhyPL;     // Physical page length (actual printer lines)
 
   // $70-$7F: Instruction Processing and Pointers
   std::uint8_t  SavIndX;    // Temporary storage for X register
@@ -321,8 +330,9 @@ namespace {
   std::uint16_t SymFBP;    // Symbol Flag Byte Pointer (pointer to symbol's flag byte)
 
   // $D0-$DF: Relocation and Symbol Table Management
-  std::uint16_t RLDEnd;     // Relocation Dictionary end pointer (2 bytes)
-  std::uint16_t ZD2;        // (Not used - reserved)
+  std::uint16_t RLDEnd;  // Relocation Dictionary end pointer (2 bytes)
+#define RLDEnd_hi (reinterpret_cast<std::uint8_t*>(&RLDEnd)[1])  // High byte access for RLDEnd
+  std::uint16_t ZD2;                                             // (Not used - reserved)
   std::uint8_t  SavGenF;    // Saved GenF when DSECT (dummy section) is declared
   std::uint16_t SBufP;      // Pointer to SBuf/IBuf data buffer (2 bytes)
   std::uint16_t MsgP;       // Message pointer (aliases SBufP)
@@ -3512,49 +3522,159 @@ namespace {
       // The mnemonic table entry starts at MnemP and we've matched up to position Y
       // Let's extract the directive name to dispatch properly
 
-      // Simple dispatch based on second character (after the dot)
-      // This is a temporary solution for Phase 4 - handlers are stubs
-      uint8_t second_char = MnemP[1] & 0x7F;  // Char after '.'
+      // Check if this is a dot directive or regular directive
+      uint8_t first_char = MnemP[0] & 0x7F;
 
-      // Dispatch to appropriate handler
-      if (second_char == 'E') {
-        // Could be .EQU
-        uint8_t third_char = MnemP[2] & 0x7F;
-        if (third_char == 'Q') {
-          HndlEQU();
+      if (first_char == '.') {
+        // Dot directive - dispatch based on second character
+        uint8_t second_char = MnemP[1] & 0x7F;
+
+        // Dispatch to appropriate handler
+        if (second_char == 'E') {
+          // Could be .EQU
+          uint8_t third_char = MnemP[2] & 0x7F;
+          if (third_char == 'Q') {
+            HndlEQU();
+            return;
+          }
+        } else if (second_char == 'O') {
+          // Could be .ORG
+          uint8_t third_char = MnemP[2] & 0x7F;
+          if (third_char == 'R') {
+            HndlORG();
+            return;
+          }
+        } else if (second_char == 'B') {
+          // Could be .BYTE or .BLOCK
+          uint8_t third_char = MnemP[2] & 0x7F;
+          if (third_char == 'Y') {
+            HndlBYTE();
+            return;
+          } else if (third_char == 'L') {
+            HndlBLOCK();
+            return;
+          }
+        } else if (second_char == 'L') {
+          // Could be .LIST
+          uint8_t third_char = MnemP[2] & 0x7F;
+          if (third_char == 'I') {
+            uint8_t fourth_char = MnemP[3] & 0x7F;
+            if (fourth_char == 'S') {
+              uint8_t fifth_char = MnemP[4] & 0x7F;
+              if (fifth_char == 'T') {
+                HndlLIST();  // .LIST directive
+                return;
+              }
+            }
+          }
+        } else if (second_char == 'N') {
+          // Could be .NOLIST
+          uint8_t third_char = MnemP[2] & 0x7F;
+          if (third_char == 'O') {
+            HndlNOLIST();
+            return;
+          }
+        } else if (second_char == 'P') {
+          // Could be .PAGE
+          uint8_t third_char = MnemP[2] & 0x7F;
+          if (third_char == 'A') {
+            DoPage();
+            return;
+          }
+        } else if (second_char == 'T') {
+          // Could be .TITLE (alias for SBTL)
+          uint8_t third_char = MnemP[2] & 0x7F;
+          if (third_char == 'I') {
+            HndlSBTL();
+            return;
+          }
+        } else if (second_char == 'W') {
+          // .WORD
+          HndlWORD();
           return;
+        } else if (second_char == 'A') {
+          // .ASCII
+          HndlASCII();
+          return;
+        } else if (second_char == 'D') {
+          // Could be .DBYTE
+          uint8_t third_char = MnemP[2] & 0x7F;
+          if (third_char == 'B') {
+            HndlDBYTE();
+            return;
+          }
         }
-      } else if (second_char == 'O') {
-        // Could be .ORG
-        uint8_t third_char = MnemP[2] & 0x7F;
-        if (third_char == 'R') {
-          HndlORG();
-          return;
+      } else if (first_char == 'P') {
+        // Regular directive starting with 'P' - could be PAGE
+        uint8_t second_char = MnemP[1] & 0x7F;
+        if (second_char == 'A') {
+          uint8_t third_char = MnemP[2] & 0x7F;
+          if (third_char == 'G') {
+            uint8_t fourth_char = MnemP[3] & 0x7F;
+            if (fourth_char == 'E') {
+              DoPage();
+              return;
+            }
+          }
         }
-      } else if (second_char == 'B') {
-        // Could be .BYTE or .BLOCK
-        uint8_t third_char = MnemP[2] & 0x7F;
-        if (third_char == 'Y') {
-          HndlBYTE();
-          return;
-        } else if (third_char == 'L') {
-          HndlBLOCK();
-          return;
+      } else if (first_char == 'L') {
+        // Regular directive starting with 'L' - could be LST
+        uint8_t second_char = MnemP[1] & 0x7F;
+        if (second_char == 'S') {
+          uint8_t third_char = MnemP[2] & 0x7F;
+          if (third_char == 'T') {
+            HndlLST();  // LST directive (non-dot)
+            return;
+          }
         }
-      } else if (second_char == 'W') {
-        // .WORD
-        HndlWORD();
-        return;
-      } else if (second_char == 'A') {
-        // .ASCII
-        HndlASCII();
-        return;
-      } else if (second_char == 'D') {
-        // Could be .DBYTE
-        uint8_t third_char = MnemP[2] & 0x7F;
-        if (third_char == 'B') {
-          HndlDBYTE();
-          return;
+      } else if (first_char == 'N') {
+        // Regular directive starting with 'N' - could be NOLIST
+        uint8_t second_char = MnemP[1] & 0x7F;
+        if (second_char == 'O') {
+          uint8_t third_char = MnemP[2] & 0x7F;
+          if (third_char == 'L') {
+            HndlNOLIST();
+            return;
+          }
+        }
+      } else if (first_char == 'O') {
+        // Regular directive starting with 'O' - could be OBJ or ORG
+        uint8_t second_char = MnemP[1] & 0x7F;
+        if (second_char == 'B') {
+          // OBJ directive
+          uint8_t third_char = MnemP[2] & 0x7F;
+          if (third_char == 'J') {
+            HndlOBJ();
+            return;
+          }
+        } else if (second_char == 'R') {
+          // ORG directive
+          uint8_t third_char = MnemP[2] & 0x7F;
+          if (third_char == 'G') {
+            HndlORG();
+            return;
+          }
+        }
+      } else if (first_char == 'R') {
+        // Regular directive starting with 'R' - could be REL
+        uint8_t second_char = MnemP[1] & 0x7F;
+        if (second_char == 'E') {
+          // REL directive
+          uint8_t third_char = MnemP[2] & 0x7F;
+          if (third_char == 'L') {
+            HndlREL();
+            return;
+          }
+        }
+      } else if (first_char == 'S') {
+        // Regular directive starting with 'S' - could be SBTL
+        uint8_t second_char = MnemP[1] & 0x7F;
+        if (second_char == 'B') {
+          uint8_t third_char = MnemP[2] & 0x7F;
+          if (third_char == 'T') {
+            HndlSBTL();
+            return;
+          }
         }
       }
 
@@ -4600,6 +4720,138 @@ namespace {
     }
 
     //=================================================
+    // L8BAD - OBJ directive handler (ASM3.S lines 287-340)
+    // Control absolute object code generation mode.
+    // Format: OBJ address
+    //   OBJ 0     - Suppress code generation
+    //   OBJ $6000 - Generate code starting at $6000
+    // Cannot be used with REL directive (mutually exclusive).
+    // Address must be >= EndSymT (end of symbol table).
+    //=================================================
+    void HndlOBJ() {
+      g_LastDirectiveCalled = "HndlOBJ";
+
+    L8BAD:
+      // Initialize ValExpr to $0000
+      ValExpr    = 0;  // LDA #0 / STA ValExpr
+      ValExpr_hi = 0;  // STA ValExpr+1
+
+      EvalOprnd();        // JSR EvalOprnd - Parse operand expression
+      if (C) goto L8BB8;  // BCS L8BB8 - Error, jump to error handler
+      // Success, continue
+
+    L8BBB:
+      A = NxtToken;            // LDA NxtToken - Check next token
+      if (A != 0) goto L8BB8;  // BNE L8BB8 - Must be space/CR
+
+      // BIT GenF - Check disk output mode (V flag)
+      if ((GenF & 0x40) != 0) goto L8BFC;  // BVS L8BFC - Disk mode, ignore OBJ
+
+      // Check if operand is $0000 (suppress generation)
+      A = ValExpr;             // LDA ValExpr
+      A |= ValExpr_hi;         // ORA ValExpr+1
+      if (A != 0) goto L8BCF;  // BNE L8BCF - Not zero, set address
+
+      // Operand is $0000: suppress generation
+      A    = 0x80;  // LDA #$80 - N=1 suppress flag
+      GenF = A;     // STA GenF
+      goto L8BFC;   // BNE L8BFC (always taken after LDA #$80)
+
+    L8BCF:
+      // BIT RelCodeF - Check if REL mode active
+      if ((int8_t)RelCodeF < 0) goto L8BD3_REL;  // BMI L8BD3 - REL active, error
+
+    L8BDB:
+      // Check if address < EndSymT
+      A = EndSymT;  // LDA EndSymT
+      // CMP ValExpr - Compare EndSymT with ValExpr
+      // If EndSymT < ValExpr, carry clear
+      // If EndSymT >= ValExpr, carry set
+      A = EndSymT_hi;  // LDA EndSymT+1
+      // SBC ValExpr+1 (with borrow from previous compare)
+
+      // Perform 16-bit comparison: EndSymT vs ValExpr
+      // We want to error if ValExpr < EndSymT
+      // CMP/SBC sets carry if minuend >= subtrahend
+      // BCS means EndSymT >= ValExpr, which is the error condition
+      uint16_t endSymT_val = static_cast<uint16_t>(EndSymT);
+      uint16_t valExpr_val = ValExpr_word;
+
+      if (valExpr_val < endSymT_val) goto L8BD3_ADDR;  // Address < EndSymT, error
+
+      // Success: Set object generation parameters
+      A      = ValExpr;  // LDA ValExpr
+      ObjPC  = A;        // STA ObjPC
+      MemTop = A;        // STA MemTop
+      RLDEnd = A;        // STA RLDEnd
+
+      A         = ValExpr_hi;  // LDA ValExpr+1
+      ObjPC_hi  = A;           // STA ObjPC+1
+      RLDEnd_hi = A;           // STA RLDEnd+1
+      MemTop_hi = A;           // STA MemTop+1
+
+      // JSR L828A - Ensure val < mem limit (call Is16K check)
+      // Check if operand exceeds 16K memory limit
+      Is16K();             // JSR Is16K
+      if (!C) goto L8BFA;  // BCC L8BFA - Within limit, continue
+      // Memory limit exceeded
+      X = 0x06;          // LDX #$06 - overflow error
+      RegAsmEW(X);       // JSR RegAsmEW
+      goto DrtvFin_OBJ;  // Return
+
+    L8BFA:
+      A    = 0x00;  // LDA #$00 - N=0,V=0 enable memory generation
+      GenF = A;     // STA GenF
+
+    L8BFC:
+      goto DrtvFin_OBJ;  // JMP DrtvFin
+
+    L8BB8:
+      X = 0x24;     // LDX #$24 - directive operand error
+      RegAsmEW(X);  // JSR RegAsmEW
+      goto DrtvFin_OBJ;
+
+    L8BD3_REL:
+      X = 0x76;          // LDX #$76 - Can't use OBJ and REL directives together
+      RegAsmEW(X);       // JSR RegAsmEW
+      goto DrtvFin_OBJ;  // JMP DrtvFin
+
+    L8BD3_ADDR:
+      X = 0x75;          // LDX #$75 - Address is below end of symbol table
+      RegAsmEW(X);       // JSR RegAsmEW
+      goto DrtvFin_OBJ;  // JMP DrtvFin
+
+    DrtvFin_OBJ:
+      A = ZAB;    // LDA ZAB
+      Y = 0;      // LDY #0
+      C = false;  // CLC
+      return;     // RTS
+    }
+
+    //=================================================
+    // L9126 - REL directive handler
+    // ASM3.S lines 1168-1179 (label L9126)
+    //
+    // Enables relocatable code generation mode.
+    // Sets RelCodeF MSB to in(RelCodeF >> 1) | 0x80
+    //   The carry flag is set to 1, then ROR shifts right and puts carry into MSB
+    //=================================================
+    void HndlREL() {
+      g_LastDirectiveCalled = "HndlREL";
+
+    L9126:
+      // SEC; ROR RelCodeF - Set MSB to indicate REL mode
+      // SEC sets carry to 1, ROR shifts right and puts carry into bit 7
+      C        = true;                    // SEC
+      RelCodeF = (RelCodeF >> 1) | 0x80;  // ROR RelCodeF (shift right + set MSB)
+
+      // For now, we just note that file type would be set to REL
+      // JMP DrtvDone
+      DrtvDone();
+      return;
+    }
+
+    //=================================================
     // Greater than 16384 (16K)
     // C=0 - No
     // C=1 - Yes
@@ -5250,6 +5502,316 @@ namespace {
       A = 0x01;  // LDA #$01 - Normal (DDB)
       HndlDWCore();
       return;
+    }
+
+    //=================================================
+    // L8ECA - LST directive handler (ASM3.S lines 778-843)
+    // LST [ON|OFF] or LST [+/-][option[,option...]]
+    // Controls listing output and options
+    // Options (first letter only): C,U,E,W,G,A,V,S
+    // Original listing option letters: "CUEWGAVS"
+    //=================================================
+    void HndlLST() {
+      g_LastDirectiveCalled = "HndlLST";
+
+      // L8ECA - LST directive handler
+      // Define option letter string (from ASM3.S:857)
+      const char* LstOptns = "CUEWGAVS";
+
+      // Array of pointers to the 8 listing flag bytes
+      // Maps option letters to their flag bytes
+      std::uint8_t* LstFlags[8] = {
+          &LstCyc,     // 'C' - List CPU cycle times
+          &LstUnAsm,   // 'U' - List unassembled source
+          &LstExpMac,  // 'E' - List macro expansion
+          &LstWarns,   // 'W' - List warning messages
+          &LstGCode,   // 'G' - Generate object code
+          &LstASym,    // 'A' - List symbols alphabetically
+          &LstVSym,    // 'V' - List symbols by value
+          &Lst6Cols    // 'S' - Use 6-column symbol dump
+      };
+
+    L8ECA:
+      SkipSpcs();         // JSR SkipSpcs
+      ChrGot();           // JSR ChrGot
+      if (C) goto L8F34;  // BCS L8F34 - non-alphabetic char
+
+      // Check for ON/OFF
+      if (A == 'O') {
+        ChrGet();           // JSR ChrGet - Get next char
+        if (C) goto L8F34;  // BCS L8F34 - non-alphabetic
+
+        if (A == 'N') {
+          // ON: Set ListingF MSB
+          // Original: SEC; ROR ListingF
+          C        = true;
+          A        = ListingF;
+          A        = (A >> 1) | (C ? 0x80 : 0x00);
+          ListingF = A;
+          goto L8F22;
+        } else if (A == 'F') {
+          // OFF: Clear ListingF MSB
+          // Original: CLC; ROR ListingF
+          C        = false;
+          A        = ListingF;
+          A        = (A >> 1) | (C ? 0x80 : 0x00);
+          ListingF = A;
+          goto L8F22;
+        } else {
+          goto L8F34;  // Invalid after 'O'
+        }
+      }
+
+      // Parse listing options
+      // Implements ASM3.S:793-843 with +/- prefix support
+    L8EF3:
+      // Default to enable (ON)
+      bool enable = true;  // Will be used to set/clear MSB
+
+      // Check for +/- prefix
+      ChrGot();  // JSR ChrGot
+      if (A == '+') {
+        enable = true;      // Enable
+        ChrGet();           // JSR ChrGet - Get next char
+        if (C) goto L8F34;  // BCS - non-alphabetic
+      } else if (A == '-') {
+        enable = false;     // Disable
+        ChrGet();           // JSR ChrGet - Get next char
+        if (C) goto L8F34;  // BCS - non-alphabetic
+      } else {
+        // No prefix, check if alphabetic
+        if (C) goto L8F34;  // Non-alphabetic
+      }
+
+      // Look up option letter in LstOptns
+      // X will be the index (1-8)
+    L8F12:
+      X = 8;  // LDX #8 - Start from end
+    L8F14:
+      if (A == LstOptns[X - 1]) goto L8F1E;  // Match found
+      X--;                                   // DEX
+      if (X != 0) goto L8F14;                // BNE L8F14
+      goto L8F34;                            // No match, error
+
+    L8F1E:
+      // Store enable/disable flag to corresponding LstFlags byte
+      // Original: LDA OnOffSW; STA LstFlags-1,X
+      // We use SEC/ROR or CLC/ROR to set/clear MSB
+      A                = *LstFlags[X - 1];
+      A                = (A >> 1) | (enable ? 0x80 : 0x00);
+      *LstFlags[X - 1] = A;
+
+    L8F22:
+      ChrGet();            // JSR ChrGet
+      if (!C) goto L8F22;  // BCC L8F22 - alphabetic, continue
+
+      // Check for delimiter or end
+      if (A == SPACE) goto L8F37;  // Done
+      if (A == CR) goto L8F37;     // Done
+      Y++;                         // INY
+      if (A == ',') goto L8EF3;    // Next option
+      goto L8F34;                  // Invalid
+
+    L8F34:
+      // Error: directive operand error
+      X = 0x24;     // LDX #$24 - directive operand error
+      RegAsmEW(X);  // JSR RegAsmEW
+
+    L8F37:
+      // Done
+      DrtvDone();  // JMP DrtvDone
+    }
+
+    //=================================================
+    // HndlLIST - .LIST directive handler
+    // Simply enables listing (equivalent to LST ON)
+    // Original: ASM3.S has this as a separate handler that does SEC; ROR ListingF
+    // No operand parsing - .LIST is a toggle, not an options directive
+    //=================================================
+    void HndlLIST() {
+      g_LastDirectiveCalled = "HndlLIST";
+
+      // Enable listing by setting ListingF MSB
+      // Original: SEC; ROR ListingF
+      C        = true;
+      A        = ListingF;
+      A        = (A >> 1) | (C ? 0x80 : 0x00);
+      ListingF = A;
+      DrtvDone();  // JMP DrtvDone
+    }
+
+    //=================================================
+    // L8F3A - NOLIST directive handler (ASM3.S lines 846-856)
+    // Disables listing output by clearing ListingF MSB
+    // Original: ASM3.S:848-856
+    // No operand parsing required (ignores any operand)
+    //=================================================
+    void HndlNOLIST() {
+      g_LastDirectiveCalled = "HndlNOLIST";
+
+      // L8F3A - NOLIST directive handler
+      // Original: CLC; ROR ListingF; JMP DrtvDone
+      // Clear ListingF MSB
+      C        = false;
+      A        = ListingF;
+      A        = (A >> 1) | (C ? 0x80 : 0x00);
+      ListingF = A;
+      DrtvDone();  // JMP DrtvDone
+    }
+
+    //=================================================
+    // DoPage - PAGE directive handler (ASM3.S lines 860-871)
+    // Inserts a form feed (page break) in listing output
+    // Original: ASM3.S:862-871
+    // Pass 1: No-op (returns immediately)
+    // Pass 2+: Outputs form feed and advances to next record (stubbed for now)
+    //=================================================
+    void DoPage() {
+      g_LastDirectiveCalled = "DoPage";
+
+      // DoPage - PAGE directive handler
+      // Original: ASM3.S:862-871
+
+      // Check PassNbr: if Pass 1 (PassNbr == 0), return immediately
+      A = PassNbr;  // LDA PassNbr
+      if (A == 0) {
+        DrtvDone();  // BEQ L8F5E (Pass 1, nothing to do)
+        return;
+      }
+
+      // Pass 2+: Would output form feed and advance to next record
+      // Original code (ASM3.S:865-871):
+      //   BIT RVLsting   ; listing output enabled?
+      //   BPL L8F5E      ; no, skip
+      //   LDA #$0C       ; form feed character
+      //   JSR WrtLst     ; write to listing
+      //   JMP L9008      ; NextRec (advance to next record)
+      //
+      // TODO Phase 8: Implement listing output check (RVLsting not yet implemented)
+      // TODO Phase 8: Implement form-feed output (WrtLst not yet implemented)
+      // TODO Phase 8: Implement NextRec jump (L9008 not yet implemented)
+      //
+      // For now, stub these operations - they will be filled in Phase 8
+
+      // Stub: Check RVLsting (not yet implemented)
+      // if ((int8_t)RVLsting < 0) { ... output form feed ... }
+
+      // Stub: Output form feed (not yet implemented)
+      // A = 0x0C;  // Form feed
+      // WrtLst(A);
+
+      // Stub: Jump to NextRec (not yet implemented)
+      // goto NextRec; // or L9008
+
+      // For now, just fall through to DrtvDone
+      DrtvDone();  // Will be replaced with proper flow in Phase 8
+    }
+
+    //=================================================
+    // HndlSBTL - SBTL directive handler (ASM3.S lines 874-914)
+    // Parse and store subtitle string for page headers
+    // Original: ASM3.S:874-914, label L8F61
+    // Alias: .TITLE dot directive (same handler)
+    //
+    // SubTtlF flag values:
+    //   $00 = No subtitle
+    //   $40 = SBTL encountered without string
+    //   $FF = String stored in SubTitle buffer
+    //
+    // Pass 1: Set SubTtlF=$40 and skip to DoPage (optimization)
+    // Pass 2+: Parse optional subtitle string with delimiter-based extraction
+    //
+    // Format: SBTL [/string/]
+    //   - First non-space char is delimiter
+    //   - String extracted until delimiter repeats or CR
+    //   - Max 35 chars for subtitle
+    //   - Always ends with page break (DoPage call)
+    //=================================================
+    void HndlSBTL() {
+      // L8F61 - SBTL directive handler
+      // Original: ASM3.S:874-914
+
+      g_LastDirectiveCalled = "HndlSBTL";  // Track directive for debugging
+
+      // Set SubTtlF=$40 (marks SBTL encountered)
+      A       = 0x40;  // LDA #$40
+      SubTtlF = A;     // STA SubTtlF
+
+      // Check if Pass 1
+      A = PassNbr;             // LDA PassNbr
+      if (A == 0) goto L8FA0;  // BEQ L8FA0 - Pass 1, skip string parsing
+
+      // Pass 2+: Parse optional subtitle string
+      SkipSpcs();               // JSR SkipSpcs - Skip to next field
+      Delimitr = A;             // STA Delimitr - First char is delimiter
+      if (A == CR) goto L8FA0;  // CMP #CR / BEQ L8FA0 - Empty line, no string
+
+      AdvSrcP();    // JSR AdvSrcP - Advance SrcP past delimiter
+      SavIndX = X;  // STX SavIndX - Save X
+
+      X = 0;  // LDX #0 - Initialize buffer index
+      Y = 0;  // Y already set to 0 by AdvSrcP, but explicit for clarity
+
+    L8F79:
+      Y++;                            // INY
+      A = SrcP_at(Y);                 // LDA (SrcP),Y - Read character
+      if (A == Delimitr) goto L8F8C;  // CMP Delimitr / BEQ L8F8C
+      if (A == CR) {                  // CMP #CR - Unterminated string (no closing delimiter)
+        // Register directive operand error (0x24) and return
+        X = 0x24;     // LDX #$24 - Directive operand error
+        RegAsmEW(X);  // JSR RegAsmEW
+        X = SavIndX;  // LDX SavIndX - Restore X
+        DrtvDone();   // Common directive return
+        return;
+      }
+
+      SubTitle[X] = A;         // STA SubTitle,X - Store char in buffer
+      X++;                     // INX
+      if (X < 35) goto L8F79;  // CPX #35 / BCC L8F79 - Continue if < 35
+
+      // X == 35: 35 chars read, next char MUST be delimiter or CR
+      Y++;             // INY - Advance to next position
+      A = SrcP_at(Y);  // LDA (SrcP),Y - Read next char
+      if (A == Delimitr) {
+        Y++;  // INY - Advance past delimiter
+        goto L8F8D;
+      }
+      // Not delimiter => error (exceeded max length or unterminated)
+      X = 0x24;     // LDX #$24 - Directive operand error
+      RegAsmEW(X);  // JSR RegAsmEW
+      X = SavIndX;  // LDX SavIndX - Restore X
+      DrtvDone();   // Common directive return
+      return;
+
+    L8F8C:
+      Y++;  // INY - Bump past closing delimiter
+      goto L8F8D;
+
+    L8F8D:
+      // Common exit point: Y already advanced past delimiter
+      // Update source pointer and check for trailing garbage
+      AdvSrcP();  // Advance source pointer
+
+      A           = 0;     // LDA #0
+      SubTitle[X] = A;     // STA SubTitle,X - Null-terminate string
+      A           = 0xFF;  // LDA #$FF
+      SubTtlF     = A;     // STA SubTtlF - Flag there is a string (V=1)
+
+      SkipSpcs();               // Skip any spaces after closing delimiter
+      if (A == CR) goto L8F9E;  // If CR, valid (end of line)
+
+      // Trailing garbage after delimiter => error
+      X = 0x24;     // LDX #$24 - Directive operand error
+      RegAsmEW(X);  // JSR RegAsmEW
+      X = SavIndX;  // LDX SavIndX - Restore X
+      DrtvDone();   // Common directive return
+      return;
+
+    L8F9E:
+      X = SavIndX;  // LDX SavIndX - Restore X
+
+    L8FA0:
+      DoPage();  // JMP DoPage - Always do a form feed (page break)
     }
 
     //=================================================
@@ -6438,6 +7000,50 @@ namespace {
       }
 
       //=================================================
+      // Phase 7.5: OBJ Directive Test Helpers
+      //=================================================
+
+      void SetRelCodeF(uint8_t value) {
+        RelCodeF = value;
+      }
+
+      uint8_t GetRelCodeF() {
+        return RelCodeF;
+      }
+
+      void SetEndSymT(uint16_t value) {
+        EndSymT = value;
+      }
+
+      uint16_t GetEndSymT() {
+        return EndSymT;
+      }
+
+      void SetMemTop(uint16_t value) {
+        MemTop = value;
+      }
+
+      uint16_t GetMemTop() {
+        return MemTop;
+      }
+
+      void SetRLDEnd(uint16_t value) {
+        RLDEnd = value;
+      }
+
+      uint16_t GetRLDEnd() {
+        return RLDEnd;
+      }
+
+      void HndlOBJ() {
+        ::HndlOBJ();
+      }
+
+      void HndlREL() {
+        ::HndlREL();
+      }
+
+      //=================================================
       // Phase 3b: GenMCode Test Helpers
       //=================================================
 
@@ -6786,6 +7392,128 @@ namespace {
           return GMC[index];
         }
         return 0;
+      }
+
+      //=================================================
+      // Phase 7.2: LST Directive Test Helpers
+      //=================================================
+
+      // Listing flag accessors
+      uint8_t GetListingF() {
+        return ListingF;
+      }
+
+      void SetListingF(uint8_t value) {
+        ListingF = value;
+      }
+
+      uint8_t GetLstCyc() {
+        return LstCyc;
+      }
+
+      void SetLstCyc(uint8_t value) {
+        LstCyc = value;
+      }
+
+      uint8_t GetLstUnAsm() {
+        return LstUnAsm;
+      }
+
+      void SetLstUnAsm(uint8_t value) {
+        LstUnAsm = value;
+      }
+
+      uint8_t GetLstExpMac() {
+        return LstExpMac;
+      }
+
+      void SetLstExpMac(uint8_t value) {
+        LstExpMac = value;
+      }
+
+      uint8_t GetLstWarns() {
+        return LstWarns;
+      }
+
+      void SetLstWarns(uint8_t value) {
+        LstWarns = value;
+      }
+
+      uint8_t GetLstGCode() {
+        return LstGCode;
+      }
+
+      void SetLstGCode(uint8_t value) {
+        LstGCode = value;
+      }
+
+      uint8_t GetLstASym() {
+        return LstASym;
+      }
+
+      void SetLstASym(uint8_t value) {
+        LstASym = value;
+      }
+
+      uint8_t GetLstVSym() {
+        return LstVSym;
+      }
+
+      void SetLstVSym(uint8_t value) {
+        LstVSym = value;
+      }
+
+      uint8_t GetLst6Cols() {
+        return Lst6Cols;
+      }
+
+      void SetLst6Cols(uint8_t value) {
+        Lst6Cols = value;
+      }
+
+      // Direct handler call
+      void HndlLST() {
+        ::HndlLST();
+      }
+
+      //=================================================
+      // Phase 7.3: NOLIST and PAGE Directive Test Helpers
+      //=================================================
+
+      // Direct handler calls
+      void HndlNOLIST() {
+        ::HndlNOLIST();
+      }
+
+      void DoPage() {
+        ::DoPage();
+      }
+
+      //=================================================
+      // Phase 7.4: SBTL Directive Test Helpers
+      //=================================================
+
+      // SubTtlF accessor
+      uint8_t GetSubTtlF() {
+        return SubTtlF;
+      }
+
+      void SetSubTtlF(uint8_t value) {
+        SubTtlF = value;
+      }
+
+      // SubTitle accessor (returns C-string pointer to buffer)
+      const char* GetSubTitle() {
+        return reinterpret_cast<const char*>(SubTitle);
+      }
+
+      void ClearSubTitle() {
+        std::memset(SubTitle, 0, sizeof(SubTitle));
+      }
+
+      // Direct handler call
+      void HndlSBTL() {
+        ::HndlSBTL();
       }
 
     }  // namespace Asm
