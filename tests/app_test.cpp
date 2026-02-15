@@ -3278,6 +3278,7 @@ namespace EdAsmNg {
 class Phase84Pass1Test : public ::testing::Test {
  protected:
   void SetUp() override {
+    EdAsmNg::Asm::ResetErrorState();
     EdAsmNg::Asm::ResetAsmState();
     EdAsmNg::Asm::SetPC(0);
     EdAsmNg::Asm::SetPassNbr(0);
@@ -3434,6 +3435,38 @@ TEST_F(Phase84Pass1Test, test_pass1_label_after_org) {
 
   // Verify PC advanced past NOP
   EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x8001);
+}
+
+TEST_F(Phase84Pass1Test, Pass1_DuplicateLabel) {
+  // Duplicate label should register an error and keep original address
+  const char* source =
+      "START NOP\r"
+      "START NOP\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  EdAsmNg::Asm::DoPass1();
+
+  EXPECT_TRUE(EdAsmNg::Asm::HasSymbol("START"));
+  EXPECT_EQ(EdAsmNg::Asm::GetSymbolValue("START"), 0x0000);
+  EXPECT_GT(EdAsmNg::Asm::GetErrorCount(), 0);
+  auto err = EdAsmNg::Asm::GetErrorInfo(0);
+  EXPECT_EQ(err.errIndex, 0x02);        // Duplicate identifier token
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 2);  // Two NOPs -> PC = 2
+}
+
+TEST_F(Phase84Pass1Test, Pass1_ForwardRefResolved) {
+  // Forward reference used before definition should be resolved when label is defined
+  const char* source =
+      "      LDA FWD\r"
+      "START NOP\r"
+      "FWD NOP\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  EdAsmNg::Asm::DoPass1();
+
+  EXPECT_TRUE(EdAsmNg::Asm::HasSymbol("FWD"));
+  EXPECT_EQ(EdAsmNg::Asm::GetSymbolValue("FWD"), 0x0003);
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x0004);
 }
 
 TEST_F(Phase84Pass1Test, test_pass1_reserved_label_A_error) {

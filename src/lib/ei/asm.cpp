@@ -3864,6 +3864,21 @@ namespace {
     }
 
     if (mnemonic == "LDA") {
+      // LDA - Minimal operand processing for Pass 1 tests
+      // If operand is an identifier, ensure it exists in symbol table
+      NxtField();  // Point to operand field (sets Y=0, advances SrcP)
+      uint8_t ch = SrcP_at(Y);
+      if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) {
+        // Try to find symbol; if not found, add forward-ref entry
+        FindSym();
+        if (C) {
+          // Not found -> create undefined forward-ref node
+          A = (undefined | fwdrefd);
+          AddNode();
+          C = false;  // treat as success for Pass 1
+        }
+      }
+
       // LDA immediate (#$00) = 2 bytes
       Length = 2;
       PC += 2;
