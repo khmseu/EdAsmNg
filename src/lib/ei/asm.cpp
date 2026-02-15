@@ -64,6 +64,11 @@ namespace {
   void ValidateRange();
   void EvalExpr();
   void EvalOprnd();
+  void AdvSrcP();
+  void SkipSpcs();
+  void StorGMC();
+  void AdvPC();
+  void Is16K();
 
   // Directive handler forward declarations
   void DrtvDone();
@@ -74,6 +79,13 @@ namespace {
   void HndlBLOCK();
   void HndlASCII();
   void HndlDBYTE();
+  void HndlDS();
+  void HndlDFB();
+  void HndlDW();
+  void HndlDWCore();
+  void HndlASC();
+  void HndlASC_Core();
+  void HndlDCI();
 
   // Extern array declarations (defined later in file)
   extern const std::uint8_t CharMap1[];
@@ -2322,10 +2334,16 @@ namespace {
   // AdvPC - A=# to advance
   void AdvPC() {
     // CLC
-    A += PC;
-    PC = A;
-    if (A >= PC) return;  // no carry (BCC doRet4)
-    PC_hi++;              // INC PC+1
+    uint8_t  pc_lo = static_cast<uint8_t>(PC & 0xFF);
+    uint8_t  pc_hi = static_cast<uint8_t>((PC >> 8) & 0xFF);
+    uint16_t sum   = static_cast<uint16_t>(pc_lo) + A;
+    A              = static_cast<uint8_t>(sum & 0xFF);
+    PC             = (PC & 0xFF00) | A;
+    C              = (sum > 0xFF);
+    if (sum > 0xFF) {
+      pc_hi++;
+      PC = (static_cast<uint16_t>(pc_hi) << 8) | A;
+    }
   }
 
   // NextRec - Set SrcP to beginning of next assembly src line
@@ -2693,7 +2711,9 @@ namespace {
     // BIT GenF - Is code generation suppressed?
     if ((int8_t)GenF < 0) return;        // Yes (BMI doRTS7)
     if ((GenF & 0x40) != 0) goto L80C5;  // Write to disk (BVS)
-    ObjPC[Y] = A;                        // Write to mem
+    if (g_test_obj_memory_enabled) {
+      g_test_obj_memory[static_cast<uint16_t>(ObjPC + Y)] = A;  // Write to mem
+    }
     // BVC L80C8 - always
     goto L80C8;
   L80C5:
@@ -4579,44 +4599,657 @@ namespace {
       return;     // RTS
     }
 
+    //=================================================
+    // Greater than 16384 (16K)
+    // C=0 - No
+    // C=1 - Yes
+    //=================================================
+    void Is16K() {
+    Is16K:
+      A = ValExpr_hi;                   // BIT ValExpr+1
+      if ((A & 0x80) != 0) goto L8BAB;  // BMI L8BAB
+      if ((A & 0x40) == 0) goto L8BA9;  // BVC L8BA9
+      A = ValExpr_hi & 0x3F;            // AND #%00111111
+      A |= ValExpr;                     // ORA ValExpr
+      if (A != 0) goto L8BAB;           // BNE L8BAB
+    L8BA9:
+      C = false;  // CLC
+      return;     // RTS
+    L8BAB:
+      C = true;  // SEC
+      return;    // RTS
+    }
+
+    //=================================================
+    // L8C0E - DS/.BLOCK directive handler (ASM3.S lines 360-461)
+    // Define Storage / Reserve space
+    // Format: DS size[,filler]
+    // Pass 1: Advance PC by size bytes
+    // Pass 2: Optionally fill with filler byte or random data
+    //=================================================
+    void HndlDS() {
+      g_LastDirectiveCalled = "HndlDS";
+      uint16_t size         = 0;
+      uint16_t sum          = 0;
+
+    L8C0E:
+      EvalOprnd();         // JSR EvalOprnd
+      if (C) goto L8C1D;   // BCS L8C1D - Error
+      Is16K();             // JSR Is16K - Is expr's val > 16384?
+      if (!C) goto L8C23;  // BCC L8C23
+      X = 0x06;            // LDX #$06 - overflow
+      goto L8C1A;
+
+    L8C1A:
+      // DB $2C (skip next LDX)
+      goto L8C1D;
+
+    L8C23:
+      // SEC
+      RndF = 0x80;             // ROR RndF - Assume no filler char (bit 7 set = no filler)
+      A    = NxtToken;         // LDA NxtToken - Is sp/cr?
+      if (A == 0) goto L8C5F;  // BEQ L8C5F - Yes, no filler
+
+      if (A != 0x01) goto L8C1B;  // CMP #$01 / BNE L8C1B - Not comma, error
+
+      // Save ValExpr (size) on stack
+      size = ValExpr_word;  // PHA/PHA
+
+      Y++;  // INY
+      Y++;  // INY
+      // JSR WhiteSpc - Is it sp/cr after comma?
+      A = SrcP_at(Y);
+      if (A == SPACE || A == CR) goto L8C44;  // BEQ L8C44 - Yes, error (no filler after comma)
+
+      EvalExpr();              // JSR EvalExpr - 2nd expr -> filler byte
+      if (C) goto L8C44;       // BCS L8C44 - Error
+      A = NxtToken;            // LDA NxtToken - Make sure nxt char is sp/cr
+      if (A != 0) goto L8C44;  // BNE L8C44 - No, error
+
+      // Got filler byte
+      RndF   = 0x00;        // CLC / ROR RndF - Flag we will use a filler (bit 7 clear)
+      A      = ValExpr;     // LDA ValExpr
+      Filler = A;           // STA Filler - byte used to fill
+      A      = ValExpr_hi;  // LDA ValExpr+1
+      if (A != 0) {         // BEQ L8C59 - Must be 8-bits
+        X = 0x28;           // LDX #$28 - byte overflow err
+        RegAsmEW(X);        // JSR RegAsmEW
+      }
+
+      // Restore size
+      ValExpr_word = size;  // PLA/PLA
+      goto L8C5F;
+
+    L8C44:
+      // Error: dump saved values and report error
+      // PLA/PLA (already handled above with local variable)
+      goto L8C1B;
+
+    L8C1B:
+      X = 0x24;  // LDX #$24 - directive operand err
+    L8C1D:
+      RegAsmEW(X);  // JSR RegAsmEW
+      goto DrtvFin_DS;
+
+    L8C5F:
+      // Calculate new PC
+      A     = ValExpr;                          // LDA ValExpr - # of bytes to reserve
+      sum   = A + (PC & 0xFF);                  // CLC / ADC PC
+      NewPC = (NewPC & 0xFF00) | (sum & 0xFF);  // STA NewPC - New PC low byte
+
+      A     = ValExpr_hi;                   // LDA ValExpr+1
+      A     = A + (PC >> 8) + (sum >> 8);   // ADC PC+1 (with carry from low byte)
+      NewPC = (NewPC & 0x00FF) | (A << 8);  // STA NewPC+1 - New PC high byte
+
+      A = PassNbr;             // LDA PassNbr
+      if (A == 0) goto L8CA0;  // BEQ L8CA0 - Pass 1, skip output
+
+      // Pass 2: Output filler bytes or random data
+      A         = ValExpr;     // LDA ValExpr
+      ERfield   = A;           // STA ERfield - # of bytes reserve (low)
+      A         = ValExpr_hi;  // LDA ValExpr+1
+      ValExpr_2 = A;           // STA ERfield+1 - # of bytes reserve (high)
+
+      A        = 0x81;  // LDA #%10000001
+      LstCodeF = A;     // STA LstCodeF
+
+      // BIT GenF - BMI L8C9D - No obj code output
+      if ((int8_t)GenF < 0) goto L8C9D;
+
+      // BIT RndF - BMI L8C9A - No filler (use random)
+      if ((int8_t)RndF < 0) goto L8C9A;
+
+      // Fill with filler byte
+    L8C84:
+      A = ValExpr;             // LDA ValExpr
+      A |= ValExpr_hi;         // ORA ValExpr+1
+      if (A == 0) goto L8C9D;  // BEQ L8C9D - Done
+
+      A = Filler;  // LDA Filler
+      StorByt();   // JSR StorByt
+
+      A = ValExpr;             // LDA ValExpr
+      if (A != 0) goto L8C95;  // BNE L8C95
+      ValExpr_hi--;            // DEC ValExpr+1
+    L8C95:
+      ValExpr--;   // DEC ValExpr
+      goto L8C84;  // JMP L8C84
+
+    L8C9A:
+      // Fill with random data (stubbed - fill with zeros)
+    L8CAB:
+      A = ValExpr;             // LDA ValExpr
+      A |= ValExpr_hi;         // ORA ValExpr+1
+      if (A == 0) goto L8C9D;  // BEQ L8C9D - Done
+      A = 0x00;                // LDA #$00
+      StorByt();               // JSR StorByt
+      A = ValExpr;             // LDA ValExpr
+      if (A != 0) goto L8CBD;  // BNE L8CBD
+      ValExpr_hi--;            // DEC ValExpr+1
+    L8CBD:
+      ValExpr--;   // DEC ValExpr
+      goto L8CAB;  // JMP L8CAB
+
+    L8C9D:
+        // JSR PrtAsmLn - print code,stmt (stubbed)
+        ;
+
+    L8CA0:
+      // Adjust PC
+      A  = NewPC & 0xFF;              // LDA NewPC
+      PC = (PC & 0xFF00) | A;         // STA PC
+      A  = NewPC >> 8;                // LDA NewPC+1
+      PC = (PC & 0x00FF) | (A << 8);  // STA PC+1
+
+    DrtvFin_DS:
+      A = ZAB;    // LDA ZAB
+      Y = 0;      // LDY #0
+      C = false;  // CLC
+      return;     // RTS
+    }
+
+    //=================================================
+    // L8CC3 - DFB/BYTE directive handler (ASM3.S lines 465-550)
+    // Define Byte
+    // Format: DFB byte1[,byte2[,byte3[,byte4]]]
+    // Emits up to 4 bytes per statement
+    //=================================================
+    void HndlDFB() {
+      g_LastDirectiveCalled = "HndlDFB";
+
+    L8CC3:
+      // JSR L8D5E - Setup
+      X        = 0x21;  // LDX #%00100001 / STX LstCodeF
+      LstCodeF = X;
+      X        = 0;  // LDX #0
+      TotCnt   = X;  // STX TotCnt - cntr
+
+    NxtDFB:
+      ByteCnt = X;        // STX ByteCnt - curr cnt
+      EvalExpr();         // JSR EvalExpr - rtn will take care of comma
+      X      = ByteCnt;   // LDX ByteCnt - double as index
+      A      = ValExpr;   // LDA ValExpr - val defined
+      GMC[X] = A;         // STA GMC,X
+      X++;                // INX
+      if (C) goto L8CED;  // BCS L8CED - err during eval
+
+      A = PassNbr;             // LDA PassNbr
+      if (A == 0) goto L8CED;  // BEQ L8CED - Pass 1, skip validation
+
+      // Validate byte range (must be 0-255)
+      A = ValExpr_hi;  // LDA ValExpr+1
+      if (A != 0) {    // Check if high byte is non-zero
+        // Byte overflow error
+        uint8_t savedX = X;
+        uint8_t savedY = Y;
+        X              = 0x28;  // LDX #$28 - byte overflow err
+        RegAsmEW(X);            // JSR RegAsmEW
+        X = savedX;
+        Y = savedY;
+      }
+
+      A = RelExprF;            // LDA RelExprF - Evaluate fr relocatable expr?
+      if (A == 0) goto L8CED;  // BEQ L8CED - No, abs
+
+      // For relocatable expressions, create RLD entry (stubbed for now)
+      // Original code creates RLD entries - we'll skip this for Phase 6
+
+    L8CED:
+      ByteCnt = X;             // STX ByteCnt (updated)
+      Length  = X;             // STX Length
+      A       = NxtToken;      // LDA NxtToken
+      if (A == 0) goto L8D0C;  // BEQ L8D0C - cr/space, done with this batch
+
+      A ^= 0x01;               // EOR #$01
+      if (A == 0) goto L8CFD;  // BEQ L8CFD - Comma, more values
+
+      // Error: invalid token
+      X = 0x24;     // LDX #$24 - directive operand err
+      RegAsmEW(X);  // JSR RegAsmEW
+      goto L8D35;
+
+    L8CFD:
+      Y++;                  // INY
+      Y++;                  // INY
+      A = SrcP_at(Y);       // LDA (SrcP),Y
+      if (A < SPACE + 1) {  // CMP #SPACE+1 / BCC - Invalid
+        X = 0x24;           // Error
+        RegAsmEW(X);
+        goto L8D35;
+      }
+
+      if (X >= 4) {  // CPX #4 - 4 bytes generated?
+        // Flush current batch and continue
+        AdvSrcP();  // JSR AdvSrcP
+        goto L8D0C;
+      }
+      goto NxtDFB;  // Continue adding bytes
+
+    L8D0C:
+      A = PassNbr;             // LDA PassNbr
+      if (A == 0) goto L8D20;  // BEQ L8D20 - Pass 1
+
+      // Pass 2: Store bytes
+      X = 0;  // LDX #0
+      // JSR L8E28 - Store MC, update PC etc (simplified)
+      StorGMC();   // Store generated machine code
+      A = Length;  // LDA Length
+      AdvPC();     // JSR AdvPC
+      // JSR PrtAsmLn (stubbed)
+
+    L8D15:
+      A = NxtToken;            // LDA NxtToken
+      if (A == 0) goto L8D26;  // BEQ L8D26 - cr/space -> done
+
+      X = 0;  // LDX #0 - Reset cnt
+      Y = 0;  // LDY #0 - & index
+      goto NxtDFB;
+
+    L8D20:
+      // Pass 1: Just update total count
+      // JSR L8D52 - update total cnt
+      A      = Length;      // LDA Length
+      A      = A + TotCnt;  // CLC / ADC TotCnt
+      TotCnt = A;           // STA TotCnt
+      Length = 0;           // LDA #0 / STA Length
+      goto L8D15;
+
+    L8D26:
+      A = PassNbr;                    // LDA PassNbr
+      if (A != 0) goto DrtvDone_DFB;  // BNE DrtvDone_DFB - Pass 2
+
+      // Pass 1: Update PC by total count
+      A      = Length;      // (already set above)
+      A      = A + TotCnt;  // CLC / ADC TotCnt
+      TotCnt = A;           // STA TotCnt
+      A      = TotCnt;      // LDA TotCnt
+      AdvPC();              // JSR AdvPC
+      goto DrtvDone_DFB;
+
+    L8D35:
+      A = PassNbr;   // LDA PassNbr
+      if (A == 0) {  // Pass 1
+        A      = Length;
+        A      = A + TotCnt;
+        TotCnt = A;
+        A      = TotCnt;
+      } else {
+        // Pass 2
+        StorGMC();  // JSR StorGMC - write instr
+        // JSR PrtAsmLn (stubbed)
+        A = Length;
+      }
+      AdvPC();  // JSR AdvPC
+
+    DrtvDone_DFB:
+      A      = 0;     // LDA #0
+      Length = A;     // STA Length
+      A      = 0x83;  // LDA #$83
+      ZAB    = A;     // STA ZAB
+
+      Y = 0;      // LDY #0
+      A = ZAB;    // LDA ZAB
+      C = false;  // CLC
+      return;     // RTS
+    }
+
+    //=================================================
+    // L8D67 - DW/WORD directive handler (ASM3.S lines 563-629)
+    // Define Word
+    // Format: DW word1[,word2]
+    // Emits 16-bit words in little-endian format (low byte first)
+    //=================================================
+    void HndlDW() {
+      g_LastDirectiveCalled = "HndlDW";
+
+    L8D67:
+      A = 0x00;  // LDA #$00 - Reverse (little-endian)
+      HndlDWCore();
+    }
+
+    //=================================================
+    // L8D69 - DW/DDB core handler (ASM3.S lines 569-629)
+    // Entry: A = EndianF (0x00=DW, 0x01=DDB)
+    //=================================================
+    void HndlDWCore() {
+    L8D69:
+      EndianF = A;  // STA EndianF (enter here for DDB)
+
+      // JSR L8D5E - Setup
+      X        = 0x21;  // LDX #%00100001
+      LstCodeF = X;     // STX LstCodeF
+      X        = 0;     // LDX #0
+      TotCnt   = X;     // STX TotCnt - cntr
+
+    NxtDW:
+      EvalExpr();   // JSR EvalExpr
+      SavIndY = Y;  // STY SavIndY - Index into operand field
+
+      Y = ValExpr;             // LDY ValExpr
+      X = ValExpr_hi;          // LDX ValExpr+1
+      A = EndianF;             // LDA EndianF
+      if (A == 0) goto L8D81;  // BEQ L8D81 - Little-endian
+
+      // Big-endian (DDB): high byte first
+      GMC[1] = Y;  // STY GMC+1
+      GMC[0] = X;  // STX GMC
+      goto L8D85;
+
+    L8D81:
+      // Little-endian (DW): low byte first
+      GMC[0] = Y;  // STY GMC
+      GMC[1] = X;  // STX GMC+1
+
+    L8D85:
+      if (C) goto L8D98;  // BCS L8D98 - err during eval
+
+      A = PassNbr;             // LDA PassNbr
+      if (A == 0) goto L8D98;  // BEQ L8D98 - Pass 1
+
+      A = RelExprF;            // LDA RelExprF
+      if (A == 0) goto L8D98;  // BEQ L8D98 - abs expr
+
+      // For relocatable expressions, create RLD entry (stubbed for now)
+      // Original: JSR AddRLDEnt
+
+    L8D98:
+      Y      = SavIndY;        // LDY SavIndY - Restore index into operand field
+      X      = 2;              // LDX #2
+      Length = X;              // STX Length
+      A      = NxtToken;       // LDA NxtToken
+      if (A == 0) goto L8DB4;  // BEQ L8DB4 - cr/space -> done
+
+      A ^= 0x01;               // EOR #$01
+      if (A == 0) goto L8DA9;  // BEQ L8DA9 - comma
+
+      // Error
+      X = 0x24;
+      RegAsmEW(X);
+      goto L8D35_DW;
+
+    L8DA9:
+      Y++;                  // INY
+      Y++;                  // INY
+      A = SrcP_at(Y);       // LDA (SrcP),Y
+      if (A < SPACE + 1) {  // CMP #SPACE+1 / BCC - Invalid
+        X = 0x24;
+        RegAsmEW(X);
+        goto L8D35_DW;
+      }
+      AdvSrcP();  // JSR AdvSrcP
+
+    L8DB4:
+      A = PassNbr;             // LDA PassNbr
+      if (A == 0) goto L8DC7;  // BEQ L8DC7 - Pass 1
+
+      // Pass 2: Store word
+      StorGMC();   // JSR L8E28 - Store MC, update PC, print
+      A = Length;  // LDA Length
+      AdvPC();     // JSR AdvPC
+
+    L8DBB:
+      A = NxtToken;  // LDA NxtToken - Is cr/space?
+      if (A != 0) {  // BNE L8DC2 - No, comma or )
+        Y = 0;       // LDY #$00 - Index into src line
+        goto NxtDW;
+      }
+      goto L8D26_DW;  // Done
+
+    L8DC7:
+      // Pass 1: Update total count
+      A      = Length;      // LDA Length
+      A      = A + TotCnt;  // CLC / ADC TotCnt
+      TotCnt = A;           // STA TotCnt
+      Length = 0;           // LDA #0 / STA Length
+      goto L8DBB;
+
+    L8D26_DW:
+      A = PassNbr;                   // LDA PassNbr
+      if (A != 0) goto DrtvDone_DW;  // BNE DrtvDone_DW - Pass 2
+
+      // Pass 1: Update PC by total count
+      A      = Length;
+      A      = A + TotCnt;
+      TotCnt = A;
+      A      = TotCnt;
+      AdvPC();
+      goto DrtvDone_DW;
+
+    L8D35_DW:
+      A = PassNbr;
+      if (A == 0) {
+        A      = Length;
+        A      = A + TotCnt;
+        TotCnt = A;
+        A      = TotCnt;
+      } else {
+        StorGMC();
+        A = Length;
+      }
+      AdvPC();
+
+    DrtvDone_DW:
+      A      = 0;
+      Length = A;
+      A      = 0x83;
+      ZAB    = A;
+
+      Y = 0;
+      A = ZAB;
+      C = false;
+      return;
+    }
+
+    //=================================================
+    // L8DD2 - ASC directive handler (ASM3.S lines 634-700)
+    // ASCII String
+    // Format: ASC "string"
+    // Emits ASCII bytes for each character in the string
+    //=================================================
+    void HndlASC() {
+      g_LastDirectiveCalled = "HndlASC";
+
+    L8DD2:
+      A       = 0xFF;  // LDA #-1
+      StrType = A;     // STA StrType - Flag as ASC (not DCI)
+
+      HndlASC_Core();
+      return;
+    }
+
+    //=================================================
+    // L8DD6 - ASC/DCI core handler
+    //=================================================
+    void HndlASC_Core() {
+      uint8_t bufIdx = 0;
+
+    L8DD6:
+      // JSR SkipSpcs
+      Y = 0;
+      while (SrcP_at(Y) == SPACE) Y++;
+
+      A        = SrcP_at(Y);  // Get delimiter
+      Delimitr = A;           // STA Delimitr
+      // JSR AdvSrcP - Skip past delimiter
+      Y++;
+
+      A = PassNbr;             // LDA PassNbr
+      if (A == 0) goto L8E41;  // BEQ L8E41 - Pass 1
+
+      // Pass 2: Emit string bytes
+      A        = 0x21;  // LDA #%00100001
+      LstCodeF = A;     // STA LstCodeF
+
+      // Y now points past the delimiter, start at byte 1
+      bufIdx = 0;  // Track position in GMC buffer
+
+    L8DED:
+      A = SrcP_at(Y);                     // LDA (SrcP),Y
+      if (A == Delimitr) goto GotDelim2;  // BEQ GotDelim2 - Done
+      if (A == CR) goto L8E13;            // BEQ L8E13 - No closing delimiter
+
+      // Store byte in GMC
+      A |= msbF;        // ORA msbF - Apply MSB flag if set
+      GMC[bufIdx] = A;  // STA GMC-1,Y (using bufIdx instead)
+      bufIdx++;
+      Y++;  // INY
+
+      if (bufIdx >= 4) {  // CPY #5 - 4 bytes at a time
+        Length = bufIdx;  // STY Length
+        StorGMC();        // JSR L8E28 - Store MC, update PC etc
+        A = Length;
+        AdvPC();
+        bufIdx = 0;  // Reset buffer index
+      }
+      goto L8DED;  // Continue
+
+    GotDelim2:
+      Y++;             // INY - Skip past 2nd delimiter
+      A = SrcP_at(Y);  // JSR WhiteSpc - Do we have a sp/cr?
+      if (A != SPACE && A != CR) {
+        // Error: invalid delimiter
+        X = 0x24;
+        RegAsmEW(X);
+      }
+      // Y--; not needed, bufIdx tracks position
+
+    L8E13:
+      // bufIdx now contains the number of remaining bytes
+      Length = bufIdx;  // STY Length
+
+      // BIT StrType - ASC?
+      if ((int8_t)StrType >= 0) {  // BMI - Yes (StrType = -1 for ASC)
+        // DCI: set high bit on last char
+        if (bufIdx > 0) {
+          A = GMC[bufIdx - 1];  // LDA GMC-1,Y
+          A |= 0x80;            // ORA #$80
+          GMC[bufIdx - 1] = A;  // STA GMC-1,Y
+        }
+      }
+
+      if (bufIdx > 0) {
+        StorGMC();  // JSR L8E28 - Store MC, update PC etc
+        A = Length;
+        AdvPC();
+      }
+      goto DrtvDone_ASC;
+
+    L8E41:
+      // Pass 1: Just count bytes
+      A = SrcP_at(Y);                 // LDA (SrcP),Y
+      if (A == Delimitr) goto L8E4C;  // Found closing delimiter
+      if (A == CR) goto L8E4C;        // CR without closing delimiter
+      Y++;                            // INY
+      goto L8E41;                     // Keep counting
+
+    L8E4C:
+      // Y now contains count + 1 (one past delimiter position)
+      Y--;    // DEY - Adjust to actual byte count
+      A = Y;  // TYA
+      if (A > 0) {
+        AdvPC();  // JSR AdvPC - (A) has # of bytes to be added to PC
+      }
+
+    DrtvDone_ASC:
+      A      = 0;
+      Length = A;
+      A      = 0x83;
+      ZAB    = A;
+
+      Y = 0;
+      A = ZAB;
+      C = false;
+      return;
+    }
+
+    //=================================================
+    // L8E54 - DCI directive handler (ASM3.S lines 704-720)
+    // DCI (Inverted Last Character)
+    // Format: DCI "string"
+    // Emits ASCII bytes, with high bit set on last character
+    //=================================================
+    void HndlDCI() {
+      g_LastDirectiveCalled = "HndlDCI";
+
+    L8E54:
+      A                  = msbF;  // LDA msbF
+      uint8_t saved_msbF = A;     // PHA - Save current MSB flag
+
+      A    = 0x00;  // LDA #$00
+      msbF = A;     // STA msbF - OFF temporarily
+
+      A       = 0x00;  // LDA #$00
+      StrType = A;     // STA StrType - Flag as DCI (not ASC)
+
+      HndlASC_Core();  // JSR L8DD6 - Scan as all chars except last as ASC
+
+      // Restore msbF after ASC/DCI handling
+      msbF = saved_msbF;  // PLA / STA msbF
+      goto DrtvDone_DCI;
+
+    DrtvDone_DCI:
+      A = ZAB;
+      Y = 0;
+      C = false;
+      return;
+    }
+
     // .BYTE/.DFB directive handler stub
     void HndlBYTE() {
       g_LastDirectiveCalled = "HndlBYTE";
-      // TODO: Implement BYTE directive
-      // For now, just return via DrtvDone
-      DrtvDone();
+      // Alias to HndlDFB
+      HndlDFB();
     }
 
     // .WORD/.DW directive handler stub
     void HndlWORD() {
       g_LastDirectiveCalled = "HndlWORD";
-      // TODO: Implement WORD directive
-      // For now, just return via DrtvDone
-      DrtvDone();
+      // Alias to HndlDW
+      HndlDW();
     }
 
     // .BLOCK/.DS directive handler stub
     void HndlBLOCK() {
       g_LastDirectiveCalled = "HndlBLOCK";
-      // TODO: Implement BLOCK directive
-      // For now, just return via DrtvDone
-      DrtvDone();
+      // Alias to HndlDS
+      HndlDS();
     }
 
     // .ASCII directive handler stub
     void HndlASCII() {
       g_LastDirectiveCalled = "HndlASCII";
-      // TODO: Implement ASCII directive
-      // For now, just return via DrtvDone
-      DrtvDone();
+      // Alias to HndlASC
+      HndlASC();
     }
 
     // .DBYTE/.DDB directive handler stub
     void HndlDBYTE() {
       g_LastDirectiveCalled = "HndlDBYTE";
-      // TODO: Implement DBYTE directive
-      // For now, just return via DrtvDone
-      DrtvDone();
+
+    L8DCD:
+      A = 0x01;  // LDA #$01 - Normal (DDB)
+      HndlDWCore();
+      return;
     }
 
     //=================================================
@@ -6057,7 +6690,8 @@ namespace {
       }
 
       void SetCurAdr(uint16_t addr) {
-        PC = addr;
+        PC    = addr;
+        ObjPC = addr;
       }
 
       // Label field control
@@ -6100,6 +6734,59 @@ namespace {
 
       // Direct handler calls (already forward declared)
       // HndlEQU and HndlORG are called directly from test code
+
+      //=================================================
+      // Phase 6: Data Directives Test Helpers
+      //=================================================
+
+      // Direct handler calls
+      void HndlDS() {
+        ::HndlDS();
+      }
+
+      void HndlDFB() {
+        ::HndlDFB();
+      }
+
+      void HndlDW() {
+        ::HndlDW();
+      }
+
+      void HndlASC() {
+        ::HndlASC();
+      }
+
+      void HndlDCI() {
+        ::HndlDCI();
+      }
+
+      // Test memory accessors
+      void EnableTestObjMemory(bool enable) {
+        g_test_obj_memory_enabled = enable;
+        if (enable) {
+          // Align ObjPC with current PC for test writes
+          ObjPC = PC;
+        }
+      }
+
+      uint8_t GetTestObjMemory(uint16_t addr) {
+        if (addr < 65536) {
+          return g_test_obj_memory[addr];
+        }
+        return 0;
+      }
+
+      void ClearTestObjMemory() {
+        std::memset(g_test_obj_memory, 0, sizeof(g_test_obj_memory));
+      }
+
+      // Get GMC buffer (for testing direct byte output)
+      uint8_t GetGMC(uint8_t index) {
+        if (index < 4) {
+          return GMC[index];
+        }
+        return 0;
+      }
 
     }  // namespace Asm
   }  // namespace EdAsmNg

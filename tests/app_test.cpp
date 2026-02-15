@@ -1341,3 +1341,287 @@ TEST_F(Phase5DirectiveTest, ORG_SkipsCode_Pass2) {
   EXPECT_EQ(EdAsmNg::Asm::GetCurAdr(), 0x2000);  // PC unchanged
   EXPECT_EQ(errorsAfter, errorsBefore);          // No errors
 }
+
+//=================================================
+// Phase 6: Data Directives (DS, DFB/BYTE, DW/WORD, ASC, DCI) Tests
+//=================================================
+
+// Helper functions for Phase 6 testing
+namespace EdAsmNg {
+  namespace Asm {
+    // Data directive handlers
+    void HndlDS();
+    void HndlDFB();
+    void HndlDW();
+    void HndlASC();
+    void HndlDCI();
+
+    // Test memory accessors
+    void    EnableTestObjMemory(bool enable);
+    uint8_t GetTestObjMemory(uint16_t addr);
+    void    ClearTestObjMemory();
+
+    // Get GMC buffer (for testing direct byte output)
+    uint8_t GetGMC(uint8_t index);
+  }  // namespace Asm
+}  // namespace EdAsmNg
+
+class Phase6DataDirectiveTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetErrorState();
+    EdAsmNg::Asm::ResetDispatchState();
+    EdAsmNg::Asm::SetPassNbr(1);      // Default to Pass 2 (code generation)
+    EdAsmNg::Asm::SetCurAdr(0x2000);  // Start at $2000
+    EdAsmNg::Asm::EnableTestObjMemory(true);
+    EdAsmNg::Asm::ClearTestObjMemory();
+  }
+
+  void TearDown() override {
+    EdAsmNg::Asm::EnableTestObjMemory(false);
+  }
+};
+
+//=================================================
+// DFB/BYTE Tests
+//=================================================
+
+TEST_F(Phase6DataDirectiveTest, DFB_EmitsBytes_Pass2) {
+  // Pass 2, DFB 1,2,3 → stores 3 bytes in output buffer
+  EdAsmNg::Asm::SetPassNbr(1);  // Pass 2
+  EdAsmNg::Asm::SetCurAdr(0x2000);
+  EdAsmNg::Asm::SetupSourceLine("1,2,3");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlDFB();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Should emit 3 bytes: 0x01, 0x02, 0x03
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x2000), 0x01);
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x2001), 0x02);
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x2002), 0x03);
+
+  // PC should advance by 3
+  EXPECT_EQ(EdAsmNg::Asm::GetCurAdr(), 0x2003);
+  EXPECT_EQ(errorsAfter, errorsBefore);  // No errors
+}
+
+TEST_F(Phase6DataDirectiveTest, DFB_RangeError_RegistersError) {
+  // Pass 2, DFB $1FF → error (out of byte range)
+  EdAsmNg::Asm::SetPassNbr(1);  // Pass 2
+  EdAsmNg::Asm::SetCurAdr(0x2000);
+  EdAsmNg::Asm::SetupSourceLine("$1FF");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlDFB();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Should register a byte overflow error
+  EXPECT_GT(errorsAfter, errorsBefore);
+}
+
+TEST_F(Phase6DataDirectiveTest, DFB_MultipleValues_FourMax) {
+  // DFB can emit up to 4 bytes per line, then continues
+  EdAsmNg::Asm::SetPassNbr(1);  // Pass 2
+  EdAsmNg::Asm::SetCurAdr(0x3000);
+  EdAsmNg::Asm::SetupSourceLine("$10,$20,$30,$40");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlDFB();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Should emit 4 bytes
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x3000), 0x10);
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x3001), 0x20);
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x3002), 0x30);
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x3003), 0x40);
+  EXPECT_EQ(EdAsmNg::Asm::GetCurAdr(), 0x3004);
+  EXPECT_EQ(errorsAfter, errorsBefore);
+}
+
+//=================================================
+// DW/WORD Tests
+//=================================================
+
+TEST_F(Phase6DataDirectiveTest, DW_EmitsWordsLE_Pass2) {
+  // Pass 2, DW $1234 → stores low byte then high byte (little-endian)
+  EdAsmNg::Asm::SetPassNbr(1);  // Pass 2
+  EdAsmNg::Asm::SetCurAdr(0x2000);
+  EdAsmNg::Asm::SetupSourceLine("$1234");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlDW();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Little-endian: low byte first, then high byte
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x2000), 0x34);  // Low byte
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x2001), 0x12);  // High byte
+
+  // PC should advance by 2
+  EXPECT_EQ(EdAsmNg::Asm::GetCurAdr(), 0x2002);
+  EXPECT_EQ(errorsAfter, errorsBefore);  // No errors
+}
+
+TEST_F(Phase6DataDirectiveTest, DW_MultipleWords) {
+  // DW $1234,$5678
+  EdAsmNg::Asm::SetPassNbr(1);  // Pass 2
+  EdAsmNg::Asm::SetCurAdr(0x3000);
+  EdAsmNg::Asm::SetupSourceLine("$1234,$5678");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlDW();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // First word: $1234 -> 0x34, 0x12
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x3000), 0x34);
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x3001), 0x12);
+  // Second word: $5678 -> 0x78, 0x56
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x3002), 0x78);
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x3003), 0x56);
+
+  EXPECT_EQ(EdAsmNg::Asm::GetCurAdr(), 0x3004);
+  EXPECT_EQ(errorsAfter, errorsBefore);
+}
+
+//=================================================
+// DS Tests
+//=================================================
+
+TEST_F(Phase6DataDirectiveTest, DS_ReservesSpace_Pass1) {
+  // Pass 1, DS 4 → PC advances by 4, no output
+  EdAsmNg::Asm::SetPassNbr(0);  // Pass 1
+  EdAsmNg::Asm::SetCurAdr(0x2000);
+  EdAsmNg::Asm::SetupSourceLine("4");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlDS();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // PC should advance by 4 bytes
+  EXPECT_EQ(EdAsmNg::Asm::GetCurAdr(), 0x2004);
+  EXPECT_EQ(errorsAfter, errorsBefore);  // No errors
+}
+
+TEST_F(Phase6DataDirectiveTest, DS_WithFiller_Pass2) {
+  // Pass 2, DS 4,$FF → fills 4 bytes with $FF
+  EdAsmNg::Asm::SetPassNbr(1);  // Pass 2
+  EdAsmNg::Asm::SetCurAdr(0x2000);
+  EdAsmNg::Asm::SetupSourceLine("4,$FF");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlDS();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Should fill 4 bytes with $FF
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x2000), 0xFF);
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x2001), 0xFF);
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x2002), 0xFF);
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x2003), 0xFF);
+
+  // PC should advance by 4
+  EXPECT_EQ(EdAsmNg::Asm::GetCurAdr(), 0x2004);
+  EXPECT_EQ(errorsAfter, errorsBefore);  // No errors
+}
+
+TEST_F(Phase6DataDirectiveTest, DS_LargeSize) {
+  // Pass 1, DS 256 → PC advances by 256
+  EdAsmNg::Asm::SetPassNbr(0);  // Pass 1
+  EdAsmNg::Asm::SetCurAdr(0x2000);
+  EdAsmNg::Asm::SetupSourceLine("256");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlDS();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // PC should advance by 256
+  EXPECT_EQ(EdAsmNg::Asm::GetCurAdr(), 0x2100);
+  EXPECT_EQ(errorsAfter, errorsBefore);  // No errors
+}
+
+//=================================================
+// ASC Tests
+//=================================================
+
+TEST_F(Phase6DataDirectiveTest, ASC_EmitsAscii_Pass2) {
+  // Pass 2, ASC "AB" → emits bytes 0x41 0x42
+  EdAsmNg::Asm::SetPassNbr(1);  // Pass 2
+  EdAsmNg::Asm::SetCurAdr(0x2000);
+  EdAsmNg::Asm::SetupSourceLine("\"AB\"");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlASC();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Should emit ASCII bytes
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x2000), 0x41);  // 'A'
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x2001), 0x42);  // 'B'
+
+  // PC should advance by 2
+  EXPECT_EQ(EdAsmNg::Asm::GetCurAdr(), 0x2002);
+  EXPECT_EQ(errorsAfter, errorsBefore);  // No errors
+}
+
+TEST_F(Phase6DataDirectiveTest, ASC_LongerString) {
+  // Pass 2, ASC "HELLO" → emits 5 ASCII bytes
+  EdAsmNg::Asm::SetPassNbr(1);  // Pass 2
+  EdAsmNg::Asm::SetCurAdr(0x3000);
+  EdAsmNg::Asm::SetupSourceLine("\"HELLO\"");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlASC();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Should emit ASCII bytes
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x3000), 0x48);  // 'H'
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x3001), 0x45);  // 'E'
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x3002), 0x4C);  // 'L'
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x3003), 0x4C);  // 'L'
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x3004), 0x4F);  // 'O'
+
+  EXPECT_EQ(EdAsmNg::Asm::GetCurAdr(), 0x3005);
+  EXPECT_EQ(errorsAfter, errorsBefore);
+}
+
+//=================================================
+// DCI Tests
+//=================================================
+
+TEST_F(Phase6DataDirectiveTest, DCI_EmitsAsciiHighBit_Pass2) {
+  // Pass 2, DCI "AB" → emits bytes 0x41 0xC2 (last char has high bit set)
+  EdAsmNg::Asm::SetPassNbr(1);  // Pass 2
+  EdAsmNg::Asm::SetCurAdr(0x2000);
+  EdAsmNg::Asm::SetupSourceLine("\"AB\"");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlDCI();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Should emit ASCII bytes, last with high bit set
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x2000), 0x41);  // 'A'
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x2001), 0xC2);  // 'B' | 0x80
+
+  // PC should advance by 2
+  EXPECT_EQ(EdAsmNg::Asm::GetCurAdr(), 0x2002);
+  EXPECT_EQ(errorsAfter, errorsBefore);  // No errors
+}
+
+TEST_F(Phase6DataDirectiveTest, DCI_LongerString) {
+  // Pass 2, DCI "HELLO" → emits 5 ASCII bytes, last with high bit set
+  EdAsmNg::Asm::SetPassNbr(1);  // Pass 2
+  EdAsmNg::Asm::SetCurAdr(0x3000);
+  EdAsmNg::Asm::SetupSourceLine("\"HELLO\"");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  EdAsmNg::Asm::HndlDCI();
+  uint16_t errorsAfter = EdAsmNg::Asm::GetErrorCount();
+
+  // Should emit ASCII bytes, last with high bit set
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x3000), 0x48);  // 'H'
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x3001), 0x45);  // 'E'
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x3002), 0x4C);  // 'L'
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x3003), 0x4C);  // 'L'
+  EXPECT_EQ(EdAsmNg::Asm::GetTestObjMemory(0x3004), 0xCF);  // 'O' | 0x80
+
+  EXPECT_EQ(EdAsmNg::Asm::GetCurAdr(), 0x3005);
+  EXPECT_EQ(errorsAfter, errorsBefore);
+}
