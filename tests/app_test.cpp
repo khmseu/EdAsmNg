@@ -3245,3 +3245,193 @@ TEST_F(Phase83LineHelpersTest, ChrGet_Sequential) {
   EXPECT_EQ(EdAsmNg::Asm::GetA(), 'A');
   EXPECT_EQ(EdAsmNg::Asm::GetY(), 3);
 }
+
+//=================================================
+// Phase 8.4: Pass 1 Loop - Symbol Collection Tests
+//=================================================
+
+// Helper functions to access Pass 1 internals for testing
+namespace EdAsmNg {
+  namespace Asm {
+    // Pass 1 execution
+    void DoPass1();
+
+    // Pass number accessor
+    uint8_t GetPassNbr();
+    void    SetPassNbr(uint8_t value);
+
+    // PC accessors (may already be declared elsewhere, but redeclared here for clarity)
+    void     SetPC(uint16_t value);
+    uint16_t GetPC();
+
+    // Symbol table query functions
+    bool     HasSymbol(const char* name);
+    uint16_t GetSymbolValue(const char* name);
+    uint8_t  GetSymbolFlags(const char* name);
+    int      GetSymbolCount();
+
+    // Reset assembler state for clean test environment
+    void ResetAsmState();
+  }  // namespace Asm
+}  // namespace EdAsmNg
+
+class Phase84Pass1Test : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetAsmState();
+    EdAsmNg::Asm::SetPC(0);
+    EdAsmNg::Asm::SetPassNbr(0);
+  }
+};
+
+TEST_F(Phase84Pass1Test, test_pass1_empty_source) {
+  // Test Pass 1 on empty source - should complete without error
+  const char* source = "";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  // Run Pass 1
+  EdAsmNg::Asm::DoPass1();
+
+  // Verify PassNbr was set to 0 for Pass 1
+  EXPECT_EQ(EdAsmNg::Asm::GetPassNbr(), 0);
+
+  // Verify PC is still 0 (no code generated)
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0);
+
+  // Verify no symbols added
+  EXPECT_EQ(EdAsmNg::Asm::GetSymbolCount(), 0);
+}
+
+TEST_F(Phase84Pass1Test, test_pass1_simple_label) {
+  // Test parsing a single label line
+  const char* source = "START\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  // Run Pass 1
+  EdAsmNg::Asm::DoPass1();
+
+  // Verify symbol was added
+  EXPECT_TRUE(EdAsmNg::Asm::HasSymbol("START"));
+
+  // Verify symbol has correct address (PC=0 when defined)
+  EXPECT_EQ(EdAsmNg::Asm::GetSymbolValue("START"), 0x0000);
+}
+
+TEST_F(Phase84Pass1Test, test_pass1_label_with_nop) {
+  // Test label with NOP instruction - should add symbol and increment PC by 1
+  const char* source = "START NOP\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  // Run Pass 1
+  EdAsmNg::Asm::DoPass1();
+
+  // Verify symbol was added
+  EXPECT_TRUE(EdAsmNg::Asm::HasSymbol("START"));
+
+  // Verify symbol has address 0 (defined at start)
+  EXPECT_EQ(EdAsmNg::Asm::GetSymbolValue("START"), 0x0000);
+
+  // Verify PC incremented by 1 (NOP is 1 byte)
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x0001);
+}
+
+TEST_F(Phase84Pass1Test, test_pass1_statement_no_label) {
+  // Test statement without label (leading spaces) - PC should advance
+  const char* source = "      NOP\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  // Run Pass 1
+  EdAsmNg::Asm::DoPass1();
+
+  // Verify no symbol added
+  EXPECT_EQ(EdAsmNg::Asm::GetSymbolCount(), 0);
+
+  // Verify PC incremented by 1
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x0001);
+}
+
+TEST_F(Phase84Pass1Test, test_pass1_multiple_lines) {
+  // Test multi-line source with PC accumulation
+  const char* source =
+      "START NOP\r"
+      "      LDA #$00\r"
+      "LOOP  STA $1000\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  // Run Pass 1
+  EdAsmNg::Asm::DoPass1();
+
+  // Verify symbols
+  EXPECT_TRUE(EdAsmNg::Asm::HasSymbol("START"));
+  EXPECT_TRUE(EdAsmNg::Asm::HasSymbol("LOOP"));
+
+  // Verify symbol addresses
+  EXPECT_EQ(EdAsmNg::Asm::GetSymbolValue("START"), 0x0000);
+  EXPECT_EQ(EdAsmNg::Asm::GetSymbolValue("LOOP"), 0x0003);  // After NOP(1) + LDA(2)
+
+  // Verify final PC (NOP=1, LDA=2, STA=3)
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x0006);
+}
+
+TEST_F(Phase84Pass1Test, test_pass1_comment_line) {
+  // Test line starting with ';' - should be ignored, PC unchanged
+  const char* source = "; This is a comment\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  // Run Pass 1
+  EdAsmNg::Asm::DoPass1();
+
+  // Verify PC unchanged
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x0000);
+
+  // Verify no symbols added
+  EXPECT_EQ(EdAsmNg::Asm::GetSymbolCount(), 0);
+}
+
+TEST_F(Phase84Pass1Test, test_pass1_blank_line) {
+  // Test empty/blank line - should be ignored, PC unchanged
+  const char* source = "\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  // Run Pass 1
+  EdAsmNg::Asm::DoPass1();
+
+  // Verify PC unchanged
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x0000);
+
+  // Verify no symbols added
+  EXPECT_EQ(EdAsmNg::Asm::GetSymbolCount(), 0);
+}
+
+TEST_F(Phase84Pass1Test, test_pass1_org_directive) {
+  // Test ORG directive - should jump PC to $8000
+  const char* source = "      ORG $8000\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  // Run Pass 1
+  EdAsmNg::Asm::DoPass1();
+
+  // Verify PC jumped to $8000
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x8000);
+
+  // Verify no symbols added
+  EXPECT_EQ(EdAsmNg::Asm::GetSymbolCount(), 0);
+}
+
+TEST_F(Phase84Pass1Test, test_pass1_label_after_org) {
+  // Test label defined after ORG - should have correct address
+  const char* source =
+      "      ORG $8000\r"
+      "START NOP\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  // Run Pass 1
+  EdAsmNg::Asm::DoPass1();
+
+  // Verify symbol defined at correct address
+  EXPECT_TRUE(EdAsmNg::Asm::HasSymbol("START"));
+  EXPECT_EQ(EdAsmNg::Asm::GetSymbolValue("START"), 0x8000);
+
+  // Verify PC advanced past NOP
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x8001);
+}
