@@ -1544,6 +1544,29 @@ namespace {
 
     if (A == 0) goto NoLabel;  // Line starts with space? No label
 
+    // Label present - basic validation (Phase 8.4.1)
+    // - reject single-letter reserved IDs: A, X, Y  -> error 0x1E
+    // - reject labels whose first char is not alphabetic -> error 0x0E
+    // Use SrcP_at(0)/SrcP_at(1) for look-ahead while Y==0
+    {
+      uint8_t ch0 = SrcP_at(0);
+      uint8_t ch1 = SrcP_at(1);
+
+      // Single-char reserved identifiers (A/X/Y) followed by space/CR/colon
+      if ((ch1 == SPACE || ch1 == CR || ch1 == ':') && (ch0 == 'A' || ch0 == 'X' || ch0 == 'Y')) {
+        RegAsmEW(0x1E);  // Reserved identifier error
+        LabelF = 0;      // clear label field so it won't be added
+        goto Pass1Next;  // skip rest of line (do not process mnemonic)
+      }
+
+      // First character must be alphabetic (A-Z or a-z)
+      if (!((ch0 >= 'A' && ch0 <= 'Z') || (ch0 >= 'a' && ch0 <= 'z'))) {
+        RegAsmEW(0x0E);  // Invalid identifier
+        LabelF = 0;      // clear label field so it won't be added
+        goto Pass1Next;  // skip rest of line
+      }
+    }
+
     // Label present - parse and add to symbol table
     // Phase 8.4: Basic label parsing with duplicate detection
 

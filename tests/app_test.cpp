@@ -3435,3 +3435,39 @@ TEST_F(Phase84Pass1Test, test_pass1_label_after_org) {
   // Verify PC advanced past NOP
   EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x8001);
 }
+
+TEST_F(Phase84Pass1Test, test_pass1_reserved_label_A_error) {
+  // Single-letter label "A" is reserved -> error, no symbol added, no PC advance
+  const char* source = "A NOP\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  // Run Pass 1
+  EdAsmNg::Asm::DoPass1();
+
+  // Verify reserved label not added and error registered
+  EXPECT_FALSE(EdAsmNg::Asm::HasSymbol("A"));
+  EXPECT_GT(EdAsmNg::Asm::GetErrorCount(), 0);
+  auto errInfo = EdAsmNg::Asm::GetErrorInfo(0);
+  EXPECT_EQ(errInfo.errIndex, 0x1E);
+
+  // PC should not advance when label is invalid
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x0000);
+}
+
+TEST_F(Phase84Pass1Test, test_pass1_invalid_label_first_char_error) {
+  // Label starting with a digit is invalid -> error, no symbol added, no PC advance
+  const char* source = "1FOO NOP\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+
+  // Run Pass 1
+  EdAsmNg::Asm::DoPass1();
+
+  // Verify invalid label not added and error registered
+  EXPECT_FALSE(EdAsmNg::Asm::HasSymbol("1FOO"));
+  EXPECT_GT(EdAsmNg::Asm::GetErrorCount(), 0);
+  auto errInfo = EdAsmNg::Asm::GetErrorInfo(0);
+  EXPECT_EQ(errInfo.errIndex, 0x0E);
+
+  // PC should not advance when label is invalid
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x0000);
+}
