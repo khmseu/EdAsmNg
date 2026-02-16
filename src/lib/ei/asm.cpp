@@ -1286,11 +1286,15 @@ namespace {
       uint8_t start_y = Y;
       fprintf(stderr, "    parse_symbol: Looking for symbol starting at Y=%d, ch='%c'\n", Y,
               (SrcP_at(Y) >= 32) ? SrcP_at(Y) : '?');
+
+      // CRITICAL: FindSym() needs Y=0 to start reading from beginning of label
+      Y = 0;
       FindSym();
-      fprintf(stderr, "    parse_symbol: After FindSym(), C=%d, A=0x%02X, SymP=0x%04X\n", C, A,
-              SymP);
+      fprintf(stderr, "    parse_symbol: After FindSym(), C=%d, A=0x%02X, SymP=0x%04X, Y=%d\n", C,
+              A, SymP, Y);
       if (C) {
         fprintf(stderr, "    parse_symbol: ERROR - symbol not found\n");
+        Y = start_y;  // Restore Y before returning
         return false;
       }
       out_flags         = A;
