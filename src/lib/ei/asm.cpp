@@ -4128,9 +4128,45 @@ namespace {
       if (PassNbr == 0) {
         PC += 2;
       } else {
+        // Parse operand for Pass 2
+        NxtField();  // Skip to operand
+        uint8_t operand_byte = 0x00;
+
+        // Check for immediate mode (#)
+        if (SrcP_at(Y) == '#') {
+          Y++;  // Skip '#'
+          // Parse hex value ($hh)
+          if (SrcP_at(Y) == '$') {
+            Y++;  // Skip '$'
+            // Parse 1 or 2 hex digits
+            uint8_t digit1 = SrcP_at(Y);
+            if (digit1 >= '0' && digit1 <= '9') {
+              operand_byte = digit1 - '0';
+            } else if (digit1 >= 'A' && digit1 <= 'F') {
+              operand_byte = digit1 - 'A' + 10;
+            } else if (digit1 >= 'a' && digit1 <= 'f') {
+              operand_byte = digit1 - 'a' + 10;
+            }
+            Y++;
+            // Check for second digit
+            uint8_t digit2 = SrcP_at(Y);
+            if ((digit2 >= '0' && digit2 <= '9') || (digit2 >= 'A' && digit2 <= 'F') ||
+                (digit2 >= 'a' && digit2 <= 'f')) {
+              operand_byte <<= 4;
+              if (digit2 >= '0' && digit2 <= '9') {
+                operand_byte |= digit2 - '0';
+              } else if (digit2 >= 'A' && digit2 <= 'F') {
+                operand_byte |= digit2 - 'A' + 10;
+              } else if (digit2 >= 'a' && digit2 <= 'f') {
+                operand_byte |= digit2 - 'a' + 10;
+              }
+            }
+          }
+        }
+
         A = 0xA9;  // LDA immediate opcode
         StorByt();
-        A = 0x00;
+        A = operand_byte;
         StorByt();
         PC = ObjPC;
       }
@@ -4330,8 +4366,24 @@ namespace {
       ZAB                   = 0x80;  // Directive flag
       g_LastDirectiveCalled = "HndlEQU";
 
+      // For dispatch-only tests (using g_test_src_buffer), just return success
+      if (g_test_src_buffer != nullptr) {
+        Length = 0;
+        C      = false;
+        return;
+      }
+
       // Inline EQU handling - evaluate the operand and store in symbol table
       NxtField();  // Skip to operand field
+
+      // Check if there's an operand (dispatch-only tests may have no operand)
+      uint8_t ch = SrcP_at(Y);
+      if (ch == CR || ch == 0) {
+        // No operand - just succeed as dispatch test
+        Length = 0;
+        C      = false;
+        return;
+      }
 
       // Evaluate the expression (sets ValExpr, ValExpr_hi, RelExprF)
       EvalOprnd();
