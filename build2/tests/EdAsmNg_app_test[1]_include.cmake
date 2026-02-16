@@ -1,0 +1,5 @@
+if(EXISTS "/bigdata/KAI/projects/EdAsmNg/build2/tests/EdAsmNg_app_test[1]_tests.cmake")
+  include("/bigdata/KAI/projects/EdAsmNg/build2/tests/EdAsmNg_app_test[1]_tests.cmake")
+else()
+  add_test(EdAsmNg_app_test_NOT_BUILT EdAsmNg_app_test_NOT_BUILT)
+endif()

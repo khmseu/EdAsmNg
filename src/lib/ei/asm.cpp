@@ -1287,9 +1287,14 @@ namespace {
       fprintf(stderr, "    parse_symbol: Looking for symbol starting at Y=%d, ch='%c'\n", Y,
               (SrcP_at(Y) >= 32) ? SrcP_at(Y) : '?');
 
-      // CRITICAL: FindSym() needs Y=0 to start reading from beginning of label
-      Y = 0;
+      // CRITICAL: FindSym() needs to read from the current position in the source.
+      // In the original 6502 code, symbol names were always at the start of a line (Y=0),
+      // but in expression evaluation, we need to position SrcP to point at the symbol.
+      uint16_t saved_SrcP = SrcP;
+      SrcP += start_y;  // Advance SrcP to where the symbol actually starts
+      Y = 0;            // FindSym expects Y=0
       FindSym();
+      SrcP = saved_SrcP;  // Restore SrcP
       fprintf(stderr, "    parse_symbol: After FindSym(), C=%d, A=0x%02X, SymP=0x%04X, Y=%d\n", C,
               A, SymP, Y);
       if (C) {
@@ -2162,6 +2167,9 @@ namespace {
   // Note: Uses g_test_src_memory for simulated 16-bit address space
   //=================================================
   void SetupMemorySource(const char* sourceText, size_t length) {
+    // Clear test buffer override to prevent contamination from dispatch tests
+    g_test_src_buffer = nullptr;
+
     // Copy source to simulated memory
     if (length > sizeof(g_test_src_memory) - g_test_src_base) {
       length = sizeof(g_test_src_memory) - g_test_src_base;
@@ -4350,10 +4358,11 @@ namespace {
         // Try to find and update the symbol with the EQU value
         if (LabelF != 0 && SymP != 0) {
           uint8_t* symptr = SimPtrToMemPtr(SymP);
-          // Find the flag byte by scanning for 0x80 terminator in name
-          int idx = 0;
-          while ((symptr[idx] & 0x80) == 0) idx++;
-          idx++;  // Now at flag byte
+          // Find the flag byte by scanning DCI-encoded name
+          // DCI: MSB set on all chars except the last (terminator has MSB clear)
+          int idx = 1;                              // Start after length byte
+          while ((symptr[idx] & 0x80) != 0) idx++;  // Skip all name bytes with MSB=1
+          idx++;                                    // Now at flag byte
 
           fprintf(stderr, "  EQU updating: idx=%d, old_flags=0x%02X\n", idx, symptr[idx]);
 
@@ -4460,9 +4469,10 @@ namespace {
 
     // Recognized directive without handler (like .SKIP)
     // But allow specific handled directives to pass through
-    if (mnemonic[0] == '.' && mnemonic != ".BYTE" && mnemonic != ".DFB" && mnemonic != ".WORD" &&
-        mnemonic != ".DW" && mnemonic != ".EQU" && mnemonic != ".ORG" && mnemonic != ".LIST" &&
-        mnemonic != ".NOLIST" && mnemonic != ".PAGE" && mnemonic != ".TITLE") {
+    if (!mnemonic.empty() && mnemonic[0] == '.' && mnemonic != ".BYTE" && mnemonic != ".DFB" &&
+        mnemonic != ".WORD" && mnemonic != ".DW" && mnemonic != ".EQU" && mnemonic != ".ORG" &&
+        mnemonic != ".LIST" && mnemonic != ".NOLIST" && mnemonic != ".PAGE" &&
+        mnemonic != ".TITLE") {
       ZAB                   = 0x80;  // Set directive flag
       g_LastDirectiveCalled = "";
       C                     = true;  // Error - unsupported
@@ -9994,7 +10004,9 @@ namespace EdAsmNg {
     }
 
     uint8_t GetSymbolFlags(const char* name) {
-      // Set up SrcP to point to the name string
+      // Read symbol flags without modifying the unrefd bit
+      // This is a read-only version that manually traverses the symbol table
+
       const uint16_t temp_addr = 0x0300;
       size_t         name_len  = std::strlen(name);
       if (name_len > 100) name_len = 100;
@@ -10002,18 +10014,66 @@ namespace EdAsmNg {
       g_test_src_memory[temp_addr + name_len] = '\r';
 
       uint16_t saved_SrcP = SrcP;
+      uint8_t  saved_Y    = Y;
       SrcP                = temp_addr;
       Y                   = 0;
 
-      FindSym();
+      // Compute hash
+      HashFn();
 
-      uint8_t flags = 0;
-      if (!C) {     // Symbol found
-        flags = A;  // FindSym returns flag byte in A
+      // Get chain head
+      Y = HeaderT_ptr[X + 1];
+      if (Y == 0) {
+        SrcP = saved_SrcP;
+        Y    = saved_Y;
+        return 0;  // Not found
+      }
+
+      uint16_t node_ptr = HeaderT_ptr[X] | (Y << 8);
+
+      // Traverse chain
+      while (node_ptr != 0) {
+        uint8_t* node     = SimPtrToMemPtr(node_ptr);
+        uint16_t next_ptr = node[0] | (node[1] << 8);
+
+        // Check if name matches
+        uint8_t* name_ptr = node + 2;  // Skip link pointer
+        uint8_t  idx      = 0;
+        bool     match    = true;
+
+        for (size_t i = 0; i < name_len; i++) {
+          uint8_t ch     = name[i];
+          uint8_t stored = name_ptr[idx];
+          if (i == name_len - 1) {
+            // Last char - stored without MSB set
+            if (ch != (stored & 0x7F)) {
+              match = false;
+              break;
+            }
+          } else {
+            // Not last - stored with MSB set
+            if (ch != (stored & 0x7F)) {
+              match = false;
+              break;
+            }
+          }
+          idx++;
+        }
+
+        if (match) {
+          // Found! Read flag byte (right after name)
+          uint8_t flags = name_ptr[idx];
+          SrcP          = saved_SrcP;
+          Y             = saved_Y;
+          return flags;
+        }
+
+        node_ptr = next_ptr;
       }
 
       SrcP = saved_SrcP;
-      return flags;
+      Y    = saved_Y;
+      return 0;  // Not found
     }
 
     int GetSymbolCount() {
@@ -10066,6 +10126,9 @@ namespace EdAsmNg {
           HeaderT_ptr[i] = 0x00;
         }
       }
+
+      // Clear test buffer override to prevent contamination
+      g_test_src_buffer = nullptr;
     }
 
   }  // namespace Asm
