@@ -9379,13 +9379,6 @@ namespace EdAsmNg {
       return RelExprF;
     }
 
-    uint8_t GetGMC(int index) {
-      if (index >= 0 && index < 4) {
-        return GMC[index];
-      }
-      return 0;
-    }
-
     void SetGMC(uint8_t index, uint8_t value) {
       if (index < 4) {
         GMC[index] = value;
@@ -9453,14 +9446,6 @@ namespace EdAsmNg {
       ValExpr_word = 0;
       ModWrdL      = 0;
       RelExprF     = 0;
-    }
-
-    void SetAddressingMode(uint8_t mode) {
-      LenTIdx = mode;
-    }
-
-    uint8_t GetAddressingMode() {
-      return LenTIdx;
     }
 
     void SetPC(uint16_t pc) {
