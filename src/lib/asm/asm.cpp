@@ -69,10 +69,11 @@ namespace {
   void AddRLDEnt();  // Phase 8.5.3: RLD entry creation
   void AdvSrcP();
   void SkipSpcs();
-  void StorGMC();
   void AdvPC();
   void Is16K();
   void IsAXY();
+  void Wr1Byte();   // Phase 4: Object code writing
+  void AdvObjPC();  // Phase 4: Object PC advance
 
   // Phase 8.2: Source line reader forward declarations
   void GSrcLin();
@@ -2715,7 +2716,49 @@ namespace {
   }
 #endif  // SetupVec redefinition
 
-#if 0   // TODO: Phase 9+ - Fix GInstLen (uses L851F and InstLenT before definition)
+  // (X)=index into addr mode table
+  // Not only this, it can be used to index an opcode within
+  // a sub-table of opcodes (eg ADCOps) by adding it to SubTIdx
+  // This table is highly dependent on the meaning of the
+  // bits of the 2 mnemonic flag bytes
+  const uint8_t InstLenT[] = {
+      0x03,  // abs
+      0x02,  // zp
+      0x02,  // #
+      0x02,  // zp,X
+      0x03,  // abs,X
+      0x03,  // abs,Y
+      0x02,  // (zp),Y
+      0x02,  // (zp,X)
+      0x02   // (zp)
+  };
+
+  // This sub-table is used by SW16 opcodes
+  const uint8_t L851F[] = {
+      0x03,  // (abs) - CPIM
+      0x01,  // acc - SW16 Reg ops
+      0x02,  // zp,Y
+      0x03   // (abs,X)
+  };
+
+  // bit flags used to check the validity of
+  // the parsed addressing mode
+  const uint8_t AModTbl[] = {
+      0x01,  // abs
+      0x02,  // zp
+      0x04,  // imm
+      0x08,  // zp,X
+      0x10,  // abs,X
+      0x20,  // abs,Y
+      0x40,  // (zp),y
+      0x80,  // (zp,X)
+      0x03,  // (zp)
+      0x01,  // (abs)
+      0x02,  // acc
+      0x04,  // zp,Y
+      0x01   // (abs,X)
+  };
+
   // ($8458) GInstLen - We must determine the address mode of opcode
   // Ret:
   // Length of instruction opcode
@@ -2848,50 +2891,6 @@ namespace {
   L8513:
     A = Length;
   }
-#endif  // GInstLen
-
-  // (X)=index into addr mode table
-  // Not only this, it can be used to index an opcode within
-  // a sub-table of opcodes (eg ADCOps) by adding it to SubTIdx
-  // This table is highly dependent on the meaning of the
-  // bits of the 2 mnemonic flag bytes
-  const uint8_t InstLenT[] = {
-      0x03,  // abs
-      0x02,  // zp
-      0x02,  // #
-      0x02,  // zp,X
-      0x03,  // abs,X
-      0x03,  // abs,Y
-      0x02,  // (zp),Y
-      0x02,  // (zp,X)
-      0x02   // (zp)
-  };
-
-  // This sub-table is used by SW16 opcodes
-  const uint8_t L851F[] = {
-      0x03,  // (abs) - CPIM
-      0x01,  // acc - SW16 Reg ops
-      0x02,  // zp,Y
-      0x03   // (abs,X)
-  };
-
-  // bit flags used to check the validity of
-  // the parsed addressing mode
-  const uint8_t AModTbl[] = {
-      0x01,  // abs
-      0x02,  // zp
-      0x04,  // imm
-      0x08,  // zp,X
-      0x10,  // abs,X
-      0x20,  // abs,Y
-      0x40,  // (zp),y
-      0x80,  // (zp,X)
-      0x03,  // (zp)
-      0x01,  // (abs)
-      0x02,  // acc
-      0x04,  // zp,Y
-      0x01   // (abs,X)
-  };
 
   // AdvPC - A=# to advance
   void AdvPC() {
@@ -3341,7 +3340,6 @@ namespace {
   }
 #endif  // PrtAsmLn
 
-#if 0   // TODO: Phase 9+ - Stub StorGMC calls undeclared Wr1Byte/AdvObjPC
   // StorGMC - Store generated machine code
   void StorGMC() {
     Y = Length;          // # of bytes
@@ -3369,7 +3367,57 @@ namespace {
     A = Y;
     AdvObjPC();
   }
-#endif  // StorGMC
+
+  // Stub: Wr1Byte - Write one byte to disk
+  void Wr1Byte() {
+    // TODO: Write one byte to object file on disk
+  }
+
+  // L8282 - Object buffer overflow error
+  void L8282() {
+    X = 0x17;  // Object buffer full error
+    RegAsmEW(X);
+  }
+
+  // L8287 - Not referenced
+  void L8287() {
+    if (GenF != 0) return;  // BNE label (always taking branch) (BNE)
+  }
+
+  // L828A - Checks/adjusts ObjPC against object buffer end
+  void L828A() {
+    A = MemTop;
+    // CMP ObjPC
+    A = MemTop_hi;
+    // SBC ObjPC+1
+    if ((MemTop_hi < ObjPC_hi) || (MemTop_hi == ObjPC_hi && MemTop < ObjPC)) {
+      // Overflow
+      L8282();
+    }
+  }
+
+  // AdvObjPC - A=# to advance
+  void AdvObjPC() {
+    // CLC
+    A += ObjPC;  // code buf
+    ObjPC = A;
+    if (A >= ObjPC) goto L8275;  // no carry (BCC)
+    ObjPC_hi++;                  // INC ObjPC+1
+  L8275:
+    L828A();
+  }
+
+  // L8278 - Not referenced
+  void L8278() {
+    A = MemTop;
+    // CMP ObjPC
+    A = MemTop_hi;
+    // SBC ObjPC+1
+    if ((MemTop_hi < ObjPC_hi) || (MemTop_hi == ObjPC_hi && MemTop < ObjPC)) {
+      // Check object buffer overflow
+      L828A();
+    }
+  }
 
   // StorByt - Store one byte to output buffer
   // Input: A = byte to store, ObjPC = output address, GenF = generation flag
@@ -8847,6 +8895,141 @@ namespace {
 
 }  // namespace
 
+// Bridge functions at file scope to allow Asm namespace to call anonymous namespace functions
+// These must be defined OUTSIDE the anonymous namespace so they have external linkage
+extern "C" {
+// Use extern "C" to avoid name mangling and ensure these have external linkage
+void Bridge_GInstLen();
+void Bridge_StorGMC();
+void Bridge_GOpAdr();
+bool Bridge_ChkRng(uint8_t value, uint8_t minVal, uint8_t maxVal);
+void Bridge_ValidateRange();
+void Bridge_HndlMnem();
+void Bridge_HndlOBJ();
+void Bridge_HndlREL();
+void Bridge_HndlDS();
+void Bridge_HndlDFB();
+void Bridge_HndlDW();
+void Bridge_HndlASC();
+void Bridge_HndlDCI();
+void Bridge_HndlLST();
+void Bridge_HndlNOLIST();
+void Bridge_DoPage();
+void Bridge_HndlSBTL();
+void Bridge_EvalOprnd();
+void Bridge_SaveZP();
+void Bridge_RestoreZP();
+void Bridge_InitASM();
+void Bridge_DoPass1();
+void Bridge_DoPass2();
+void Bridge_FindSym();
+void Bridge_StorByt();
+}
+
+// Implementations - these are defined in a separate anonymous namespace
+// that has access to the main anonymous namespace functions
+namespace {
+  void Bridge_GInstLen() {
+    GInstLen();
+  }
+
+  void Bridge_StorGMC() {
+    StorGMC();
+  }
+
+  void Bridge_GOpAdr() {
+    GOpAdr();
+  }
+
+  bool Bridge_ChkRng(uint8_t value, uint8_t minVal, uint8_t maxVal) {
+    return ChkRng(value, minVal, maxVal);
+  }
+
+  void Bridge_ValidateRange() {
+    ValidateRange();
+  }
+
+  void Bridge_HndlMnem() {
+    HndlMnem();
+  }
+
+  void Bridge_HndlOBJ() {
+    HndlOBJ();
+  }
+
+  void Bridge_HndlREL() {
+    HndlREL();
+  }
+
+  void Bridge_HndlDS() {
+    HndlDS();
+  }
+
+  void Bridge_HndlDFB() {
+    HndlDFB();
+  }
+
+  void Bridge_HndlDW() {
+    HndlDW();
+  }
+
+  void Bridge_HndlASC() {
+    HndlASC();
+  }
+
+  void Bridge_HndlDCI() {
+    HndlDCI();
+  }
+
+  void Bridge_HndlLST() {
+    HndlLST();
+  }
+
+  void Bridge_HndlNOLIST() {
+    HndlNOLIST();
+  }
+
+  void Bridge_DoPage() {
+    DoPage();
+  }
+
+  void Bridge_HndlSBTL() {
+    HndlSBTL();
+  }
+
+  void Bridge_EvalOprnd() {
+    EvalOprnd();
+  }
+
+  void Bridge_SaveZP() {
+    SaveZP();
+  }
+
+  void Bridge_RestoreZP() {
+    RestoreZP();
+  }
+
+  void Bridge_InitASM() {
+    InitASM();
+  }
+
+  void Bridge_DoPass1() {
+    DoPass1();
+  }
+
+  void Bridge_DoPass2() {
+    DoPass2();
+  }
+
+  void Bridge_FindSym() {
+    FindSym();
+  }
+
+  void Bridge_StorByt() {
+    StorByt();
+  }
+}  // namespace
+
 //=================================================
 // Test Helper Functions - Exported for Unit Testing
 //=================================================
@@ -8890,10 +9073,6 @@ namespace EdAsmNg {
       BCDNbr[0] = lo;
     }
 
-    void SetLstWarns(uint8_t flags) {
-      LstWarns = flags;
-    }
-
     struct ErrorInfo {
       uint8_t fileNbr;
       uint8_t errIndex;
@@ -8926,701 +9105,43 @@ namespace EdAsmNg {
       ::SaveErrInfo(errorToken);
     }
 
-#if 0   // TODO: Phase 9+ - Test helpers for Phase 2-3 reference commented-out stub functions
-      //=================================================
-      // Phase 2: Mnemonic Dispatch Test Helpers
-      //=================================================
-
-      // Test source line buffer
-      static uint8_t  test_src_buffer[256];
-      static uint8_t* test_SrcP_ptr = nullptr;
-
-      void ResetDispatchState() {
-        MnemP                 = 0;
-        ZAB                   = 0x80;
-        SubTIdx               = 0;
-        MacroF                = 0;  // No macros for testing
-        Y                     = 0;
-        g_LastDirectiveCalled = nullptr;  // Reset directive tracking
-        std::memset(test_src_buffer, 0, sizeof(test_src_buffer));
-      }
-
-      void SetupSourceLine(const char* line) {
-        // Copy line to test buffer
-        size_t len = strlen(line);
-        if (len > sizeof(test_src_buffer) - 1) {
-          len = sizeof(test_src_buffer) - 1;
-        }
-        std::memcpy(test_src_buffer, line, len);
-        test_src_buffer[len] = CR;  // Add CR terminator
-
-        // Set g_test_src_buffer so SrcP_byte() uses it
-        g_test_src_buffer = test_src_buffer;
-
-        // Set up SrcP to point to test buffer
-        // In the original 6502 code, SrcP is a 16-bit pointer stored in zero page
-        // For C++ testing, we'll use the SrcP macro which simulates array access
-        test_SrcP_ptr = test_src_buffer;
-
-        // Initialize Y to 0 (start of line)
-        Y = 0;
-      }
-
-      std::uintptr_t GetMnemP() {
-        return reinterpret_cast<std::uintptr_t>(MnemP);
-      }
-
-      uint8_t GetZAB() {
-        return ZAB;
-      }
-
-      uint8_t GetSubTIdx() {
-        return SubTIdx;
-      }
-
-      bool HndlMnem() {
-        // Call the internal HndlMnem function
-        // It returns via setting the C flag
-        // For testing, we need to capture the C flag state
-
-        // Re-route SrcP array access to test buffer
-        // This is a workaround since SrcP is uint16_t but used as array
-        auto old_SrcP = ::SrcP;
-
-        // Temporarily replace the SrcP array access mechanism
-        // by modifying how SrcP_at(Y) is evaluated
-        // Since we can't directly change pointer behavior, we'll use a different approach
-
-        // For now, call HndlMnem with Y=0
-        ::HndlMnem();
-
-        // Return success status (C flag: false=success, true=error)
-        return !C;
-      }
-
-      //=================================================
-      // Phase 3a: StorByt Test Helpers
-      //=================================================
-
-      void SetGenF(uint8_t value) {
-        GenF = value;
-      }
-
-      uint8_t GetGenF() {
-        return GenF;
-      }
-
-      void SetObjPC(uint16_t value) {
-        ObjPC = value;
-      }
-
-      uint16_t GetObjPC() {
-        return ObjPC;
-      }
-
-      void SetHighMem(uint16_t value) {
-        HighMem = value;
-      }
-
-      uint16_t GetHighMem() {
-        return HighMem;
-      }
-
-      void StorByt(uint8_t byte) {
-        A = byte;
-        ::StorByt();
-      }
-
-      uint8_t ReadObjMemory(uint16_t addr) {
-        return g_test_obj_memory[addr];
-      }
-
-      void WriteObjMemory(uint16_t addr, uint8_t value) {
-        g_test_obj_memory[addr] = value;
-      }
-
-      void InitObjMemory() {
-        std::memset(g_test_obj_memory, 0, sizeof(g_test_obj_memory));
-        g_test_obj_memory_enabled = true;
-      }
-
-      //=================================================
-      // Phase 7.5: OBJ Directive Test Helpers
-      //=================================================
-
-      void SetRelCodeF(uint8_t value) {
-        RelCodeF = value;
-      }
-
-      uint8_t GetRelCodeF() {
-        return RelCodeF;
-      }
-
-      // DummyF (DSECT) accessor for tests
-      void SetDummyF(uint8_t value) {
-        DummyF = value;
-      }
-
-      uint8_t GetDummyF() {
-        return DummyF;
-      }
-
-      void SetEndSymT(uint16_t value) {
-        EndSymT = value;
-      }
-
-      uint16_t GetEndSymT() {
-        return EndSymT;
-      }
-
-      void SetMemTop(uint16_t value) {
-        MemTop = value;
-      }
-
-      uint16_t GetMemTop() {
-        return MemTop;
-      }
-
-      void SetRLDEnd(uint16_t value) {
-        RLDEnd = value;
-      }
-
-      uint16_t GetRLDEnd() {
-        return RLDEnd;
-      }
-
-      // RLD entry count: calculate from MemTop and RLDEnd
-      // Each RLD entry is 4 bytes, growing down from MemTop
-      uint16_t GetRLDEntryCount() {
-        if (MemTop <= RLDEnd) return 0;
-        return (MemTop - RLDEnd) / 4;
-      }
-
-      // Get RLD entry contents
-      void GetRLDEntry(int index, uint8_t* entry) {
-        uint16_t count = GetRLDEntryCount();
-        if (index < 0 || index >= count) {
-          // Invalid index
-          for (int i = 0; i < 4; i++) entry[i] = 0;
-          return;
-        }
-        // RLD entries grow downward from MemTop
-        // Entry 0 is at RLDEnd, entry 1 is at RLDEnd+4, etc.
-        uint16_t entryAddr = RLDEnd + (index * 4);
-        uint8_t* ptr = SimPtrToMemPtr(entryAddr);
-        for (int i = 0; i < 4; i++) {
-          entry[i] = ptr[i];
-        }
-      }
-
-      void HndlOBJ() {
-        ::HndlOBJ();
-      }
-
-      void HndlREL() {
-        ::HndlREL();
-      }
-
-      //=================================================
-      // Phase 3b: GenMCode Test Helpers
-      //=================================================
-
-      void SetLength(uint8_t value) {
-        Length = value;
-      }
-
-      uint8_t GetLength() {
-        return Length;
-      }
-
-      void SetLenTIdx(uint8_t value) {
-        LenTIdx = value;
-      }
-
-      uint8_t GetLenTIdx() {
-        return LenTIdx;
-      }
-
-      void SetValExpr(uint16_t value) {
-        ValExpr_word = value;
-      }
-
-      uint16_t GetValExpr() {
-        return ValExpr_word;
-      }
-
-      void SetModWrdL(uint8_t value) {
-        ModWrdL = value;
-      }
-
-      uint8_t GetModWrdL() {
-        return ModWrdL;
-      }
-
-      void SetRelExprF(uint8_t value) {
-        RelExprF = value;
-      }
-
-      uint8_t GetRelExprF() {
-        return RelExprF;
-      }
-
-      uint8_t GetGMC(int index) {
-        if (index >= 0 && index < 4) {
-          return GMC[index];
-        }
-        return 0;
-      }
-
-      void SetGMC(uint8_t index, uint8_t value) {
-        if (index < 4) {
-          GMC[index] = value;
-        }
-      }
-
-      uint8_t GetGMCIdx() {
-        return GMCIdx;
-      }
-
-      // GenMCode - Generate Machine Code
-      // Extracted from GenNow section (lines 2553-2633)
-      // Populates the GMC buffer with opcode and operand bytes
-      // based on instruction length and addressing mode
-      void GenMCode(uint8_t opcode) {
-        // Store opcode in GMC[0]
-        X      = 0;
-        GMC[X] = opcode;
-        X++;
-        GMCIdx = X;
-
-        A = ModWrdL;
-        // BIT Bit08 - branch instr?
-        if ((A & 0x08) != 0) {
-          // Branch instructions
-          // Store displacement byte from ValExpr
-          GMC[X] = ValExpr;
-          X++;
-          GMCIdx = X;
-          return;
-        }
-
-        // Non-branch instructions
-        // Check if we need to store operand bytes
-        A = X;  // X=1 at this point
-        if (A >= Length) {
-          // Single byte instruction (accumulator mode, implied, etc.)
-          return;
-        }
-
-        // Store operand bytes from ValExpr (little-endian)
-        A      = ValExpr;
-        GMC[X] = A;
-        X++;
-
-        if (X >= Length) {
-          GMCIdx = X;
-          return;
-        }
-
-        // If 3-byte instruction, store high byte
-        A      = ValExpr_hi;
-        GMC[X] = A;
-        X++;
-        GMCIdx = X;
-      }
-
-      //=================================================
-      // Phase 3c: GOpAdr Test Helpers
-      //=================================================
-
-      void ResetGOpAdrState() {
-        LenTIdx      = 0;
-        PC           = 0;
-        ValExpr_word = 0;
-        ModWrdL      = 0;
-        RelExprF     = 0;
-      }
-
-      void SetAddressingMode(uint8_t mode) {
-        LenTIdx = mode;
-      }
-
-      uint8_t GetAddressingMode() {
-        return LenTIdx;
-      }
-
-      void SetPC(uint16_t pc) {
-        PC = pc;
-      }
-
-      uint16_t GetPC() {
-        return PC;
-      }
-
-      // GOpAdr - Get Operand Address
-      // Calculates the final operand address based on addressing mode,
-      // handling relocation, zero page constraints, and branch offsets
-      void GOpAdr() {
-        ::GOpAdr();
-      }
-
-      //=================================================
-      // Phase 3d: ValidateRange & ChkRng Test Helpers
-      //=================================================
-
-      // ChkRng - Generic range checker
-      // Returns true if value is OUT of range (carry set)
-      // Returns false if value is IN range (carry clear)
-      bool ChkRng(uint8_t value, uint8_t minVal, uint8_t maxVal) {
-        return ::ChkRng(value, minVal, maxVal);
-      }
-
-      // ValidateRange - Validate operand value against addressing mode constraints
-      void ValidateRange() {
-        ::ValidateRange();
-      }
-
-      // Get last carry flag state (from ChkRng)
-      bool GetLastCarryFlag() {
-        return C;
-      }
-
-      // Get/Set ValExpr for testing
-      uint16_t GetValExpr() {
-        return ValExpr_word;
-      }
-
-      void SetValExpr(uint16_t value) {
-        ValExpr_word = value;
-      }
-
-      // Get/Set LenTIdx for testing
-      uint8_t GetLenTIdx() {
-        return LenTIdx;
-      }
-
-      void SetLenTIdx(uint8_t mode) {
-        LenTIdx = mode;
-      }
-
-      // Get/Set ModWrdL for testing
-      uint8_t GetModWrdL() {
-        return ModWrdL;
-      }
-
-      void SetModWrdL(uint8_t flags) {
-        ModWrdL = flags;
-      }
-
-      //=================================================
-      // Phase 4: EvalOprnd & Directive Dispatch Test Helpers
-      //=================================================
-
-      uint8_t GetPassNbr() {
-        return PassNbr;
-      }
-
-      void SetPassNbr(uint8_t pass) {
-        PassNbr = pass;
-      }
-
-      uint8_t GetNxtToken() {
-        return NxtToken;
-      }
-
-      void EvalOprnd() {
-        ::EvalOprnd();
-      }
-
-      const char* GetLastDirectiveCalled() {
-        return g_LastDirectiveCalled ? g_LastDirectiveCalled : "";
-      }
-
-      bool CallDirectiveDispatch(const char* directiveName) {
-        // Set up source line with directive name
-        SetupSourceLine(directiveName);
-
-        // Call HndlMnem to dispatch
-        return HndlMnem();
-      }
-
-      //=================================================
-      // Phase 5: EQU and ORG Test Helpers
-      //=================================================
-
-      // Symbol table access
-      int GetSymbolCount() {
-        // Count non-null entries in symbol table
-        // For now, return a placeholder
-        // TODO: Implement proper symbol counting when symbol table is populated
-        return 0;
-      }
-
-      uint16_t GetSymbolValue(const char* name) {
-        // Look up symbol by name and return its value
-        // TODO: Implement when symbol table lookup is complete
-        return 0;
-      }
-
-      bool FindSymbol(const char* name) {
-        // Check if symbol exists in table
-        // TODO: Implement when symbol table lookup is complete
-        return false;
-      }
-
-      // Address control
-      uint16_t GetCurAdr() {
-        return PC;
-      }
-
-      void SetCurAdr(uint16_t addr) {
-        PC    = addr;
-        ObjPC = addr;
-      }
-
-      // Label field control
-      void SetLabelF(uint8_t value) {
-        LabelF = value;
-      }
-
-      uint8_t GetLabelF() {
-        return LabelF;
-      }
-
-      // Symbol table control
-      void InitSymbolTable() {
-        // Initialize symbol table for testing
-        // Set up StrtSymT and EndSymT
-        StrtSymT = 0x0800;  // Standard start
-        EndSymT  = 0x0800;  // Empty initially
-
-        // Zero out hash table if allocated
-        if (HeaderT_ptr != nullptr) {
-          std::memset(HeaderT_ptr, 0, 256);
-        }
-      }
-
-      void ClearSymbolTable() {
-        // Reset symbol table to empty state
-        EndSymT = StrtSymT;
-        if (HeaderT_ptr != nullptr) {
-          std::memset(HeaderT_ptr, 0, 256);
-        }
-      }
-
-      void SetSymFBP(uint16_t ptr) {
-        SymFBP = ptr;
-      }
-
-      uint16_t GetSymFBP() {
-        return SymFBP;
-      }
-
-      // Direct handler calls (already forward declared)
-      // HndlEQU and HndlORG are called directly from test code
-
-      //=================================================
-      // Phase 6: Data Directives Test Helpers
-      //=================================================
-
-      // Direct handler calls
-      void HndlDS() {
-        ::HndlDS();
-      }
-
-      void HndlDFB() {
-        ::HndlDFB();
-      }
-
-      void HndlDW() {
-        ::HndlDW();
-      }
-
-      void HndlASC() {
-        ::HndlASC();
-      }
-
-      void HndlDCI() {
-        ::HndlDCI();
-      }
-
-      // Test memory accessors
-      void EnableTestObjMemory(bool enable) {
-        g_test_obj_memory_enabled = enable;
-        if (enable) {
-          // Align ObjPC with current PC for test writes
-          ObjPC = PC;
-        }
-      }
-
-      uint8_t GetTestObjMemory(uint16_t addr) {
-        if (addr < 65536) {
-          return g_test_obj_memory[addr];
-        }
-        return 0;
-      }
-
-      void ClearTestObjMemory() {
-        std::memset(g_test_obj_memory, 0, sizeof(g_test_obj_memory));
-      }
-
-      // Get GMC buffer (for testing direct byte output)
-      uint8_t GetGMC(uint8_t index) {
-        if (index < 4) {
-          return GMC[index];
-        }
-        return 0;
-      }
-
-      //=================================================
-      // Phase 7.2: LST Directive Test Helpers
-      //=================================================
-
-      // Listing flag accessors
-      uint8_t GetListingF() {
-        return ListingF;
-      }
-
-      void SetListingF(uint8_t value) {
-        ListingF = value;
-      }
-
-      uint8_t GetLstCyc() {
-        return LstCyc;
-      }
-
-      void SetLstCyc(uint8_t value) {
-        LstCyc = value;
-      }
-
-      uint8_t GetLstUnAsm() {
-        return LstUnAsm;
-      }
-
-      void SetLstUnAsm(uint8_t value) {
-        LstUnAsm = value;
-      }
-
-      uint8_t GetLstExpMac() {
-        return LstExpMac;
-      }
-
-      void SetLstExpMac(uint8_t value) {
-        LstExpMac = value;
-      }
-
-      uint8_t GetLstWarns() {
-        return LstWarns;
-      }
-
-      void SetLstWarns(uint8_t value) {
-        LstWarns = value;
-      }
-
-      uint8_t GetLstGCode() {
-        return LstGCode;
-      }
-
-      void SetLstGCode(uint8_t value) {
-        LstGCode = value;
-      }
-
-      uint8_t GetLstASym() {
-        return LstASym;
-      }
-
-      void SetLstASym(uint8_t value) {
-        LstASym = value;
-      }
-
-      uint8_t GetLstVSym() {
-        return LstVSym;
-      }
-
-      void SetLstVSym(uint8_t value) {
-        LstVSym = value;
-      }
-
-      uint8_t GetLst6Cols() {
-        return Lst6Cols;
-      }
-
-      void SetLst6Cols(uint8_t value) {
-        Lst6Cols = value;
-      }
-
-      // Direct handler call
-      void HndlLST() {
-        ::HndlLST();
-      }
-
-      //=================================================
-      // Phase 7.3: NOLIST and PAGE Directive Test Helpers
-      //=================================================
-
-      // Direct handler calls
-      void HndlNOLIST() {
-        ::HndlNOLIST();
-      }
-
-      void DoPage() {
-        ::DoPage();
-      }
-
-      //=================================================
-      // Phase 7.4: SBTL Directive Test Helpers
-      //=================================================
-
-      // SubTtlF accessor
-      uint8_t GetSubTtlF() {
-        return SubTtlF;
-      }
-
-      void SetSubTtlF(uint8_t value) {
-        SubTtlF = value;
-      }
-
-      // SubTitle accessor (returns C-string pointer to buffer)
-      const char* GetSubTitle() {
-        return reinterpret_cast<const char*>(SubTitle);
-      }
-
-      void ClearSubTitle() {
-        std::memset(SubTitle, 0, sizeof(SubTitle));
-      }
-
-      // Direct handler call
-      void HndlSBTL() {
-        ::HndlSBTL();
-      }
-#endif  // Test helpers for Phase 2-3
-
     //=================================================
-    // Full test helpers for MnemonicDispatchTest
+    // Phase 2: Mnemonic Dispatch Test Helpers
     //=================================================
 
     // Test source line buffer
-    static uint8_t test_src_buffer[256];
+    static uint8_t  test_src_buffer[256];
+    static uint8_t* test_SrcP_ptr = nullptr;
 
     void ResetDispatchState() {
-      MnemP                 = nullptr;
+      MnemP                 = 0;
       ZAB                   = 0x80;
       SubTIdx               = 0;
       MacroF                = 0;  // No macros for testing
       Y                     = 0;
-      g_LastDirectiveCalled = "";
+      g_LastDirectiveCalled = nullptr;  // Reset directive tracking
       std::memset(test_src_buffer, 0, sizeof(test_src_buffer));
     }
 
     void SetupSourceLine(const char* line) {
+      // Copy line to test buffer
       size_t len = strlen(line);
       if (len > sizeof(test_src_buffer) - 1) {
         len = sizeof(test_src_buffer) - 1;
       }
       std::memcpy(test_src_buffer, line, len);
-      test_src_buffer[len] = CR;
-      g_test_src_buffer    = test_src_buffer;
-      Y                    = 0;
+      test_src_buffer[len] = CR;  // Add CR terminator
+
+      // Set g_test_src_buffer so SrcP_byte() uses it
+      g_test_src_buffer = test_src_buffer;
+
+      // Set up SrcP to point to test buffer
+      // In the original 6502 code, SrcP is a 16-bit pointer stored in zero page
+      // For C++ testing, we'll use the SrcP macro which simulates array access
+      test_SrcP_ptr = test_src_buffer;
+
+      // Initialize Y to 0 (start of line)
+      Y = 0;
     }
 
     std::uintptr_t GetMnemP() {
@@ -9635,155 +9156,87 @@ namespace EdAsmNg {
       return SubTIdx;
     }
 
+    void SetSubTIdx(uint8_t value) {
+      SubTIdx = value;
+    }
+
+    void SetupMnemP(uint8_t* mnemEntry, uint8_t y_offset) {
+      MnemP = mnemEntry;
+      Y     = y_offset;
+    }
+
+    // Global test buffer for operand field (256 bytes max for testing)
+    static std::uint8_t g_test_operand_buffer[256];
+
+    void SetupOperandField(const char* operand) {
+      // Copy operand string to test buffer (null-terminated)
+      if (operand == nullptr) {
+        g_test_operand_buffer[0] = '\0';
+      } else {
+        size_t len = strlen(operand);
+        if (len >= sizeof(g_test_operand_buffer) - 1) {
+          len = sizeof(g_test_operand_buffer) - 1;
+        }
+        memcpy(g_test_operand_buffer, operand, len);
+        g_test_operand_buffer[len] = '\0';  // Null-terminate
+      }
+
+      // Set up g_test_src_buffer to point to the operand buffer
+      g_test_src_buffer = g_test_operand_buffer;
+
+      // Set Y to 0 to start parsing from beginning of operand field
+      Y = 0;
+    }
+
+    // Public wrappers for internal assembler functions (test helpers)
+    void GInstLen() {
+      Bridge_GInstLen();
+    }
+
+    void StorGMC() {
+      Bridge_StorGMC();
+    }
+
     bool HndlMnem() {
-      ::HndlMnem();
-      return !C;  // Return true for success (C=0), false for error (C=1)
-    }
+      // Call the internal HndlMnem function
+      // It returns via setting the C flag
+      // For testing, we need to capture the C flag state
 
-    const char* GetLastDirectiveCalled() {
-      return g_LastDirectiveCalled ? g_LastDirectiveCalled : "";
+      // Re-route SrcP array access to test buffer
+      // This is a workaround since SrcP is uint16_t but used as array
+      auto old_SrcP = ::SrcP;
+
+      // Temporarily replace the SrcP array access mechanism
+      // by modifying how SrcP_at(Y) is evaluated
+      // Since we can't directly change pointer behavior, we'll use a different approach
+
+      // For now, call HndlMnem with Y=0
+      Bridge_HndlMnem();
+
+      // Return success status (C flag: false=success, true=error)
+      return !C;
     }
 
     //=================================================
-    // Phase 8.1: Initialization and Cleanup Test Helpers
+    // Phase 3a: StorByt Test Helpers
     //=================================================
-
-    // Error/Warning counter accessors
-    void SetNumErrs(uint16_t value) {
-      NbrErrs = value;
-    }
-
-    void SetNumWarns(uint16_t value) {
-      NbrWarns = value;
-    }
-
-    // ListingF accessor
-    uint8_t GetListingF() {
-      return ListingF;
-    }
-
-    void SetListingF(uint8_t value) {
-      ListingF = value;
-    }
-
-    // RelCodeF accessor
-    uint8_t GetRelCodeF() {
-      return RelCodeF;
-    }
-
-    void SetRelCodeF(uint8_t value) {
-      RelCodeF = value;
-    }
-
-    // DummyF (DSECT) test accessors
-    void SetDummyF(uint8_t value) {
-      DummyF = value;
-    }
-
-    uint8_t GetDummyF() {
-      return DummyF;
-    }
-
-    // SubTtlF accessor
-    uint8_t GetSubTtlF() {
-      return SubTtlF;
-    }
-
-    void SetSubTtlF(uint8_t value) {
-      SubTtlF = value;
-    }
-
-    // Line number accessor
-    uint16_t GetLineNum() {
-      // LineNum is stored as BCDNbr (3 bytes BCD format)
-      // For testing, we'll treat it as low 2 bytes
-      return (static_cast<uint16_t>(BCDNbr[1]) << 8) | BCDNbr[0];
-    }
-
-    void SetLineNum(uint16_t value) {
-      BCDNbr[0] = value & 0xFF;
-      BCDNbr[1] = (value >> 8) & 0xFF;
-    }
-
-    // MacroF accessor
-    uint8_t GetMacroF() {
-      return MacroF;
-    }
-
-    void SetMacroF(uint8_t value) {
-      MacroF = value;
-    }
-
-    // IfDefF accessor (CondAsmF)
-    uint8_t GetIfDefF() {
-      return CondAsmF;
-    }
-
-    void SetIfDefF(uint8_t value) {
-      CondAsmF = value;
-    }
-
-    // GenF accessor
-    uint8_t GetGenF() {
-      return GenF;
-    }
 
     void SetGenF(uint8_t value) {
       GenF = value;
     }
 
-    // Symbol table pointers
-    uint16_t GetStrtSymT() {
-      return StrtSymT;
-    }
-
-    void SetStrtSymT(uint16_t value) {
-      StrtSymT = value;
-    }
-
-    uint16_t GetEndSymT() {
-      return EndSymT;
-    }
-
-    void SetEndSymT(uint16_t value) {
-      EndSymT = value;
-    }
-
-    // HeaderT accessor
-    uint16_t GetHeaderT(uint8_t index) {
-      if (HeaderT_ptr == nullptr) {
-        return 0x0000;
-      }
-      return (static_cast<uint16_t>(HeaderT_ptr[index * 2 + 1]) << 8) | HeaderT_ptr[index * 2];
-    }
-
-    void SetHeaderT(uint8_t index, uint16_t value) {
-      if (HeaderT_ptr == nullptr) {
-        return;
-      }
-      HeaderT_ptr[index * 2]     = value & 0xFF;
-      HeaderT_ptr[index * 2 + 1] = (value >> 8) & 0xFF;
-    }
-
-    // PC accessor
-    uint16_t GetPC() {
-      return PC;
-    }
-
-    void SetPC(uint16_t value) {
-      PC = value;
-    }
-
-    // ObjPC accessor
-    uint16_t GetObjPC() {
-      return ObjPC;
+    uint8_t GetGenF() {
+      return GenF;
     }
 
     void SetObjPC(uint16_t value) {
       ObjPC = value;
     }
 
-    // HighMem accessor (test helper)
+    uint16_t GetObjPC() {
+      return ObjPC;
+    }
+
     void SetHighMem(uint16_t value) {
       HighMem = value;
     }
@@ -9792,7 +9245,53 @@ namespace EdAsmNg {
       return HighMem;
     }
 
-    // MemTop accessor
+    void StorByt(uint8_t byte) {
+      A = byte;
+      Bridge_StorByt();
+    }
+
+    uint8_t ReadObjMemory(uint16_t addr) {
+      return g_test_obj_memory[addr];
+    }
+
+    void WriteObjMemory(uint16_t addr, uint8_t value) {
+      g_test_obj_memory[addr] = value;
+    }
+
+    void InitObjMemory() {
+      std::memset(g_test_obj_memory, 0, sizeof(g_test_obj_memory));
+      g_test_obj_memory_enabled = true;
+    }
+
+    //=================================================
+    // Phase 7.5: OBJ Directive Test Helpers
+    //=================================================
+
+    void SetRelCodeF(uint8_t value) {
+      RelCodeF = value;
+    }
+
+    uint8_t GetRelCodeF() {
+      return RelCodeF;
+    }
+
+    // DummyF (DSECT) accessor for tests
+    void SetDummyF(uint8_t value) {
+      DummyF = value;
+    }
+
+    uint8_t GetDummyF() {
+      return DummyF;
+    }
+
+    void SetEndSymT(uint16_t value) {
+      EndSymT = value;
+    }
+
+    uint16_t GetEndSymT() {
+      return EndSymT;
+    }
+
     void SetMemTop(uint16_t value) {
       MemTop = value;
     }
@@ -9801,7 +9300,6 @@ namespace EdAsmNg {
       return MemTop;
     }
 
-    // RLDEnd accessor
     void SetRLDEnd(uint16_t value) {
       RLDEnd = value;
     }
@@ -9834,39 +9332,519 @@ namespace EdAsmNg {
       }
     }
 
-    // Initialize object memory for tests and enable in-memory object writes
-    void InitObjMemory() {
-      std::memset(g_test_obj_memory, 0, sizeof(g_test_obj_memory));
-      g_test_obj_memory_enabled = true;
+    void HndlOBJ() {
+      Bridge_HndlOBJ();
     }
 
-    // Read a byte from the simulated object memory (test helper)
-    uint8_t ReadObjMemory(uint16_t addr) {
-      return g_test_obj_memory[addr];
+    void HndlREL() {
+      Bridge_HndlREL();
     }
 
-    // GMC buffer accessors
-    uint8_t GetGMC(uint8_t index) {
-      if (index >= 4) return 0;
-      return GMC[index];
+    //=================================================
+    // Phase 3b: GenMCode Test Helpers
+    //=================================================
+
+    void SetLength(uint8_t value) {
+      Length = value;
+    }
+
+    uint8_t GetLength() {
+      return Length;
+    }
+
+    void SetLenTIdx(uint8_t value) {
+      LenTIdx = value;
+    }
+
+    uint8_t GetLenTIdx() {
+      return LenTIdx;
+    }
+
+    void SetValExpr(uint16_t value) {
+      ValExpr_word = value;
+    }
+
+    uint16_t GetValExpr() {
+      return ValExpr_word;
+    }
+
+    void SetModWrdL(uint8_t value) {
+      ModWrdL = value;
+    }
+
+    uint8_t GetModWrdL() {
+      return ModWrdL;
+    }
+
+    void SetRelExprF(uint8_t value) {
+      RelExprF = value;
+    }
+
+    uint8_t GetRelExprF() {
+      return RelExprF;
+    }
+
+    uint8_t GetGMC(int index) {
+      if (index >= 0 && index < 4) {
+        return GMC[index];
+      }
+      return 0;
     }
 
     void SetGMC(uint8_t index, uint8_t value) {
-      if (index >= 4) return;
-      GMC[index] = value;
+      if (index < 4) {
+        GMC[index] = value;
+      }
+    }
+
+    uint8_t GetGMCIdx() {
+      return GMCIdx;
+    }
+
+    // GenMCode - Generate Machine Code
+    // Extracted from GenNow section (lines 2553-2633)
+    // Populates the GMC buffer with opcode and operand bytes
+    // based on instruction length and addressing mode
+    void GenMCode(uint8_t opcode) {
+      // Store opcode in GMC[0]
+      X      = 0;
+      GMC[X] = opcode;
+      X++;
+      GMCIdx = X;
+
+      A = ModWrdL;
+      // BIT Bit08 - branch instr?
+      if ((A & 0x08) != 0) {
+        // Branch instructions
+        // Store displacement byte from ValExpr
+        GMC[X] = ValExpr;
+        X++;
+        GMCIdx = X;
+        return;
+      }
+
+      // Non-branch instructions
+      // Check if we need to store operand bytes
+      A = X;  // X=1 at this point
+      if (A >= Length) {
+        // Single byte instruction (accumulator mode, implied, etc.)
+        return;
+      }
+
+      // Store operand bytes from ValExpr (little-endian)
+      A      = ValExpr;
+      GMC[X] = A;
+      X++;
+
+      if (X >= Length) {
+        GMCIdx = X;
+        return;
+      }
+
+      // If 3-byte instruction, store high byte
+      A      = ValExpr_hi;
+      GMC[X] = A;
+      X++;
+      GMCIdx = X;
+    }
+
+    //=================================================
+    // Phase 3c: GOpAdr Test Helpers
+    //=================================================
+
+    void ResetGOpAdrState() {
+      LenTIdx      = 0;
+      PC           = 0;
+      ValExpr_word = 0;
+      ModWrdL      = 0;
+      RelExprF     = 0;
+    }
+
+    void SetAddressingMode(uint8_t mode) {
+      LenTIdx = mode;
+    }
+
+    uint8_t GetAddressingMode() {
+      return LenTIdx;
+    }
+
+    void SetPC(uint16_t pc) {
+      PC = pc;
+    }
+
+    uint16_t GetPC() {
+      return PC;
+    }
+
+    // GOpAdr - Get Operand Address
+    // Calculates the final operand address based on addressing mode,
+    // handling relocation, zero page constraints, and branch offsets
+    void GOpAdr() {
+      Bridge_GOpAdr();
+    }
+
+    //=================================================
+    // Phase 3d: ValidateRange & ChkRng Test Helpers
+    //=================================================
+
+    // ChkRng - Generic range checker
+    // Returns true if value is OUT of range (carry set)
+    // Returns false if value is IN range (carry clear)
+    bool ChkRng(uint8_t value, uint8_t minVal, uint8_t maxVal) {
+      return Bridge_ChkRng(value, minVal, maxVal);
+    }
+
+    // ValidateRange - Validate operand value against addressing mode constraints
+    void ValidateRange() {
+      Bridge_ValidateRange();
+    }
+
+    // Get last carry flag state (from ChkRng)
+    bool GetLastCarryFlag() {
+      return C;
+    }
+
+    //=================================================
+    // Phase 4: EvalOprnd & Directive Dispatch Test Helpers
+    //=================================================
+
+    uint8_t GetPassNbr() {
+      return PassNbr;
+    }
+
+    void SetPassNbr(uint8_t pass) {
+      PassNbr = pass;
+    }
+
+    uint8_t GetNxtToken() {
+      return NxtToken;
+    }
+
+    void EvalOprnd() {
+      Bridge_EvalOprnd();
+    }
+
+    const char* GetLastDirectiveCalled() {
+      return g_LastDirectiveCalled ? g_LastDirectiveCalled : "";
+    }
+
+    bool CallDirectiveDispatch(const char* directiveName) {
+      // Set up source line with directive name
+      SetupSourceLine(directiveName);
+
+      // Call HndlMnem to dispatch
+      return HndlMnem();
+    }
+
+    //=================================================
+    // Phase 5: EQU and ORG Test Helpers
+    //=================================================
+
+    // Address control
+    uint16_t GetCurAdr() {
+      return PC;
+    }
+
+    void SetCurAdr(uint16_t addr) {
+      PC    = addr;
+      ObjPC = addr;
+    }
+
+    // Label field control
+    void SetLabelF(uint8_t value) {
+      LabelF = value;
+    }
+
+    uint8_t GetLabelF() {
+      return LabelF;
+    }
+
+    // Symbol table control
+    void InitSymbolTable() {
+      // Initialize symbol table for testing
+      // Set up StrtSymT and EndSymT
+      StrtSymT = 0x0800;  // Standard start
+      EndSymT  = 0x0800;  // Empty initially
+
+      // Zero out hash table if allocated
+      if (HeaderT_ptr != nullptr) {
+        std::memset(HeaderT_ptr, 0, 256);
+      }
+    }
+
+    void ClearSymbolTable() {
+      // Reset symbol table to empty state
+      EndSymT = StrtSymT;
+      if (HeaderT_ptr != nullptr) {
+        std::memset(HeaderT_ptr, 0, 256);
+      }
+    }
+
+    void SetSymFBP(uint16_t ptr) {
+      SymFBP = ptr;
+    }
+
+    uint16_t GetSymFBP() {
+      return SymFBP;
+    }
+
+    // Direct handler calls (already forward declared)
+    // HndlEQU and HndlORG are called directly from test code
+
+    //=================================================
+    // Phase 6: Data Directives Test Helpers
+    //=================================================
+
+    // Direct handler calls
+    void HndlDS() {
+      Bridge_HndlDS();
+    }
+
+    void HndlDFB() {
+      Bridge_HndlDFB();
+    }
+
+    void HndlDW() {
+      Bridge_HndlDW();
+    }
+
+    void HndlASC() {
+      Bridge_HndlASC();
+    }
+
+    void HndlDCI() {
+      Bridge_HndlDCI();
+    }
+
+    // Test memory accessors
+    void EnableTestObjMemory(bool enable) {
+      g_test_obj_memory_enabled = enable;
+      if (enable) {
+        // Align ObjPC with current PC for test writes
+        ObjPC = PC;
+      }
+    }
+
+    uint8_t GetTestObjMemory(uint16_t addr) {
+      if (addr < 65536) {
+        return g_test_obj_memory[addr];
+      }
+      return 0;
+    }
+
+    void ClearTestObjMemory() {
+      std::memset(g_test_obj_memory, 0, sizeof(g_test_obj_memory));
+    }
+
+    // Get GMC buffer (for testing direct byte output)
+    uint8_t GetGMC(uint8_t index) {
+      if (index < 4) {
+        return GMC[index];
+      }
+      return 0;
+    }
+
+    //=================================================
+    // Phase 7.2: LST Directive Test Helpers
+    //=================================================
+
+    // Listing flag accessors
+    uint8_t GetListingF() {
+      return ListingF;
+    }
+
+    void SetListingF(uint8_t value) {
+      ListingF = value;
+    }
+
+    uint8_t GetLstCyc() {
+      return LstCyc;
+    }
+
+    void SetLstCyc(uint8_t value) {
+      LstCyc = value;
+    }
+
+    uint8_t GetLstUnAsm() {
+      return LstUnAsm;
+    }
+
+    void SetLstUnAsm(uint8_t value) {
+      LstUnAsm = value;
+    }
+
+    uint8_t GetLstExpMac() {
+      return LstExpMac;
+    }
+
+    void SetLstExpMac(uint8_t value) {
+      LstExpMac = value;
+    }
+
+    uint8_t GetLstWarns() {
+      return LstWarns;
+    }
+
+    void SetLstWarns(uint8_t value) {
+      LstWarns = value;
+    }
+
+    uint8_t GetLstGCode() {
+      return LstGCode;
+    }
+
+    void SetLstGCode(uint8_t value) {
+      LstGCode = value;
+    }
+
+    uint8_t GetLstASym() {
+      return LstASym;
+    }
+
+    void SetLstASym(uint8_t value) {
+      LstASym = value;
+    }
+
+    uint8_t GetLstVSym() {
+      return LstVSym;
+    }
+
+    void SetLstVSym(uint8_t value) {
+      LstVSym = value;
+    }
+
+    uint8_t GetLst6Cols() {
+      return Lst6Cols;
+    }
+
+    void SetLst6Cols(uint8_t value) {
+      Lst6Cols = value;
+    }
+
+    // Direct handler call
+    void HndlLST() {
+      Bridge_HndlLST();
+    }
+
+    //=================================================
+    // Phase 7.3: NOLIST and PAGE Directive Test Helpers
+    //=================================================
+
+    // Direct handler calls
+    void HndlNOLIST() {
+      Bridge_HndlNOLIST();
+    }
+
+    void DoPage() {
+      Bridge_DoPage();
+    }
+
+    //=================================================
+    // Phase 7.4: SBTL Directive Test Helpers
+    //=================================================
+
+    // SubTtlF accessor
+    uint8_t GetSubTtlF() {
+      return SubTtlF;
+    }
+
+    void SetSubTtlF(uint8_t value) {
+      SubTtlF = value;
+    }
+
+    // SubTitle accessor (returns C-string pointer to buffer)
+    const char* GetSubTitle() {
+      return reinterpret_cast<const char*>(SubTitle);
+    }
+
+    void ClearSubTitle() {
+      std::memset(SubTitle, 0, sizeof(SubTitle));
+    }
+
+    // Direct handler call
+    void HndlSBTL() {
+      Bridge_HndlSBTL();
+    }
+
+    //=================================================
+    // Phase 8.1: Initialization and Cleanup Test Helpers
+    //=================================================
+
+    // Error/Warning counter accessors
+    void SetNumErrs(uint16_t value) {
+      NbrErrs = value;
+    }
+
+    void SetNumWarns(uint16_t value) {
+      NbrWarns = value;
+    }
+
+    // Line number accessor
+    uint16_t GetLineNum() {
+      // LineNum is stored as BCDNbr (3 bytes BCD format)
+      // For testing, we'll treat it as low 2 bytes
+      return (static_cast<uint16_t>(BCDNbr[1]) << 8) | BCDNbr[0];
+    }
+
+    void SetLineNum(uint16_t value) {
+      BCDNbr[0] = value & 0xFF;
+      BCDNbr[1] = (value >> 8) & 0xFF;
+    }
+
+    // MacroF accessor
+    uint8_t GetMacroF() {
+      return MacroF;
+    }
+
+    void SetMacroF(uint8_t value) {
+      MacroF = value;
+    }
+
+    // IfDefF accessor (CondAsmF)
+    uint8_t GetIfDefF() {
+      return CondAsmF;
+    }
+
+    void SetIfDefF(uint8_t value) {
+      CondAsmF = value;
+    }
+
+    // Symbol table pointers
+    uint16_t GetStrtSymT() {
+      return StrtSymT;
+    }
+
+    void SetStrtSymT(uint16_t value) {
+      StrtSymT = value;
+    }
+
+    // HeaderT accessor
+    uint16_t GetHeaderT(uint8_t index) {
+      if (HeaderT_ptr == nullptr) {
+        return 0x0000;
+      }
+      return (static_cast<uint16_t>(HeaderT_ptr[index * 2 + 1]) << 8) | HeaderT_ptr[index * 2];
+    }
+
+    void SetHeaderT(uint8_t index, uint16_t value) {
+      if (HeaderT_ptr == nullptr) {
+        return;
+      }
+      HeaderT_ptr[index * 2]     = value & 0xFF;
+      HeaderT_ptr[index * 2 + 1] = (value >> 8) & 0xFF;
     }
 
     // Phase 8.1: Initialization and cleanup functions
     void SaveZP() {
-      ::SaveZP();
+      Bridge_SaveZP();
     }
 
     void RestoreZP() {
-      ::RestoreZP();
+      Bridge_RestoreZP();
     }
 
     void InitASM() {
-      ::InitASM();
+      Bridge_InitASM();
     }
 
     void CleanupAsm() {
@@ -9987,21 +9965,12 @@ namespace EdAsmNg {
 
     // Execute Pass 1
     void DoPass1() {
-      ::DoPass1();
+      Bridge_DoPass1();
     }
 
     // Execute Pass 2
     void DoPass2() {
-      ::DoPass2();
-    }
-
-    // Pass number accessors
-    uint8_t GetPassNbr() {
-      return PassNbr;
-    }
-
-    void SetPassNbr(uint8_t value) {
-      PassNbr = value;
+      Bridge_DoPass2();
     }
 
     // Symbol table query functions
@@ -10020,7 +9989,7 @@ namespace EdAsmNg {
       Y                   = 0;
 
       // Call FindSym
-      FindSym();
+      Bridge_FindSym();
       bool found = !C;  // C=0 means found
 
       // Restore SrcP
@@ -10041,7 +10010,7 @@ namespace EdAsmNg {
       SrcP                = temp_addr;
       Y                   = 0;
 
-      FindSym();
+      Bridge_FindSym();
 
       uint16_t value = 0;
       if (!C) {  // Symbol found

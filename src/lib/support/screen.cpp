@@ -1,4 +1,4 @@
-#include "EdAsmNg/ei/screen.hpp"
+#include "EdAsmNg/support/screen.hpp"
 
 #include <ncurses.h>
 

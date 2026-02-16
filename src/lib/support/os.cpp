@@ -1,4 +1,4 @@
-#include "EdAsmNg/ei/os.hpp"
+#include "EdAsmNg/support/os.hpp"
 
 #include <limits.h>
 #include <unistd.h>
@@ -11,7 +11,7 @@
 #include <filesystem>
 #include <string>
 
-#include "EdAsmNg/ei/screen.hpp"
+#include "EdAsmNg/support/screen.hpp"
 
 namespace fs = std::filesystem;
 

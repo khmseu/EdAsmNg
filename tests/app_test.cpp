@@ -4204,3 +4204,335 @@ TEST_F(Phase853RelocatableRLDTest, PCObjPC_ConsistentAfterRelocCode) {
   EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x1005);
   EXPECT_EQ(EdAsmNg::Asm::GetPC(), EdAsmNg::Asm::GetObjPC());
 }
+
+//=================================================
+// Phase 2: GInstLen - Instruction Length Calculation Tests
+//=================================================
+
+// Helper functions to access GInstLen and instruction length state
+namespace EdAsmNg {
+  namespace Asm {
+    // Test helpers for GInstLen
+    void    GInstLen();  // Call instruction length calculator
+    void    SetupMnemP(uint8_t* mnemEntry, uint8_t y_offset);
+    void    SetupOperandField(const char* operand);
+    uint8_t GetY();
+    void    SetY(uint8_t value);
+    void    SetSubTIdx(uint8_t value);
+    uint8_t GetSubTIdx();
+    uint8_t GetLength();                           // Get calculated instruction length
+    void    SetLength(uint8_t value);              // Set instruction length
+    uint8_t GetLenTIdx();                          // Get addressing mode index
+    void    SetLenTIdx(uint8_t value);             // Set addressing mode index
+    uint8_t GetGMC(uint8_t index);                 // Get byte from GMC buffer
+    void    SetGMC(uint8_t index, uint8_t value);  // Set byte in GMC buffer
+  }  // namespace Asm
+}  // namespace EdAsmNg
+
+class Phase2_GInstLenTest : public ::testing::Test {
+ protected:
+  // Storage for mnemonic table entry (3 flag bytes + padding)
+  uint8_t mnemEntry[16];
+
+  void SetUp() override {
+    EdAsmNg::Asm::ResetAsmState();
+    EdAsmNg::Asm::ResetErrorState();
+    memset(mnemEntry, 0, sizeof(mnemEntry));
+    EdAsmNg::Asm::SetPassNbr(0);  // Pass 1 for now
+  }
+
+  // Helper: Setup mnemonic flags for a standard instruction
+  // flagByte1: addressing mode flags (e.g., 0x01 for immediate support)
+  // flagByte2: addressing mode bits (e.g., 0x04 for immediate)
+  // subTableIdx: index into opcode sub-table
+  void SetupMnemonic(uint8_t flagByte1, uint8_t flagByte2, uint8_t subTableIdx) {
+    mnemEntry[0] = flagByte1;
+    mnemEntry[1] = flagByte2;
+    mnemEntry[2] = subTableIdx;
+    EdAsmNg::Asm::SetupMnemP(mnemEntry, 0);  // Y=0 initially
+  }
+};
+
+TEST_F(Phase2_GInstLenTest, Immediate_TwoBytes) {
+  // Test: LDA #$42 should be 2 bytes
+  // Immediate addressing: flagByte2 has bit 2 set (0x04)
+  // We'll simulate the mnemonic entry for LDA
+
+  // Setup mnemonic: LDA supports immediate mode
+  // flagByte1 = 0x00 (normal instruction, not directive/branch/implied)
+  // flagByte2 = 0xFF (supports all modes for simplicity)
+  // subTableIdx = 0x03 (example)
+  SetupMnemonic(0x00, 0xFF, 0x03);
+
+  // Setup operand field: "#$42"
+  EdAsmNg::Asm::SetupOperandField("#$42");
+
+  // Call GInstLen - it should determine addressing mode and set Length=2
+  EdAsmNg::Asm::GInstLen();
+
+  // Verify Length was set to 2 (opcode + 1 operand byte)
+  EXPECT_EQ(EdAsmNg::Asm::GetLength(), 2);
+
+  // Verify LenTIdx was set to 2 (immediate addressing mode index)
+  EXPECT_EQ(EdAsmNg::Asm::GetLenTIdx(), 2);
+}
+
+TEST_F(Phase2_GInstLenTest, Absolute_ThreeBytes) {
+  // Test: LDA $1234 should be 3 bytes
+  // Absolute addressing: flagByte2 has bit 0 set (0x01)
+
+  SetupMnemonic(0x00, 0xFF, 0x03);
+  EdAsmNg::Asm::SetupOperandField("$1234");
+
+  EdAsmNg::Asm::GInstLen();
+
+  // Verify Length was set to 3 (opcode + 2 address bytes)
+  EXPECT_EQ(EdAsmNg::Asm::GetLength(), 3);
+
+  // Verify LenTIdx was set to 0 (absolute addressing mode index)
+  EXPECT_EQ(EdAsmNg::Asm::GetLenTIdx(), 0);
+}
+
+TEST_F(Phase2_GInstLenTest, ZeroPage_TwoBytes) {
+  // Test: LDA $42 should be 2 bytes
+  // Zero page addressing: flagByte2 has bit 1 set (0x02)
+
+  SetupMnemonic(0x00, 0xFF, 0x03);
+  EdAsmNg::Asm::SetupOperandField("$42");
+
+  EdAsmNg::Asm::GInstLen();
+
+  // Verify Length was set to 2 (opcode + 1 zero-page byte)
+  EXPECT_EQ(EdAsmNg::Asm::GetLength(), 2);
+
+  // Verify LenTIdx was set to 1 (zero page addressing mode index)
+  EXPECT_EQ(EdAsmNg::Asm::GetLenTIdx(), 1);
+}
+
+TEST_F(Phase2_GInstLenTest, Indexed_ThreeBytes) {
+  // Test: LDA $1234,X should be 3 bytes
+  // Absolute indexed X: flagByte2 has bit 4 set (0x10)
+
+  SetupMnemonic(0x00, 0xFF, 0x03);
+  EdAsmNg::Asm::SetupOperandField("$1234,X");
+
+  EdAsmNg::Asm::GInstLen();
+
+  // Verify Length was set to 3 (opcode + 2 address bytes)
+  EXPECT_EQ(EdAsmNg::Asm::GetLength(), 3);
+
+  // Verify LenTIdx was set to 4 (abs,X addressing mode index)
+  EXPECT_EQ(EdAsmNg::Asm::GetLenTIdx(), 4);
+}
+
+TEST_F(Phase2_GInstLenTest, Indirect_TwoBytes) {
+  // Test: LDA ($42),Y should be 2 bytes
+  // Indirect indexed Y: flagByte2 has bit 6 set (0x40)
+
+  SetupMnemonic(0x00, 0xFF, 0x03);
+  EdAsmNg::Asm::SetupOperandField("($42),Y");
+
+  EdAsmNg::Asm::GInstLen();
+
+  // Verify Length was set to 2 (opcode + 1 zero-page byte)
+  EXPECT_EQ(EdAsmNg::Asm::GetLength(), 2);
+
+  // Verify LenTIdx was set to 6 ((zp),Y addressing mode index)
+  EXPECT_EQ(EdAsmNg::Asm::GetLenTIdx(), 6);
+}
+
+TEST_F(Phase2_GInstLenTest, Implied_OneByte) {
+  // Test: TAX (implied addressing) should be 1 byte
+  // Implied: flagByte1 has bit 5 set (0x20 - Bit20)
+
+  SetupMnemonic(0x20, 0x00, 0x00);      // flagByte1 = 0x20 (implied mode)
+  EdAsmNg::Asm::SetupOperandField("");  // No operand
+
+  EdAsmNg::Asm::GInstLen();
+
+  // Verify Length was set to 1 (single byte opcode)
+  EXPECT_EQ(EdAsmNg::Asm::GetLength(), 1);
+}
+
+TEST_F(Phase2_GInstLenTest, Branch_TwoBytes) {
+  // Test: BNE LABEL should be 2 bytes (6502 branch)
+  // Branch: flagByte1 has bit 3 set (0x08 - Bit08)
+
+  SetupMnemonic(0x08, 0x00, 0x00);  // flagByte1 = 0x08 (branch instruction)
+  EdAsmNg::Asm::SetupOperandField("LABEL");
+
+  EdAsmNg::Asm::GInstLen();
+
+  // Verify Length was set to 2 (opcode + 1 displacement byte)
+  EXPECT_EQ(EdAsmNg::Asm::GetLength(), 2);
+
+  // Verify LenTIdx was set to 0 (branch uses LenTIdx=0)
+  EXPECT_EQ(EdAsmNg::Asm::GetLenTIdx(), 0);
+}
+
+//=================================================
+// Phase 3: StorGMC Tests
+//=================================================
+
+// Helper functions for StorGMC testing - reuse existing declarations
+namespace EdAsmNg {
+  namespace Asm {
+    // From Phase 3b: GenMCode Test Helpers
+    void     SetLength(uint8_t length);
+    uint8_t  GetLength();
+    void     SetGMC(uint8_t index, uint8_t value);
+    uint8_t  GetGMC(uint8_t index);
+    uint16_t GetObjPC();
+    void     SetObjPC(uint16_t value);
+    void     SetGenF(uint8_t value);
+    uint8_t  ReadObjMemory(uint16_t addr);
+    void     WriteObjMemory(uint16_t addr, uint8_t value);
+    void     InitObjMemory();
+    void     SetHighMem(uint16_t value);
+    void     StorGMC();
+  }  // namespace Asm
+}  // namespace EdAsmNg
+
+class Phase3_StorGMCTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetAsmState();
+    EdAsmNg::Asm::ResetErrorState();
+    EdAsmNg::Asm::InitObjMemory();
+    EdAsmNg::Asm::SetGenF(0x00);  // Default: memory mode, no suppression
+    EdAsmNg::Asm::SetObjPC(0x2000);
+    EdAsmNg::Asm::SetHighMem(0x9000);
+    EdAsmNg::Asm::SetLength(0);  // Start with 0
+  }
+};
+
+TEST_F(Phase3_StorGMCTest, SingleByteStorage) {
+  // Test: Store single byte from GMC[0] to object memory at ObjPC
+
+  // Setup: 1 byte instruction (e.g., NOP = 0xEA)
+  EdAsmNg::Asm::SetLength(1);
+  EdAsmNg::Asm::SetGMC(0, 0xEA);  // NOP opcode
+  EdAsmNg::Asm::SetObjPC(0x2000);
+
+  // Call StorGMC
+  EdAsmNg::Asm::StorGMC();
+
+  // Verify byte was written to memory
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x2000), 0xEA);
+
+  // Verify ObjPC advanced by 1
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x2001);
+}
+
+TEST_F(Phase3_StorGMCTest, MultiByteStorage) {
+  // Test: Store 3 bytes from GMC[] (LDA absolute: A9 34 12)
+
+  // Setup: 3 byte instruction (LDA $1234)
+  EdAsmNg::Asm::SetLength(3);
+  EdAsmNg::Asm::SetGMC(0, 0xAD);  // LDA absolute opcode
+  EdAsmNg::Asm::SetGMC(1, 0x34);  // Low byte of address
+  EdAsmNg::Asm::SetGMC(2, 0x12);  // High byte of address
+  EdAsmNg::Asm::SetObjPC(0x3000);
+
+  // Call StorGMC
+  EdAsmNg::Asm::StorGMC();
+
+  // Verify all 3 bytes were written
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x3000), 0xAD);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x3001), 0x34);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x3002), 0x12);
+
+  // Verify ObjPC advanced by 3
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x3003);
+}
+
+TEST_F(Phase3_StorGMCTest, ObjPC_Advances) {
+  // Test: Verify ObjPC advances correctly with sequential calls
+
+  EdAsmNg::Asm::SetObjPC(0x4000);
+
+  // First instruction: 2 bytes
+  EdAsmNg::Asm::SetLength(2);
+  EdAsmNg::Asm::SetGMC(0, 0xA9);  // LDA immediate
+  EdAsmNg::Asm::SetGMC(1, 0x42);  // Value
+  EdAsmNg::Asm::StorGMC();
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x4002);
+
+  // Second instruction: 1 byte
+  EdAsmNg::Asm::SetLength(1);
+  EdAsmNg::Asm::SetGMC(0, 0xEA);  // NOP
+  EdAsmNg::Asm::StorGMC();
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x4003);
+
+  // Third instruction: 3 bytes
+  EdAsmNg::Asm::SetLength(3);
+  EdAsmNg::Asm::SetGMC(0, 0x8D);  // STA absolute
+  EdAsmNg::Asm::SetGMC(1, 0x00);
+  EdAsmNg::Asm::SetGMC(2, 0x10);
+  EdAsmNg::Asm::StorGMC();
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x4006);
+
+  // Verify all bytes in sequence
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x4000), 0xA9);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x4001), 0x42);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x4002), 0xEA);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x4003), 0x8D);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x4004), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x4005), 0x10);
+}
+
+TEST_F(Phase3_StorGMCTest, GenF_Suppression) {
+  // Test: GenF N bit (0x80) suppresses code generation
+
+  // Setup
+  EdAsmNg::Asm::SetGenF(0x80);  // Suppress bit set
+  EdAsmNg::Asm::SetLength(2);
+  EdAsmNg::Asm::SetGMC(0, 0xA9);
+  EdAsmNg::Asm::SetGMC(1, 0xFF);
+  EdAsmNg::Asm::SetObjPC(0x5000);
+
+  // Write initial values to memory
+  EdAsmNg::Asm::WriteObjMemory(0x5000, 0x00);
+  EdAsmNg::Asm::WriteObjMemory(0x5001, 0x00);
+
+  // Call StorGMC - should do nothing
+  EdAsmNg::Asm::StorGMC();
+
+  // Verify memory unchanged
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5000), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5001), 0x00);
+
+  // Verify ObjPC unchanged
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5000);
+}
+
+TEST_F(Phase3_StorGMCTest, LengthZero_NoAction) {
+  // Test: Length=0 should return immediately
+
+  EdAsmNg::Asm::SetLength(0);  // Zero length
+  EdAsmNg::Asm::SetObjPC(0x6000);
+
+  // Call StorGMC - should return immediately
+  EdAsmNg::Asm::StorGMC();
+
+  // Verify ObjPC unchanged
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x6000);
+}
+
+TEST_F(Phase3_StorGMCTest, DiskMode_Stubbed) {
+  // Test: GenF V bit (0x40) enters disk mode (currently stubbed)
+  // This test verifies the function doesn't crash in disk mode
+
+  EdAsmNg::Asm::SetGenF(0x40);  // Disk mode bit set
+  EdAsmNg::Asm::SetLength(1);
+  EdAsmNg::Asm::SetGMC(0, 0xEA);
+  EdAsmNg::Asm::SetObjPC(0x7000);
+
+  // Call StorGMC - should handle disk mode gracefully (stub)
+  // This mainly tests we don't crash; disk mode is Phase 9+
+  EdAsmNg::Asm::StorGMC();
+
+  // For disk mode, ObjPC should NOT advance (disk write handles that)
+  // Memory should NOT be written in disk mode
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x7000), 0x00);
+}

@@ -4,5 +4,10 @@
 			"path": "."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"chat.tools.terminal.autoApprove": {
+			"./tests/EdAsmNg_app_test": true,
+			"./tests/Ed": true
+		}
+	}
 }
