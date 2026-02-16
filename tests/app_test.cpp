@@ -2871,6 +2871,7 @@ namespace EdAsmNg {
 
     // Memory source setup helper
     void SetupMemorySource(const char* sourceText, size_t length);
+    void RewindSource();
 
     // Phase 8.2 variable accessors
     uint16_t GetSrcP();
@@ -4036,6 +4037,9 @@ TEST_F(Phase853RelocatableRLDTest, DW_RelocatableSymbol_CreatesRLDEntry) {
   // Run Pass 1 to define the symbol
   EdAsmNg::Asm::DoPass1();
 
+  // Rewind source for Pass 2
+  EdAsmNg::Asm::RewindSource();
+
   // Run Pass 2 to generate code and RLD entries
   EdAsmNg::Asm::SetPassNbr(1);
   EdAsmNg::Asm::SetObjPC(0x1000);
@@ -4064,6 +4068,9 @@ TEST_F(Phase853RelocatableRLDTest, DFB_RelocatableSymbol_CreatesRLDEntry) {
   // Run Pass 1
   EdAsmNg::Asm::DoPass1();
 
+  // Rewind source for Pass 2
+  EdAsmNg::Asm::RewindSource();
+
   // Run Pass 2
   EdAsmNg::Asm::SetPassNbr(1);
   EdAsmNg::Asm::SetObjPC(0x1000);
@@ -4091,6 +4098,9 @@ TEST_F(Phase853RelocatableRLDTest, SymbolMarkedReferenced_AfterRLDEntry) {
 
   // Check symbol flags before Pass 2
   uint8_t flagsBefore = EdAsmNg::Asm::GetSymbolFlags("START");
+
+  // Rewind source for Pass 2
+  EdAsmNg::Asm::RewindSource();
 
   // Run Pass 2
   EdAsmNg::Asm::SetPassNbr(1);
@@ -4121,9 +4131,13 @@ TEST_F(Phase853RelocatableRLDTest, RLDEntry_BoundsCheck) {
   EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
   EdAsmNg::Asm::DoPass1();
 
+  // Rewind source for Pass 2
+  EdAsmNg::Asm::RewindSource();
+
   // Run Pass 2 - should create error due to lack of space
   EdAsmNg::Asm::SetPassNbr(1);
   EdAsmNg::Asm::SetObjPC(0x1000);
+  EdAsmNg::Asm::SetPC(0x1000);
   EdAsmNg::Asm::SetRLDEnd(0x8000);
 
   uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
@@ -4145,6 +4159,9 @@ TEST_F(Phase853RelocatableRLDTest, IllegalRelocExpr_MultiplyRelocatable) {
 
   EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
   EdAsmNg::Asm::DoPass1();
+
+  // Rewind source for Pass 2
+  EdAsmNg::Asm::RewindSource();
 
   // Run Pass 2
   EdAsmNg::Asm::SetPassNbr(1);
@@ -4171,6 +4188,9 @@ TEST_F(Phase853RelocatableRLDTest, PCObjPC_ConsistentAfterRelocCode) {
 
   EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
   EdAsmNg::Asm::DoPass1();
+
+  // Rewind source for Pass 2
+  EdAsmNg::Asm::RewindSource();
 
   // Run Pass 2
   EdAsmNg::Asm::SetPassNbr(1);

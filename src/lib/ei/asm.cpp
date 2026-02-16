@@ -1284,8 +1284,15 @@ namespace {
 
     auto parse_symbol = [&](uint16_t& out_val, uint8_t& out_flags) -> bool {
       uint8_t start_y = Y;
+      fprintf(stderr, "    parse_symbol: Looking for symbol starting at Y=%d, ch='%c'\n", Y,
+              (SrcP_at(Y) >= 32) ? SrcP_at(Y) : '?');
       FindSym();
-      if (C) return false;
+      fprintf(stderr, "    parse_symbol: After FindSym(), C=%d, A=0x%02X, SymP=0x%04X\n", C, A,
+              SymP);
+      if (C) {
+        fprintf(stderr, "    parse_symbol: ERROR - symbol not found\n");
+        return false;
+      }
       out_flags         = A;
       uint8_t* SymP_ptr = SimPtrToMemPtr(SymP);
       out_val           = static_cast<uint16_t>(SymP_ptr[Y] | (SymP_ptr[Y + 1] << 8));
@@ -1355,12 +1362,17 @@ namespace {
     uint16_t term1 = 0, term2 = 0;
     bool     term1_rel = false, term2_rel = false;
 
+    fprintf(stderr, "    EvalExpr (modern): About to parse_term(term1), Y=%d, ch=0x%02X '%c'\n", Y,
+            SrcP_at(Y), (SrcP_at(Y) >= 32 && SrcP_at(Y) < 127) ? SrcP_at(Y) : '?');
     if (!parse_term(term1, term1_rel, true)) {
+      fprintf(stderr, "    EvalExpr (modern): parse_term FAILED\n");
       C = true;
       X = 0x24;
       RegAsmEW(X);
       return;
     }
+    fprintf(stderr, "    EvalExpr (modern): parse_term OK, term1=0x%04X, term1_rel=%d\n", term1,
+            term1_rel);
 
     skip_spaces();
     uint8_t op = SrcP_at(Y);
@@ -3444,8 +3456,13 @@ namespace {
   // & is build downwards towards LoMem
   // Each entry is 4 bytes
   void AddRLDEnt() {
+    fprintf(stderr, "AddRLDEnt: RelCodeF=0x%02X, (int8_t)RelCodeF=%d\n", RelCodeF,
+            (int8_t)RelCodeF);
     // Only generate when relocatable code is requested
-    if ((int8_t)RelCodeF >= 0) return;
+    if ((int8_t)RelCodeF >= 0) {
+      fprintf(stderr, "AddRLDEnt: Early return - not in REL mode\n");
+      return;
+    }
 
     // Ensure space for one entry (4 bytes)
     if (RLDEnd < EndSymT + 4) {
@@ -4281,21 +4298,82 @@ namespace {
 
     if (mnemonic == "REL") {
       // REL directive - enable relocatable code generation
-      // Set MSB of RelCodeF to indicate REL mode
-      C        = true;                    // SEC
-      RelCodeF = (RelCodeF >> 1) | 0x80;  // ROR with carry => MSB set
-      ZAB      = 0x80;                    // Directive flag
-      Length   = 0;
-      C        = false;
+      // Only set flags in Pass 1
+      if (PassNbr == 0) {
+        // Set MSB of RelCodeF to indicate REL mode
+        C        = true;                    // SEC
+        RelCodeF = (RelCodeF >> 1) | 0x80;  // ROR with carry => MSB set
+        // Also set DummyF to mark subsequent symbols as relocatable
+        DummyF = 0x80;  // MSB set => relocatable section
+      }
+      ZAB    = 0x80;  // Directive flag
+      Length = 0;
+      C      = false;
       return;
     }
 
     // Handle directives with proper flag and routing
     if (mnemonic == ".EQU" || mnemonic == "EQU") {
+      fprintf(stderr, "  EQU handler: PassNbr=%d, LabelF=%d, SymP=0x%04X\n", PassNbr, LabelF, SymP);
       ZAB                   = 0x80;  // Directive flag
       g_LastDirectiveCalled = "HndlEQU";
-      Length                = 0;
-      C                     = false;
+
+      // Inline EQU handling - evaluate the operand and store in symbol table
+      NxtField();  // Skip to operand field
+
+      // Evaluate the expression (sets ValExpr, ValExpr_hi, RelExprF)
+      EvalOprnd();
+      fprintf(stderr, "  EQU after EvalOprnd: C=%d, ValExpr=0x%04X, RelExprF=%d\n", C,
+              (uint16_t)(ValExpr | (ValExpr_hi << 8)), RelExprF);
+      if (C) {
+        // Error in evaluation
+        Length = 0;
+        return;  // C already set by EvalOprnd
+      }
+
+      // Check for valid end-of-operand
+      A = NxtToken;
+      if (A != 0) {
+        X = 0x24;  // Directive operand error
+        RegAsmEW(X);
+        Length = 0;
+        return;
+      }
+
+      // For Pass 1, we need to find the label and update its value
+      if (PassNbr == 0) {
+        fprintf(stderr, "  EQU Pass 1: updating symbol, LabelF=%d, SymP=0x%04X\n", LabelF, SymP);
+        // Try to find and update the symbol with the EQU value
+        if (LabelF != 0 && SymP != 0) {
+          uint8_t* symptr = SimPtrToMemPtr(SymP);
+          // Find the flag byte by scanning for 0x80 terminator in name
+          int idx = 0;
+          while ((symptr[idx] & 0x80) == 0) idx++;
+          idx++;  // Now at flag byte
+
+          fprintf(stderr, "  EQU updating: idx=%d, old_flags=0x%02X\n", idx, symptr[idx]);
+
+          // Update symbol flags
+          uint8_t flags = symptr[idx];
+          flags &= static_cast<uint8_t>(~undefined);  // Clear undefined
+          flags |= (RelExprF & relative);
+          if ((int8_t)DummyF < 0) flags |= relative;
+          flags |= unrefd;
+          symptr[idx] = flags;
+
+          // Store the value
+          symptr[idx + 1] = ValExpr;
+          symptr[idx + 2] = ValExpr_hi;
+
+          fprintf(stderr, "  EQU updated: new_flags=0x%02X, value=0x%04X\n", flags,
+                  (uint16_t)(ValExpr | (ValExpr_hi << 8)));
+        } else {
+          fprintf(stderr, "  EQU Pass 1: skipping update (LabelF=%d, SymP=0x%04X)\n", LabelF, SymP);
+        }
+      }
+
+      Length = 0;
+      C      = false;
       return;
     }
 
@@ -4377,15 +4455,29 @@ namespace {
     }
 
     // Recognized directive without handler (like .SKIP)
-    if (mnemonic[0] == '.' || mnemonic == "SKIP" || mnemonic == "DPAGE") {
+    // But allow specific handled directives to pass through
+    if (mnemonic[0] == '.' && mnemonic != ".BYTE" && mnemonic != ".DFB" && mnemonic != ".WORD" &&
+        mnemonic != ".DW" && mnemonic != ".EQU" && mnemonic != ".ORG" && mnemonic != ".LIST" &&
+        mnemonic != ".NOLIST" && mnemonic != ".PAGE" && mnemonic != ".TITLE") {
       ZAB                   = 0x80;  // Set directive flag
       g_LastDirectiveCalled = "";
       C                     = true;  // Error - unsupported
       return;
     }
 
-    if (mnemonic == "DFB") {
+    // Catch other unsupported mnemonics
+    if (mnemonic == "SKIP" || mnemonic == "DPAGE") {
+      ZAB                   = 0x80;
+      g_LastDirectiveCalled = "";
+      C                     = true;  // Error - unsupported
+      return;
+    }
+
+    if (mnemonic == "DFB" || mnemonic == ".BYTE" || mnemonic == ".DFB") {
       // DFB (Define Byte) - with relocatable support
+      ZAB                   = 0x80;  // Mark as directive
+      g_LastDirectiveCalled = "HndlBYTE";
+
       // Y is already positioned after mnemonic, skip any spaces to operand
       while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
       uint16_t byteCount = 0;
@@ -4479,11 +4571,18 @@ namespace {
       return;
     }
 
-    if (mnemonic == "DW") {
+    if (mnemonic == "DW" || mnemonic == ".WORD" || mnemonic == ".DW") {
       // DW (Define Word) - with relocatable support
+      ZAB                   = 0x80;  // Mark as directive
+      g_LastDirectiveCalled = "HndlWORD";
+
       // Y is already positioned after mnemonic, skip any spaces to operand
       while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
       uint16_t wordCount = 0;
+
+      // DEBUG
+      fprintf(stderr, "DW handler: PassNbr=%d, RelCodeF=0x%02X, Y=%d, ch=0x%02X '%c'\n", PassNbr,
+              RelCodeF, Y, SrcP_at(Y), SrcP_at(Y));
 
       if (PassNbr == 0) {
         // Pass 1: Just count comma-separated operands to determine word count
@@ -4515,21 +4614,34 @@ namespace {
       }
 
       // Pass 2: Evaluate expressions and emit words
+      fprintf(stderr, "  Entering Pass 2 loop, Y=%d, ch=0x%02X '%c'\\n", Y, SrcP_at(Y),
+              SrcP_at(Y) >= 32 ? SrcP_at(Y) : '?');
       while (true) {
         // Skip spaces
         while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
 
         uint8_t ch = SrcP_at(Y);
-        if (ch == CR || ch == 0) break;
+        fprintf(stderr, "  Top of loop: Y=%d, ch=0x%02X\n", Y, ch);
+        if (ch == CR || ch == 0) {
+          fprintf(stderr, "  Breaking - found CR or 0\n");
+          break;
+        }
 
         // Evaluate expression (handles symbols, constants)
+        fprintf(stderr, "  About to call EvalExpr(), C=%d\n", C);
         EvalExpr();
-        if (C) break;  // Error in evaluation
+        fprintf(stderr, "  After EvalExpr(), C=%d\n", C);
+        if (C) {
+          fprintf(stderr, "  Breaking - error from EvalExpr\n");
+          break;
+        }
 
         // Pass 2: Emit word and check for relocatable
         if (PassNbr == 1) {
+          fprintf(stderr, "  In Pass 2 block, checking RelExprF=%d\n", RelExprF);
           // Check if relocatable expression requires RLD entry
           if (RelExprF != 0) {
+            fprintf(stderr, "  Calling AddRLDEnt()\n");
             // Create RLD entry for relocatable word
             uint8_t save_X = X;
             uint8_t save_Y = Y;
@@ -4608,6 +4720,7 @@ namespace {
           flags &= static_cast<uint8_t>(~undefined);
           flags |= (RelExprF & relative);
           if ((int8_t)DummyF < 0) flags |= relative;
+          if ((int8_t)RelCodeF < 0) flags |= relative;
           flags |= unrefd;
           symptr[idx]     = flags;
           symptr[idx + 1] = ValExpr;
@@ -5125,9 +5238,14 @@ namespace {
       if (A == 0) goto L8628;  // always (BEQ)
 
     L8618:
+      fprintf(stderr, "    EvalExpr: About to call EvalTerm()\n");
       EvalTerm();                     // The leading term is treated differently
+      fprintf(stderr, "    EvalExpr: After EvalTerm(), NxtToken=0x%02X\n", NxtToken);
       A = NxtToken;                   // Err?
-      if ((int8_t)A < 0) goto L869C;  // Yes (BMI)
+      if ((int8_t)A < 0) {
+        fprintf(stderr, "    EvalExpr: Error from EvalTerm(), NxtToken=0x%02X\n", A);
+        goto L869C;  // Yes (BMI)
+      }
 
       A          = Accum;
       ValExpr    = A;  // Partial result
@@ -5186,12 +5304,15 @@ namespace {
       ValExpr_hi = A;
 
     L8674:
+      fprintf(stderr, "    EvalExpr: About to call GNToken(), Y=%d\n", Y);
       GNToken();      // Chk for comma, ) and cr/space
+      fprintf(stderr, "    EvalExpr: After GNToken(), NxtToken=0x%02X\n", NxtToken);
       A |= NxtToken;  // In case of err
       NxtToken = A;
     L867B:
       A = NxtToken;
       Y--;              // Index prev char
+      fprintf(stderr, "    EvalExpr: Final check, NxtToken=0x%02X, C will be %d\n", A, (A >= 0x80) ? 1 : 0);
       C = (A >= 0x80);  // C=1 if err (CMP #$80)
     }
 
@@ -9706,6 +9827,11 @@ namespace EdAsmNg {
     // Memory source setup helper
     void SetupMemorySource(const char* sourceText, size_t length) {
       ::SetupMemorySource(sourceText, length);
+    }
+
+    // Rewind source to beginning for second pass
+    void RewindSource() {
+      SrcP = g_test_src_base;
     }
 
     // Phase 8.2 variable accessors
