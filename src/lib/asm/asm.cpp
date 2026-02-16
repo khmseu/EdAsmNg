@@ -2759,6 +2759,14 @@ namespace {
       0x01   // (abs,X)
   };
 
+  // GAdrMod stub - actual implementation is inside #if 0 block
+  // TODO: Enable when full implementation is available
+  void GAdrMod() {
+    // Stub: Set carry to indicate error (not implemented)
+    C = true;
+    A = 0;
+  }
+
   // ($8458) GInstLen - We must determine the address mode of opcode
   // Ret:
   // Length of instruction opcode
@@ -8906,15 +8914,22 @@ namespace {
   }
 
   void Bridge_GOpAdr() {
-    GOpAdr();
+    // GOpAdr is inside #if 0 block - not compiled
+    // TODO: Implement when handler is enabled
   }
 
   bool Bridge_ChkRng(uint8_t value, uint8_t minVal, uint8_t maxVal) {
-    return ChkRng(value, minVal, maxVal);
+    // ChkRng is inside #if 0 block - not compiled
+    // TODO: Implement when handler is enabled
+    (void)value;
+    (void)minVal;
+    (void)maxVal;
+    return false;
   }
 
   void Bridge_ValidateRange() {
-    ValidateRange();
+    // ValidateRange is inside #if 0 block - not compiled
+    // TODO: Implement when handler is enabled
   }
 
   void Bridge_HndlMnem() {
@@ -8922,47 +8937,58 @@ namespace {
   }
 
   void Bridge_HndlOBJ() {
-    HndlOBJ();
+    // HndlOBJ is inside #if 0 block - not compiled
+    // TODO: Implement when handler is enabled
   }
 
   void Bridge_HndlREL() {
-    HndlREL();
+    // HndlREL is inside #if 0 block - not compiled
+    // TODO: Implement when handler is enabled
   }
 
   void Bridge_HndlDS() {
-    HndlDS();
+    // HndlDS is inside #if 0 block - not compiled
+    // TODO: Implement when handler is enabled
   }
 
   void Bridge_HndlDFB() {
-    HndlDFB();
+    // HndlDFB is inside #if 0 block - not compiled
+    // TODO: Implement when handler is enabled
   }
 
   void Bridge_HndlDW() {
-    HndlDW();
+    // HndlDW is inside #if 0 block - not compiled
+    // TODO: Implement when handler is enabled
   }
 
   void Bridge_HndlASC() {
-    HndlASC();
+    // HndlASC is inside #if 0 block - not compiled
+    // TODO: Implement when handler is enabled
   }
 
   void Bridge_HndlDCI() {
-    HndlDCI();
+    // HndlDCI is inside #if 0 block - not compiled
+    // TODO: Implement when handler is enabled
   }
 
   void Bridge_HndlLST() {
-    HndlLST();
+    // HndlLST is inside #if 0 block - not compiled
+    // TODO: Implement when handler is enabled
   }
 
   void Bridge_HndlNOLIST() {
-    HndlNOLIST();
+    // HndlNOLIST is inside #if 0 block - not compiled
+    // TODO: Implement when handler is enabled
   }
 
   void Bridge_DoPage() {
-    DoPage();
+    // DoPage is inside #if 0 block - not compiled
+    // TODO: Implement when handler is enabled
   }
 
   void Bridge_HndlSBTL() {
-    HndlSBTL();
+    // HndlSBTL is inside #if 0 block - not compiled
+    // TODO: Implement when handler is enabled
   }
 
   void Bridge_EvalOprnd() {
