@@ -8893,42 +8893,10 @@ namespace {
       0x9BF8, 0xA071, 0xB9AF, 0x9B18, 0x9B6D, 0xDDC0, 0x9F49, 0xC8D3,
   };
 
-}  // namespace
-
-// Bridge functions at file scope to allow Asm namespace to call anonymous namespace functions
-// These must be defined OUTSIDE the anonymous namespace so they have external linkage
-extern "C" {
-// Use extern "C" to avoid name mangling and ensure these have external linkage
-void Bridge_GInstLen();
-void Bridge_StorGMC();
-void Bridge_GOpAdr();
-bool Bridge_ChkRng(uint8_t value, uint8_t minVal, uint8_t maxVal);
-void Bridge_ValidateRange();
-void Bridge_HndlMnem();
-void Bridge_HndlOBJ();
-void Bridge_HndlREL();
-void Bridge_HndlDS();
-void Bridge_HndlDFB();
-void Bridge_HndlDW();
-void Bridge_HndlASC();
-void Bridge_HndlDCI();
-void Bridge_HndlLST();
-void Bridge_HndlNOLIST();
-void Bridge_DoPage();
-void Bridge_HndlSBTL();
-void Bridge_EvalOprnd();
-void Bridge_SaveZP();
-void Bridge_RestoreZP();
-void Bridge_InitASM();
-void Bridge_DoPass1();
-void Bridge_DoPass2();
-void Bridge_FindSym();
-void Bridge_StorByt();
-}
-
-// Implementations - these are defined in a separate anonymous namespace
-// that has access to the main anonymous namespace functions
-namespace {
+  //=================================================
+  // Bridge functions - IN main anonymous namespace
+  // so they can call other functions in this namespace
+  //=================================================
   void Bridge_GInstLen() {
     GInstLen();
   }
@@ -9028,6 +8996,7 @@ namespace {
   void Bridge_StorByt() {
     StorByt();
   }
+
 }  // namespace
 
 //=================================================

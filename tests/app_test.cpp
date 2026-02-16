@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include "asm_test_helpers.hpp"
+
 TEST(GreetTests, DefaultsToWorld) {
   EXPECT_EQ(EdAsmNg::greet(), "Hello, World!");
 }
@@ -14,33 +16,7 @@ TEST(GreetTests, UsesProvidedName) {
 // Error Registration Tests
 //=================================================
 
-// Helper functions to access assembler internals for testing
-namespace EdAsmNg {
-  namespace Asm {
-    // Expose internal state for testing
-    void     ResetErrorState();
-    uint16_t GetErrorCount();
-    uint16_t GetWarningCount();
-    uint8_t  GetErrorFlag();
-    uint8_t  GetErrNbr4();
-    void     SetVidSlot(uint8_t slot);
-    void     SetFileNbr(uint8_t file);
-    void     SetBCDLineNumber(uint8_t hi, uint8_t lo);
-
-    struct ErrorInfo {
-      uint8_t fileNbr;
-      uint8_t errIndex;
-      uint8_t lineHi;
-      uint8_t lineLo;
-    };
-
-    ErrorInfo GetErrorInfo(int index);
-
-    // Main error registration functions
-    void RegAsmEW(uint8_t errorToken);
-    void SaveErrInfo(uint8_t errorToken);
-  }  // namespace Asm
-}  // namespace EdAsmNg
+// Test helper declarations now in asm_test_helpers.hpp
 
 class ErrorRegistrationTest : public ::testing::Test {
  protected:
@@ -177,7 +153,6 @@ namespace EdAsmNg {
     void           SetupSourceLine(const char* line);
     std::uintptr_t GetMnemP();
     uint8_t        GetZAB();
-    uint8_t        GetSubTIdx();
     bool           HndlMnem();  // Returns true on success (C=0), false on error (C=1)
     void           ResetDispatchState();
 
@@ -644,19 +619,13 @@ TEST_F(StorBytTest, OutOfMemory_TriggersError) {
 // Helper functions for GenMCode testing
 namespace EdAsmNg {
   namespace Asm {
-    // GenMCode test helpers
-    void     SetLength(uint8_t length);
-    uint8_t  GetLength();
-    void     SetLenTIdx(uint8_t idx);
-    uint8_t  GetLenTIdx();
+    // GenMCode test helpers (additional to asm_test_helpers.hpp)
     void     SetValExpr(uint16_t value);
     uint16_t GetValExpr();
     void     SetModWrdL(uint8_t value);
     uint8_t  GetModWrdL();
     void     SetRelExprF(uint8_t value);
     uint8_t  GetRelExprF();
-    uint8_t  GetGMC(uint8_t index);
-    void     SetGMC(uint8_t index, uint8_t value);
     uint8_t  GetGMCIdx();
     void     GenMCode(uint8_t opcode);  // Generate machine code
   }  // namespace Asm
@@ -918,8 +887,6 @@ namespace EdAsmNg {
     bool     GetLastCarryFlag();
     uint16_t GetValExpr();
     void     SetValExpr(uint16_t value);
-    uint8_t  GetLenTIdx();
-    void     SetLenTIdx(uint8_t mode);
     uint8_t  GetModWrdL();
     void     SetModWrdL(uint8_t flags);
   }  // namespace Asm
@@ -1449,9 +1416,6 @@ namespace EdAsmNg {
     void    EnableTestObjMemory(bool enable);
     uint8_t GetTestObjMemory(uint16_t addr);
     void    ClearTestObjMemory();
-
-    // Get GMC buffer (for testing direct byte output)
-    uint8_t GetGMC(uint8_t index);
   }  // namespace Asm
 }  // namespace EdAsmNg
 
@@ -2584,8 +2548,6 @@ namespace EdAsmNg {
     uint16_t GetPC();
     void     SetObjPC(uint16_t value);
     uint16_t GetObjPC();
-    uint8_t  GetGMC(uint8_t index);
-    void     SetGMC(uint8_t index, uint8_t value);
   }  // namespace Asm
 }  // namespace EdAsmNg
 
@@ -3060,8 +3022,6 @@ TEST_F(Phase82SourceReaderTest, GSrcLin_MemoryMode_CompareCheck) {
 namespace EdAsmNg {
   namespace Asm {
     // Register accessors
-    uint8_t GetY();
-    void    SetY(uint8_t value);
     uint8_t GetA();
     void    SetA(uint8_t value);
 
@@ -3292,9 +3252,6 @@ namespace EdAsmNg {
     uint8_t  ReadObjMemory(uint16_t addr);
     void     WriteObjMemory(uint16_t addr, uint8_t value);
     void     InitObjMemory();
-
-    // Reset assembler state for clean test environment
-    void ResetAsmState();
   }  // namespace Asm
 }  // namespace EdAsmNg
 
@@ -4210,24 +4167,7 @@ TEST_F(Phase853RelocatableRLDTest, PCObjPC_ConsistentAfterRelocCode) {
 //=================================================
 
 // Helper functions to access GInstLen and instruction length state
-namespace EdAsmNg {
-  namespace Asm {
-    // Test helpers for GInstLen
-    void    GInstLen();  // Call instruction length calculator
-    void    SetupMnemP(uint8_t* mnemEntry, uint8_t y_offset);
-    void    SetupOperandField(const char* operand);
-    uint8_t GetY();
-    void    SetY(uint8_t value);
-    void    SetSubTIdx(uint8_t value);
-    uint8_t GetSubTIdx();
-    uint8_t GetLength();                           // Get calculated instruction length
-    void    SetLength(uint8_t value);              // Set instruction length
-    uint8_t GetLenTIdx();                          // Get addressing mode index
-    void    SetLenTIdx(uint8_t value);             // Set addressing mode index
-    uint8_t GetGMC(uint8_t index);                 // Get byte from GMC buffer
-    void    SetGMC(uint8_t index, uint8_t value);  // Set byte in GMC buffer
-  }  // namespace Asm
-}  // namespace EdAsmNg
+// Test helper declarations now in asm_test_helpers.hpp
 
 class Phase2_GInstLenTest : public ::testing::Test {
  protected:
@@ -4378,10 +4318,6 @@ TEST_F(Phase2_GInstLenTest, Branch_TwoBytes) {
 namespace EdAsmNg {
   namespace Asm {
     // From Phase 3b: GenMCode Test Helpers
-    void     SetLength(uint8_t length);
-    uint8_t  GetLength();
-    void     SetGMC(uint8_t index, uint8_t value);
-    uint8_t  GetGMC(uint8_t index);
     uint16_t GetObjPC();
     void     SetObjPC(uint16_t value);
     void     SetGenF(uint8_t value);
