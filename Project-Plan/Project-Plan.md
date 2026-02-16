@@ -20,4 +20,34 @@ Exceptions are:
 - we will include all code in a single executable
 - when we have specific labels for lower and higher bytes, these can be replaced by one label for either a 16 bit word, or an address, as appropriate
 - the original code uses Xabcd labels for linking to other pieces of the code, and Labcd labels inside separate pieces; these are equivalent
+
+More rules:
+
 - if there is some other reason that makes it impossible to follow the old code
+- pointers inside the code will never be converted to integers or vice versa
+- code pointers (possibly offset by one if they are supposed to be called with RTS) shall be implemented as function pointers
+- do not unroll loops
+
+Here is an example of how to convert code, including comments:
+
+```asm
+ChrGot2     LDA    (SrcP),Y
+            STY    ZPSaveY
+            TAY
+            BPL    L8227
+;
+            BRK                    ;source file must be std ASCII
+;
+```
+
+```c++
+  void ChrGot2() {
+    A              = SrcP_at(Y);     // LDA (SrcP),Y
+    ZPSaveY        = Y;              // STY ZPSaveY
+    uint8_t char_y = A;              // TAY
+    if ((int8_t)A >= 0) goto L8227;  // BPL L8227
+//
+    std::abort();  // BRK - source file must be std ASCII
+//
+
+```
