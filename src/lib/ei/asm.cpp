@@ -8068,13 +8068,13 @@ namespace {
       0x00,
       0x00,
       0x00,
-      // 0x5B-0x60: '[' to '`' (6 bytes)
-      0x01,
-      0x01,
-      0x01,
-      0x01,
-      0x01,
-      0x01,
+      // 0x5B-0x60: '[' to '`' (6 bytes) - Updated: '_' (0x5F) is now alphanumeric (0x00)
+      0x01,  // 0x5B: '['
+      0x01,  // 0x5C: '\'
+      0x01,  // 0x5D: ']'
+      0x01,  // 0x5E: '^'
+      0x00,  // 0x5F: '_' - alphanumeric to allow underscores in symbol names
+      0x01,  // 0x60: '`'
       // 0x61-0x66: 'a'-'f' (6 bytes)
       0xC0,
       0xC0,
@@ -10088,7 +10088,7 @@ namespace EdAsmNg {
         uint8_t* node     = SimPtrToMemPtr(node_ptr);
         uint16_t next_ptr = node[0] | (node[1] << 8);
 
-        // Check if name matches
+        // Check if name matches - DCI encoding: all chars have MSB set EXCEPT last
         uint8_t* name_ptr = node + 2;  // Skip link pointer
         uint8_t  idx      = 0;
         bool     match    = true;
@@ -10097,13 +10097,13 @@ namespace EdAsmNg {
           uint8_t ch     = name[i];
           uint8_t stored = name_ptr[idx];
           if (i == name_len - 1) {
-            // Last char - stored without MSB set
-            if (ch != (stored & 0x7F)) {
+            // Last char - stored WITHOUT MSB set
+            if (ch != stored) {
               match = false;
               break;
             }
           } else {
-            // Not last - stored with MSB set
+            // Not last char - stored WITH MSB set, strip it for comparison
             if (ch != (stored & 0x7F)) {
               match = false;
               break;
