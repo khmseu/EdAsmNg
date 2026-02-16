@@ -10,7 +10,7 @@ Through systematic debugging with targeted debug output, we discovered TWO disti
 
 ### Issue 1: Underscore Not Allowed in Symbol Names
 
-- **Symptom**: Symbol `DUMMY_LABEL` was stored as `DUMMY ` (truncated at underscore)
+- **Symptom**: Symbol `DUMMY_LABEL` was stored as `DUMMY` (truncated at underscore)
 - **Root Cause**: `CharMap1[0x5F]` (underscore '\_') was set to `0x01`, marking it as non-alphanumeric
 - **Impact**: AddNode's loop `while (C=0)` stopped storing chars when it hit the underscore
 - **Fix**: Changed `CharMap1[0x5F]` from `0x01` to `0x00` to mark underscore as alphanumeric
