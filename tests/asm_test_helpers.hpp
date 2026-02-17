@@ -57,6 +57,19 @@ namespace EdAsmNg {
     uint8_t GetGMC(uint8_t index);                 // Get byte from GMC buffer
     void    SetGMC(uint8_t index, uint8_t value);  // Set byte in GMC buffer
 
+    //=================================================
+    // Phase 3: Symbol Table Compaction Test Helpers
+    //=================================================
+    void     ResetPass3State();        // Reset Pass3-relevant state
+    bool     IsHeaderTEmpty();         // Check if HeaderT is all zeros
+    void     SetLstASym(uint8_t val);  // Set LstASym flag
+    void     DoPass3();                // Execute Pass 3
+    uint16_t GetEndSymT();             // Get end of symbol table pointer
+    uint16_t GetStrtSymT();            // Get start of symbol table pointer
+    uint16_t GetSymNodeP();            // Get current symbol node pointer
+    uint16_t GetSavSTS();              // Get saved start of symbol table
+    void AddTestSymbol(const char* name, uint16_t value, uint8_t flags);  // Add symbol for testing
+
   }  // namespace Asm
 }  // namespace EdAsmNg
 

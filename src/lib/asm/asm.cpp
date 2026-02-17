@@ -29,6 +29,7 @@
 #include <cctype>
 #include <cstdint>
 #include <cstring>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -506,6 +507,12 @@ namespace {
     std::uint8_t* SymNodeP_ptr  = nullptr;
     std::uint8_t* SymP_ptr      = nullptr;
     std::uint8_t* UnsortedP_ptr = nullptr;
+    std::uint8_t  orig_strt_lo  = 0;  // For carry detection in LD099
+    std::uint8_t  orig_node_lo  = 0;  // For carry detection in LD096
+
+    // DEBUG: Add safety counter for LD076 loop
+    int       loop_count = 0;
+    const int MAX_LOOPS  = 1000;
 
     // Check if alphabetic symbol listing requested
     A = LstASym;
@@ -617,15 +624,27 @@ namespace {
     //   16-bit value
 
   LD076_label: {
+    loop_count++;  // DEBUG: increment safety counter
+    std::cerr << "DEBUG LD076: loop_count=" << loop_count << " StrtSymT=0x" << std::hex << StrtSymT
+              << " SymNodeP=0x" << SymNodeP << " EndSymT=0x" << EndSymT << std::dec << std::endl;
+    if (loop_count > MAX_LOOPS) {  // DEBUG: prevent infinite loop
+      // Infinite loop detected, return early
+      std::cerr << "DEBUG: MAX_LOOPS exceeded, returning" << std::endl;
+      return;
+    }
     Y            = 0;
-    StrtSymT_ptr = reinterpret_cast<std::uint8_t*>(StrtSymT);
-    SymNodeP_ptr = reinterpret_cast<std::uint8_t*>(SymNodeP);
+    StrtSymT_ptr = SimPtrToMemPtr(StrtSymT);  // Convert simulated address
+    SymNodeP_ptr = SimPtrToMemPtr(SymNodeP);  // Convert simulated address
 
   LD078_label:
     A               = StrtSymT_ptr[Y];  // Get char fr symbolicname
     SymNodeP_ptr[Y] = A;                // move it forward in node
-    if (!(A & 0x80)) {                  // BPL LD081 - not eo symbolicname yet
+    if (A & 0x80) {                     // MSB=1, not end of symbolicname yet
       Y++;
+      if (Y > 20) {  // DEBUG: prevent runaway
+        std::cerr << "DEBUG: Y>20 in LD078, infinite loop detected!" << std::endl;
+        return;
+      }
       goto LD078_label;
     }
 
@@ -643,12 +662,13 @@ namespace {
     // CLC is implicit
 
   LD096_label:
-    A += (SymNodeP & 0xFF);  // Point @ next node
+    orig_node_lo = (SymNodeP & 0xFF);  // Save original low byte
+    A += orig_node_lo;                 // Point @ next node
     SymNodeP = (SymNodeP & 0xFF00) | A;
-    if (A >= (SymNodeP & 0xFF)) {  // No carry
+    if (A >= orig_node_lo) {  // No carry
       goto LD099_label0;
     }
-    SymNodeP += 0x100;  // INC SymNodeP+1
+    SymNodeP += 0x100;  // INC SymNodeP+1 - Carry occurred
 
   LD099_label0:
     Y++;  // Skip over link field
@@ -658,18 +678,18 @@ namespace {
 
   LD099_label:
     // CLC is implicit
-    A += (StrtSymT & 0xFF);
+    orig_strt_lo = (StrtSymT & 0xFF);  // Save original low byte
+    A += orig_strt_lo;
     StrtSymT = (StrtSymT & 0xFF00) | A;  // Point @ symbolicname of next node
-    if (A >= (StrtSymT & 0xFF)) {        // BCC LD0A2
+    if (A >= orig_strt_lo) {             // BCC LD0A2 - No carry
       goto LD0A2_label;
     }
-    StrtSymT += 0x100;  // INC StrtSymT+1
+    StrtSymT += 0x100;  // INC StrtSymT+1 - Carry occurred
 
   LD0A2_label:
     // CMP EndSymT - EO symbol table?
-    A = (StrtSymT >> 8);
-    A -= (EndSymT >> 8);       // SBC EndSymT+1
-    if (A < (EndSymT >> 8)) {  // BCC LD076 - No
+    // Check if StrtSymT < EndSymT (more symbols to process)
+    if (StrtSymT < EndSymT) {  // BCC LD076 - Continue loop
       goto LD076_label;
     }
 
@@ -726,8 +746,8 @@ namespace {
     // JMP AbortAsm
 
     Y             = 0;
-    SymP_ptr      = reinterpret_cast<std::uint8_t*>(SymP);
-    UnsortedP_ptr = reinterpret_cast<std::uint8_t*>(UnsortedP);
+    SymP_ptr      = SimPtrToMemPtr(SymP);
+    UnsortedP_ptr = SimPtrToMemPtr(UnsortedP);
 
   LD0ED_label:
     A = SymP_ptr[Y];    // Looking for eo symbolicname
@@ -940,8 +960,8 @@ namespace {
     SymPI = static_cast<std::uint16_t>(I_TH + 2);
 
     {
-      std::uint8_t* SymPJ_ptr = reinterpret_cast<std::uint8_t*>(SymPJ);
-      std::uint8_t* SymPI_ptr = reinterpret_cast<std::uint8_t*>(SymPI);
+      std::uint8_t* SymPJ_ptr = SimPtrToMemPtr(SymPJ);
+      std::uint8_t* SymPI_ptr = SimPtrToMemPtr(SymPI);
       std::uint8_t  hiJ       = SymPJ_ptr[1];
       std::uint8_t  hiI       = SymPI_ptr[1];
 
@@ -964,14 +984,14 @@ namespace {
 
     // Sort by symbol
   LD268_label: {
-    std::uint8_t* J_TH_ptr = reinterpret_cast<std::uint8_t*>(J_TH);
-    std::uint8_t* I_TH_ptr = reinterpret_cast<std::uint8_t*>(I_TH);
+    std::uint8_t* J_TH_ptr = SimPtrToMemPtr(J_TH);
+    std::uint8_t* I_TH_ptr = SimPtrToMemPtr(I_TH);
 
     SymPJ = static_cast<std::uint16_t>(J_TH_ptr[0] | (J_TH_ptr[1] << 8));
     SymPI = static_cast<std::uint16_t>(I_TH_ptr[0] | (I_TH_ptr[1] << 8));
 
-    std::uint8_t* SymPJ_ptr = reinterpret_cast<std::uint8_t*>(SymPJ);
-    std::uint8_t* SymPI_ptr = reinterpret_cast<std::uint8_t*>(SymPI);
+    std::uint8_t* SymPJ_ptr = SimPtrToMemPtr(SymPJ);
+    std::uint8_t* SymPI_ptr = SimPtrToMemPtr(SymPI);
 
     Y = 0;
   LD27E_label:
@@ -998,8 +1018,8 @@ namespace {
 
     // Swap contents of 2/4-byte table
   LD298_label: {
-    std::uint8_t* J_TH_ptr = reinterpret_cast<std::uint8_t*>(J_TH);
-    std::uint8_t* I_TH_ptr = reinterpret_cast<std::uint8_t*>(I_TH);
+    std::uint8_t* J_TH_ptr = SimPtrToMemPtr(J_TH);
+    std::uint8_t* I_TH_ptr = SimPtrToMemPtr(I_TH);
     do {
       std::uint8_t tmp = J_TH_ptr[Y];
       J_TH_ptr[Y]      = I_TH_ptr[Y];
@@ -1037,7 +1057,7 @@ namespace {
     // JMP AbortAsm
 
   LD2E4_label: {
-    std::uint8_t* SortedP_ptr = reinterpret_cast<std::uint8_t*>(SortedP);
+    std::uint8_t* SortedP_ptr = SimPtrToMemPtr(SortedP);
     Y                         = 0;
     SymP                      = static_cast<std::uint16_t>(SortedP_ptr[Y]);
     Y++;
@@ -1046,7 +1066,7 @@ namespace {
 
     Y = 0;
   LD2F0_label: {
-    std::uint8_t* SymP_ptr = reinterpret_cast<std::uint8_t*>(SymP);
+    std::uint8_t* SymP_ptr = SimPtrToMemPtr(SymP);
     A                      = SymP_ptr[Y];  // Is it the flag byte?
     if (!(A & 0x80)) {                     // BPL LD2F8
       goto LD2F8_label;
@@ -1059,7 +1079,7 @@ namespace {
     SymRefCh = ' ';  // Init with a blank
     IsFwdRef = 0;
     {
-      std::uint8_t* SymP_ptr = reinterpret_cast<std::uint8_t*>(SymP);
+      std::uint8_t* SymP_ptr = SimPtrToMemPtr(SymP);
       A                      = SymP_ptr[Y];  // Get flag byte
       if (A & 0x01) {                        // forward referenced bit
         IsFwdRef = 0xFF;
@@ -1078,7 +1098,7 @@ namespace {
     PutC(SymRefCh);
 
     {
-      std::uint8_t* SymP_ptr = reinterpret_cast<std::uint8_t*>(SymP);
+      std::uint8_t* SymP_ptr = SimPtrToMemPtr(SymP);
       Y++;
       A                   = SymP_ptr[Y];  // Get symbol's addr low byte
       std::uint8_t addrLo = A;
@@ -1097,7 +1117,7 @@ namespace {
     // Print up to 14 chars of the symbolicname
     Y = 0;
   LD356_label: {
-    std::uint8_t* SymP_ptr = reinterpret_cast<std::uint8_t*>(SymP);
+    std::uint8_t* SymP_ptr = SimPtrToMemPtr(SymP);
     A                      = SymP_ptr[Y];  // Get char fr symbolicname
     if (!(A & 0x80)) {                     // It is the flagbyte
       goto LD362_label;
@@ -10345,8 +10365,12 @@ namespace EdAsmNg {
 
       uint16_t node_ptr = HeaderT_ptr[X] | (Y << 8);
 
-      // Traverse chain
-      while (node_ptr != 0) {
+      // Traverse chain with safety limit
+      int       iterations     = 0;
+      const int MAX_ITERATIONS = 1000;
+
+      while (node_ptr != 0 && iterations < MAX_ITERATIONS) {
+        iterations++;
         uint8_t* node     = SimPtrToMemPtr(node_ptr);
         uint16_t next_ptr = node[0] | (node[1] << 8);
 
@@ -10382,6 +10406,11 @@ namespace EdAsmNg {
           return flags;
         }
 
+        // Guard against self-loops
+        if (next_ptr == node_ptr) {
+          break;
+        }
+
         node_ptr = next_ptr;
       }
 
@@ -10397,12 +10426,28 @@ namespace EdAsmNg {
       for (int i = 0; i < 128; i++) {
         uint16_t node_ptr = HeaderT_ptr[i * 2] | (HeaderT_ptr[i * 2 + 1] << 8);
 
-        // Traverse chain
-        while (node_ptr != 0x0000) {
+        // Traverse chain with safety limit to prevent infinite loops
+        int       chain_depth     = 0;
+        const int MAX_CHAIN_DEPTH = 1000;  // Sanity check
+
+        while (node_ptr != 0x0000 && chain_depth < MAX_CHAIN_DEPTH) {
           count++;
+          chain_depth++;
           // Get next node pointer (first 2 bytes of node)
-          uint8_t* node = SimPtrToMemPtr(node_ptr);  // Convert simulated address
-          node_ptr      = node[0] | (node[1] << 8);
+          uint8_t* node     = SimPtrToMemPtr(node_ptr);  // Convert simulated address
+          uint16_t next_ptr = node[0] | (node[1] << 8);
+
+          // Detect self-loops
+          if (next_ptr == node_ptr) {
+            break;  // Self-loop detected, break to avoid infinite loop
+          }
+
+          node_ptr = next_ptr;
+        }
+
+        if (chain_depth >= MAX_CHAIN_DEPTH) {
+          // Chain too long, likely infinite loop
+          break;
         }
       }
 
@@ -10443,6 +10488,116 @@ namespace EdAsmNg {
 
       // Clear test buffer override to prevent contamination
       g_test_src_buffer = nullptr;
+    }
+
+    //=================================================
+    // Phase 3: Symbol Table Compaction Test Helpers
+    //=================================================
+
+    void ResetPass3State() {
+      // Reset Pass 3 relevant state
+      LstASym  = 0;  // Alphabetic symbol listing flag
+      LstVSym  = 0;  // Value-ordered symbol listing flag
+      Lst6Cols = 0;  // 6-column mode flag
+      PrSlot   = 0;  // Printer slot
+      NumCols  = 0;  // Number of columns
+      SortF    = 0;  // Sort flag
+      DskSrcF  = 0;  // Disk source flag (0 = no disk)
+      SubTtlF  = 0;  // Subtitle flag
+
+      // Clear symbol table (HeaderT)
+      if (HeaderT_ptr != nullptr) {
+        for (int i = 0; i < 256; i++) {
+          HeaderT_ptr[i] = 0x00;
+        }
+      }
+
+      // Reset symbol table pointers
+      StrtSymT = 0x1E00;
+      EndSymT  = StrtSymT;
+      SymNodeP = StrtSymT;
+      SavSTS   = 0;
+    }
+
+    bool IsHeaderTEmpty() {
+      if (HeaderT_ptr == nullptr) return true;
+
+      for (int i = 0; i < 256; i++) {
+        if (HeaderT_ptr[i] != 0) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    void DoPass3() {
+      ::DoPass3();
+    }
+
+    uint16_t GetSymNodeP() {
+      return SymNodeP;
+    }
+
+    uint16_t GetSavSTS() {
+      return SavSTS;
+    }
+
+    void AddTestSymbol(const char* name, uint16_t value, uint8_t flags) {
+      // Add a symbol using the actual assembler infrastructure
+      // This ensures correct hash computation and node structure
+
+      size_t name_len = std::strlen(name);
+      if (name_len == 0 || name_len > 100) return;
+
+      // Set up SrcP to point to the name
+      const uint16_t temp_addr = 0x0300;
+      std::memcpy(&g_test_src_memory[temp_addr], name, name_len);
+      g_test_src_memory[temp_addr + name_len] = '\r';  // Terminator
+
+      // Save state - preserve all registers and flags
+      uint16_t saved_SrcP = SrcP;
+      uint16_t saved_PC   = PC;
+      uint8_t  saved_Y    = Y;
+      uint8_t  saved_A    = A;
+      uint8_t  saved_X    = X;
+      bool     saved_C    = C;
+
+      // Set up for FindSym/AddNode
+      SrcP = temp_addr;
+      Y    = 0;
+      PC   = value;  // AddNode uses PC as the value
+
+      // Call FindSym first - this sets up HashIdx and PrvSymP
+      // It should fail (C=1) because symbol doesn't exist yet
+      Bridge_FindSym();
+
+      // Verify FindSym failed (symbol doesn't exist) - expected for new symbol
+      if (!C) {
+        // Symbol already exists - this is an error for AddTestSymbol
+        // Restore state and return without adding
+        SrcP = saved_SrcP;
+        PC   = saved_PC;
+        Y    = saved_Y;
+        A    = saved_A;
+        X    = saved_X;
+        C    = saved_C;
+        return;
+      }
+
+      // Now call AddNode with the proper flag
+      A = flags;
+      AddNode();
+
+      // Restore state
+      SrcP = saved_SrcP;
+      PC   = saved_PC;
+      Y    = saved_Y;
+      A    = saved_A;
+      X    = saved_X;
+      C    = saved_C;
+
+      // Note: We don't verify with HasSymbol here to avoid recursion/complexity
+      // The caller should verify the symbol was added if needed
     }
 
   }  // namespace Asm
