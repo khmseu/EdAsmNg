@@ -68,12 +68,22 @@ namespace {
   void EvalOprnd();
   void AddRLDEnt();  // Phase 8.5.3: RLD entry creation
   void AdvSrcP();
-  void SkipSpcs();
-  void AdvPC();
-  void Is16K();
-  void IsAXY();
-  void Wr1Byte();   // Phase 4: Object code writing
-  void AdvObjPC();  // Phase 4: Object PC advance
+
+  // Helper functions for GAdrMod
+  void IsZPMod();
+  void IsAccMod();
+  void Is65C02();
+  void L8598();
+
+  // Tables for GAdrMod
+  extern const std::uint8_t AModTkns[];
+  extern const std::uint8_t AModCmds[];
+  void                      SkipSpcs();
+  void                      AdvPC();
+  void                      Is16K();
+  void                      IsAXY();
+  void                      Wr1Byte();   // Phase 4: Object code writing
+  void                      AdvObjPC();  // Phase 4: Object PC advance
 
   // Phase 8.2: Source line reader forward declarations
   void GSrcLin();
@@ -1327,6 +1337,7 @@ namespace {
     auto finish_tokens = [&]() {
       skip_spaces();
       NxtToken = (SrcP_at(Y) == ',') ? 0x01 : 0;
+      // Y is left pointing at the delimiter after parsing
     };
 
     auto parse_term = [&](uint16_t& val, bool& is_reloc, bool allow_prefix) -> bool {
@@ -2730,7 +2741,11 @@ namespace {
       0x03,  // abs,Y
       0x02,  // (zp),Y
       0x02,  // (zp,X)
-      0x02   // (zp)
+      0x02,  // (zp)
+      0x03,  // (abs)
+      0x01,  // acc
+      0x02,  // zp,Y
+      0x03   // (abs,X)
   };
 
   // This sub-table is used by SW16 opcodes
@@ -2759,18 +2774,141 @@ namespace {
       0x01   // (abs,X)
   };
 
-  // GAdrMod stub - actual implementation is inside #if 0 block
-  // TODO: Enable when full implementation is available
+  // GAdrMod - This subrtn will parse the addressing mode of the
+  // operand of a 6502 mnemonic/SW16 psuedo opcode
+  // Ret
+  //  (A)=index (0-12) use to get addr mode fr a table
+  //  C=0 - succ
+  //  C=1 - syntax error
+
   void GAdrMod() {
-    // Stub: Set carry to indicate error (not implemented)
-    C = true;
-    A = 0;
+    Y = 0;  // Position at start of operand
+    while (SrcP_at(Y) == SPACE) {
+      Y++;
+      if (Y == 0) break;
+    }
+
+    uint8_t ch = SrcP_at(Y);
+    if (ch == CR) {
+      C = true;
+      return;
+    }
+
+    auto skip_spaces = [&]() {
+      while (SrcP_at(Y) == SPACE) {
+        Y++;
+        if (Y == 0) break;
+      }
+    };
+
+    auto is_zero_page = [&]() -> bool {
+      uint8_t acc = static_cast<uint8_t>(ExprAccF & 0b11101111);  // Clear EXTeRNal bit
+      if ((acc | ValExpr_hi) == 0) return true;
+      if ((ExprAccF & 0b00010000) == 0) return false;  // Not external
+      if (Ret816F == 0) {
+        uint8_t savedX = X;
+        X              = 0x44 + 1;  // odd-warning
+        RegAsmEW();
+        X = savedX;
+        return true;
+      }
+      return false;
+    };
+
+    if (ch == '#') {
+      Y++;
+      EvalExpr();
+      if (C) return;
+      skip_spaces();
+      A = 2;  // immediate
+      C = false;
+      return;
+    }
+
+    if (ch == '(') {
+      Y++;
+      EvalExpr();
+      if (C) return;
+      skip_spaces();
+
+      if (SrcP_at(Y) == ',') {
+        Y++;
+        skip_spaces();
+        uint8_t idx = SrcP_at(Y);
+        if (idx == 'X' || idx == 'x') {
+          Y++;
+          skip_spaces();
+          if (SrcP_at(Y) == ')') {
+            Y++;
+            A = is_zero_page() ? 7 : 12;  // (zp,X) or (abs,X)
+            C = false;
+            return;
+          }
+        }
+      }
+
+      if (SrcP_at(Y) == ')') {
+        Y++;
+        skip_spaces();
+        if (SrcP_at(Y) == ',') {
+          Y++;
+          skip_spaces();
+          uint8_t idx = SrcP_at(Y);
+          if (idx == 'Y' || idx == 'y') {
+            if (!is_zero_page()) {
+              C = true;
+              return;
+            }
+            A = 6;  // (zp),Y
+            C = false;
+            return;
+          }
+        }
+        A = is_zero_page() ? 8 : 9;  // (zp) or (abs)
+        C = false;
+        return;
+      }
+
+      C = true;
+      return;
+    }
+
+    if ((ch == 'A' || ch == 'a') && (SrcP_at(static_cast<uint8_t>(Y + 1)) == SPACE ||
+                                     SrcP_at(static_cast<uint8_t>(Y + 1)) == CR)) {
+      A = 10;  // accumulator
+      C = false;
+      return;
+    }
+
+    EvalExpr();
+    if (C) return;
+    skip_spaces();
+
+    if (SrcP_at(Y) == ',') {
+      Y++;
+      skip_spaces();
+      uint8_t idx = SrcP_at(Y);
+      if (idx == 'X' || idx == 'x') {
+        A = is_zero_page() ? 3 : 4;  // zp,X or abs,X
+        C = false;
+        return;
+      }
+      if (idx == 'Y' || idx == 'y') {
+        A = is_zero_page() ? 11 : 5;  // zp,Y or abs,Y
+        C = false;
+        return;
+      }
+    }
+
+    A = is_zero_page() ? 1 : 0;  // zp or abs
+    C = false;
   }
 
   // ($8458) GInstLen - We must determine the address mode of opcode
   // Ret:
   // Length of instruction opcode
   void GInstLen() {
+    A       = MnemP[Y];
     ModWrdL = A;  // 1st flag byte (STA)
     Y++;
     A       = MnemP[Y];  // 2nd flag byte - addr mode bits
@@ -2889,8 +3027,10 @@ namespace {
     A = ModWrdL;
     // BIT Bit40 - sw16?
     if ((A & 0x40) == 0) goto L850E;  // no (BEQ)
-    A = L851F[X];                     // Get instr len
-    if (A != 0) goto L8511;           // always (BNE)
+    if (X >= 9 && X <= 12) {
+      A = L851F[X - 9];        // Get instr len for (abs), acc, zp,Y, (abs,X)
+      if (A != 0) goto L8511;  // always (BNE)
+    }
 
   L850E:
     A = InstLenT[X];  // Get instr len
@@ -3192,6 +3332,7 @@ namespace {
     std::abort();  // BRK
   L7FD6:
     if (A < 9) goto L7FED;    // 0-8 (first 9 modes of AModTbl) (BCC)
+    C = (A >= 12);
     if (A != 12) goto L7FE5;  // (abs,X) (BNE)
     Is65C02();                // Are 65C02 opcodes allowed?
     if (C) goto L8002;        // No (BCS)
@@ -3406,11 +3547,23 @@ namespace {
 
   // AdvObjPC - A=# to advance
   void AdvObjPC() {
-    // CLC
-    A += ObjPC;  // code buf
-    ObjPC = A;
-    if (A >= ObjPC) goto L8275;  // no carry (BCC)
-    ObjPC_hi++;                  // INC ObjPC+1
+    // Extract low and high bytes
+    uint8_t objpc_lo = static_cast<uint8_t>(ObjPC & 0xFF);
+    uint8_t objpc_hi = static_cast<uint8_t>((ObjPC >> 8) & 0xFF);
+
+    // Add A to low byte and check for carry
+    uint16_t sum    = static_cast<uint16_t>(objpc_lo) + A;
+    uint8_t  new_lo = static_cast<uint8_t>(sum & 0xFF);
+
+    // Update ObjPC low byte
+    ObjPC = (ObjPC & 0xFF00) | new_lo;
+
+    // If carry occurred, increment high byte
+    if (sum > 0xFF) {
+      objpc_hi++;
+      ObjPC = (static_cast<uint16_t>(objpc_hi) << 8) | new_lo;
+    }
+
   L8275:
     L828A();
   }
@@ -3555,6 +3708,123 @@ namespace {
     rld_ptr[3] = flag;
   }
 
+  // WhiteSpc - Check if character is white space (space or CR)
+  // Entry: (A)=char to check (from (SrcP),Y)
+  // Ret: Z=1 if space/CR
+  void WhiteSpc() {
+    A = SrcP_at(Y);
+    if (A == SPACE) {
+      Z = true;
+      return;
+    }
+    if (A == CR) {
+      Z = true;
+      return;
+    }
+    Z = false;
+  }
+
+  // IsZPMod - Checks if expr is a 8-bit or 16-bit value
+  // For addressing modes involving zp
+  // Ret: C=0 - Yes (8-bit), C=1 - No (16-bit)
+  void IsZPMod() {
+    A = ExprAccF;
+    A &= 0b11101111;               // Clear EXTeRNal symbol bit
+    A |= ValExpr_hi;               // Is hi-byte of expr zero?
+    if (A == 0) goto L85CF_ZPMod;  // Yes => 8-bit
+    A = ExprAccF;
+    A &= 0b00010000;         // Is EXTeRNal symbol bit set?
+    if (A == 0) goto L85C6;  // No
+    A = Ret816F;             // EXTRN but is lo-byte being returned?
+    if (A == 0) goto L85C8;  // Yes
+  L85C6:
+    C = true;  // 16-bit
+    return;
+  L85C8:
+    X = 0x44 + 1;  // odd-warning
+    RegAsmEW();    //  (EXTRN used as ZXTRN)
+    X = SavIndX;
+  L85CF_ZPMod:
+    Y--;  // Move back
+    C = false;
+    return;
+  }
+
+  // IsAccMod - Check a single 'A' in the operand field
+  // Entry: (A)=char to check
+  // Ret: C=0 - Yes, C=1 - No
+  void IsAccMod() {
+    if (A != 'A') goto L85DD_AccMod;
+    Y++;         // Look 1 char ahead
+    WhiteSpc();  // Is the next char sp/cr?
+    // Yes, we have a single 'A' in operand field
+    if (Z) {
+      Y--;  // Move back
+      C = false;
+      return;
+    }
+    Y--;  // No, just move back
+  L85DD_AccMod:
+    C = true;
+    return;
+  }
+
+  // Is65C02 - Check if 65C02 opcodes are valid
+  // Ret: C=0 - Yes, C=1 - No
+  void Is65C02() {
+    if ((int8_t)X6502F < 0) {  // Are X6502 opcodes allowed?
+      // Yes
+      Y--;  // Move back
+      C = false;
+      return;
+    }
+    // always
+    C = true;
+    return;
+  }
+
+  // L8598 - Calls helper subroutines for GAdrMod.
+  // Entry: (A)=2,4,6 - index into subrtn table
+  // The helper functions return values primarily via the C bit
+  void L8598() {
+    // Helper function pointer type
+    typedef void (*HelperFunc)();
+
+    // Jump-table pointers for helper subroutines
+    // Entry at index 0 = IsZPMod, index 1 = IsAccMod, index 2 = Is65C02
+    const HelperFunc L85AE_helpers[] = {IsZPMod, IsAccMod, Is65C02};
+    constexpr size_t kNumHelpers     = sizeof(L85AE_helpers) / sizeof(L85AE_helpers[0]);
+
+    SavIndX = X;
+    X       = A;  // Byte offset (must be 2, 4, or 6)
+
+    // Validate: only 3 subrtns, and X must be in [2..6] range
+    if (X >= 7) {
+      std::abort();  // BRK
+    }
+
+    // X must be even (2, 4, or 6 correspond to entries 0, 1, 2)
+    if ((X & 1) != 0) {  // Odd value?
+      std::abort();      // BRK
+    }
+
+    // Convert byte offset to array index: X/2 gives 1, 2, 3; so index = (X/2) - 1
+    uint8_t array_index = (X / 2) - 1;
+
+    // Bounds check
+    if (array_index >= kNumHelpers) {
+      std::abort();  // Should not reach here given X validation above
+    }
+
+    // Prepare for JMP via RTS in original
+    ChrGot();  // Get curr char
+    X = SavIndX;
+
+    // Call the appropriate helper function
+    HelperFunc helper = L85AE_helpers[array_index];
+    helper();  // Call IsZPMod, IsAccMod, or Is65C02
+  }
+
 #if 0   // TODO: Phase 9+ - Large block of stub functions with compilation errors (not needed for
         // Phase 8.1)
   // This section contains WhiteSpc, IsZPMod, IsAccMod, IsSW16Reg, Is65C02, IsC02Op,
@@ -3684,6 +3954,56 @@ namespace {
       // always
       C = true;
       return;
+    }
+
+    // L8598 - Calls help subroutines (functions).
+    // Only 3 defined so far.
+    // Entry
+    //   (A)=2,4,6 - index into subrtn table
+    //
+    // The helper functions with return the required values
+    // primarily the C bit
+    //
+    // Helper function pointer type
+    typedef void (*HelperFunc)();
+
+    // Jump-table pointers for helper subroutines
+    // Entry at index 0 = IsZPMod, index 1 = IsAccMod, index 2 = Is65C02
+    const HelperFunc L85AE_helpers[] = {IsZPMod, IsAccMod, Is65C02};
+
+    // Number of helper functions in the table
+    constexpr size_t kNumHelpers = sizeof(L85AE_helpers) / sizeof(L85AE_helpers[0]);
+
+    void L8598() {
+      SavIndX = X;
+      X       = A;  // Byte offset (must be 2, 4, or 6)
+
+      // Validate: only 3 subrtns, and X must be in [2..6] range
+      if (X >= 7) {
+        std::abort();  // BRK
+      }
+
+      // X must be even (2, 4, or 6 correspond to entries 0, 1, 2)
+      // If X is odd, it's an invalid call - treat as error
+      if ((X & 1) != 0) {  // Odd value?
+        std::abort();      // BRK
+      }
+
+      // Convert byte offset to array index: X/2 gives 1, 2, 3; so index = (X/2) - 1
+      uint8_t array_index = (X / 2) - 1;
+
+      // Bounds check
+      if (array_index >= kNumHelpers) {
+        std::abort();  // Should not reach here given X validation above
+      }
+
+      // Prepare for JMP via RTS in original
+      ChrGot();  // Get curr char
+      X = SavIndX;
+
+      // Call the appropriate helper function
+      HelperFunc helper = L85AE_helpers[array_index];
+      helper();  // Call IsZPMod, IsAccMod, or Is65C02
     }
 
     // IsC02Op - (A) = opcode
@@ -7913,24 +8233,17 @@ namespace {
   // Table for operand parser (47 bytes)
   //=================================================
   const std::uint8_t AModTkns[] = {
-      0xA3, 0x00, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
-      0xA0, 0xA0, 0x05, 0xA8, 0x00, 0xAC, 0xD8, 0xA9, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
-      0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0x02, 0x0F, 0x06, 0x19, 0xA9, 0xAC, 0xD9,
-      0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
-      0x02, 0x0D, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
-      0xA0, 0xA0, 0x06, 0x02, 0x11, 0x13, 0x04, 0x15, 0x8D, 0x15, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
-      0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xBB, 0x15, 0x00, 0xA0, 0xA0,
-      0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0x02, 0x03,
-      0x01, 0xAC, 0xD8, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
-      0xA0, 0xA0, 0xA0, 0x02, 0x07, 0x09, 0xD9, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0,
-      0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0xA0, 0x02, 0x17, 0x0B,
+      0xA3, 0x00, 0xA0, 0x05, 0xA8, 0x00, 0xAC, 0xD8, 0xA9, 0xA0, 0x02, 0x0F,
+      0x06, 0x19, 0xA9, 0xAC, 0xD9, 0xA0, 0x02, 0x0D, 0xA0, 0x06, 0x02, 0x11,
+      0x13, 0x04, 0x15, 0x8D, 0x15, 0xBB, 0x15, 0x00, 0xA0, 0x02, 0x03, 0x01,
+      0xAC, 0xD8, 0xA0, 0x02, 0x07, 0x09, 0xD9, 0xA0, 0x02, 0x17, 0x0B,
   };
 
   const std::uint8_t AModCmds[] = {
-      0x12, 0x00, 0xB4, 0x00, 0x51, 0x00, 0x2A, 0xAA, 0xAA, 0xB4, 0x28, 0x00,
-      0xAE, 0x00, 0xAA, 0x3E, 0xAA, 0xB4, 0xAE, 0x00, 0xB4, 0x50, 0x50, 0x00,
-      0x00, 0x53, 0x00, 0x55, 0x00, 0x66, 0x00, 0x00, 0x79, 0x78, 0x00, 0x00,
-      0xB4, 0x8D, 0xB4, 0x8C, 0x00, 0x00, 0xAC, 0xB4, 0x9F, 0x00, 0x00,
+      0x04, 0x00, 0xB4, 0x00, 0x19, 0x00, 0x0E, 0xAA, 0xAA, 0xB4, 0x0C, 0x00,
+      0xAE, 0x00, 0xAA, 0x14, 0xAA, 0xB4, 0xAE, 0x00, 0xB4, 0x18, 0x18, 0x00,
+      0x00, 0x1B, 0x00, 0x1D, 0x00, 0x1F, 0x00, 0x00, 0x24, 0x23, 0x00, 0x00,
+      0xB4, 0x2A, 0xB4, 0x29, 0x00, 0x00, 0xAC, 0xB4, 0x2E, 0x00, 0x00,
   };
 
   //=================================================
@@ -9164,16 +9477,16 @@ namespace EdAsmNg {
     static std::uint8_t g_test_operand_buffer[256];
 
     void SetupOperandField(const char* operand) {
-      // Copy operand string to test buffer (null-terminated)
-      if (operand == nullptr) {
-        g_test_operand_buffer[0] = '\0';
+      // Copy operand string to test buffer (CR-terminated for EDASM compatibility)
+      if (operand == nullptr || operand[0] == '\0') {
+        g_test_operand_buffer[0] = CR;  // Empty operand: just CR
       } else {
         size_t len = strlen(operand);
         if (len >= sizeof(g_test_operand_buffer) - 1) {
           len = sizeof(g_test_operand_buffer) - 1;
         }
         memcpy(g_test_operand_buffer, operand, len);
-        g_test_operand_buffer[len] = '\0';  // Null-terminate
+        g_test_operand_buffer[len] = CR;  // CR-terminate (EDASM expects CR, not null)
       }
 
       // Set up g_test_src_buffer to point to the operand buffer
