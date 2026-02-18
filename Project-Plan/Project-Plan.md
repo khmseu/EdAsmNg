@@ -53,6 +53,8 @@ ChrGot2     LDA    (SrcP),Y
 //
 ```
 
+**IMPORTANT**: keep the comment style wherever possible. If the code is too different, comment why.
+
 ## Basic Plan
 
 - the original assembler is found in these directories:
@@ -75,7 +77,7 @@ ChrGot2     LDA    (SrcP),Y
   - `src/include/linker`
   - `src/include/editor`
   - `src/include/bugbyter`
-- to start with, the complete code inside one of the original directories (for example ASM) will be converted into a single file (for example `src/lib/asm/asm.cpp`), and we will add the necessary functions to it as we go along, and we will add the necessary includes to it as we go along
+- to start with, the complete code inside one of the original directories (for example ASM) will be converted into a single file (for example `src/lib/asm/asm.cpp`), and we will add the necessary functions to it as we go along, and we will add the necessary includes to it as we go along. However, if it turns out to be useful, we can split it up.
 - we will also add a support module for any necessary supporting code for which there is no code in the original, for example code interfacing with ncurses for screen operations, and we will put this in `src/lib/support` with include dir `src/include/support`
 - we will add a `src/CMakeLists.txt` to build the project, and we will add the necessary files to it as we go along
 - we will add a `tests/` directory for unit tests, and we will add the necessary files to it as we go along

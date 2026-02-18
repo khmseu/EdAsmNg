@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include "EdAsmNg/asm.hpp"
 #include "asm_test_helpers.hpp"
 
 TEST(GreetTests, DefaultsToWorld) {
