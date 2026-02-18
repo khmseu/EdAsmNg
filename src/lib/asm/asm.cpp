@@ -31,6 +31,7 @@
 #include <cstring>
 #include <iostream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 //=================================================
@@ -209,7 +210,7 @@ namespace {
   std::uint16_t SortedP;    // Pointer to sorted auxiliary array (aliases PC)
   std::uint16_t ObjPC;  // Object code Program Counter (where to store in memory, 2 bytes: $7C-$7D)
   std::uint8_t  CodeLen;  // Current length of code image for REL files (stored at BOF)
-  std::uint8_t  AuxAryE;  // Pointer to last end of sorted array
+  std::uint16_t AuxAryE;  // Pointer to last end of sorted array (16-bit)
 
 #define SrcP_hi  (reinterpret_cast<std::uint8_t*>(&SrcP)[1])   // High byte access
 #define PC_hi    (reinterpret_cast<std::uint8_t*>(&PC)[1])     // High byte access for PC
@@ -823,6 +824,9 @@ namespace {
     AuxAryE = A;
     A       = (UnsortedP >> 8);
     AuxAryE = (AuxAryE & 0xFF) | (A << 8);  // Points @ EO array to be sorted
+
+    // Set NumRecs = RecCnt (they are aliases in the original code)
+    NumRecs = RecCnt;
 
     if (!(LstASym & 0x80)) {  // BIT LstASym; BPL LD14C - Alphabetic Symbol listing?
       goto LD14C_label;       // no
@@ -7776,38 +7780,39 @@ namespace {
     // Save $80-$8F: File and Symbol Table Management
     ZP_Backup[0x80] = (ObjPC >> 8) & 0xFF;
     ZP_Backup[0x81] = CodeLen;
-    ZP_Backup[0x82] = AuxAryE;
-    ZP_Backup[0x83] = FileLen & 0xFF;
-    ZP_Backup[0x84] = (FileLen >> 8) & 0xFF;
-    ZP_Backup[0x85] = CurrORG & 0xFF;
-    ZP_Backup[0x86] = (CurrORG >> 8) & 0xFF;
-    ZP_Backup[0x87] = SymP & 0xFF;
-    ZP_Backup[0x88] = (SymP >> 8) & 0xFF;
-    ZP_Backup[0x89] = Delimitr;
-    ZP_Backup[0x8A] = DTEndCol;
-    ZP_Backup[0x8B] = StrType;
-    ZP_Backup[0x8C] = MemTop & 0xFF;
-    ZP_Backup[0x8D] = (MemTop >> 8) & 0xFF;
-    ZP_Backup[0x8E] = TotLines & 0xFF;
-    ZP_Backup[0x8F] = (TotLines >> 8) & 0xFF;
+    ZP_Backup[0x82] = AuxAryE & 0xFF;
+    ZP_Backup[0x83] = (AuxAryE >> 8) & 0xFF;
+    ZP_Backup[0x84] = FileLen & 0xFF;
+    ZP_Backup[0x85] = (FileLen >> 8) & 0xFF;
+    ZP_Backup[0x86] = CurrORG & 0xFF;
+    ZP_Backup[0x87] = (CurrORG >> 8) & 0xFF;
+    ZP_Backup[0x88] = SymP & 0xFF;
+    ZP_Backup[0x89] = (SymP >> 8) & 0xFF;
+    ZP_Backup[0x8A] = Delimitr;
+    ZP_Backup[0x8B] = DTEndCol;
+    ZP_Backup[0x8C] = StrType;
+    ZP_Backup[0x8D] = MemTop & 0xFF;
+    ZP_Backup[0x8E] = (MemTop >> 8) & 0xFF;
+    ZP_Backup[0x8F] = TotLines & 0xFF;
+    ZP_Backup[0x90] = (TotLines >> 8) & 0xFF;
 
     // Save $90-$9F: Code Generation and Expression Evaluation
-    ZP_Backup[0x90] = (TotLines >> 16) & 0xFF;
-    ZP_Backup[0x91] = (TotLines >> 24) & 0xFF;
-    ZP_Backup[0x92] = VidSlot;
-    ZP_Backup[0x93] = SaveA;
-    ZP_Backup[0x94] = SaveY;
-    ZP_Backup[0x95] = SaveX;
-    ZP_Backup[0x96] = DskListF;
-    ZP_Backup[0x97] = LstDBIdx;
-    ZP_Backup[0x98] = WinLeft;
-    ZP_Backup[0x99] = WinRight;
-    ZP_Backup[0x9A] = X6502F;
-    ZP_Backup[0x9B] = HighMem & 0xFF;
-    ZP_Backup[0x9C] = (HighMem >> 8) & 0xFF;
-    ZP_Backup[0x9D] = ExprAccF;
-    ZP_Backup[0x9E] = SortF;
-    ZP_Backup[0x9F] = NxtToken;
+    ZP_Backup[0x91] = (TotLines >> 16) & 0xFF;
+    ZP_Backup[0x92] = (TotLines >> 24) & 0xFF;
+    ZP_Backup[0x93] = VidSlot;
+    ZP_Backup[0x94] = SaveA;
+    ZP_Backup[0x95] = SaveY;
+    ZP_Backup[0x96] = SaveX;
+    ZP_Backup[0x97] = DskListF;
+    ZP_Backup[0x98] = LstDBIdx;
+    ZP_Backup[0x99] = WinLeft;
+    ZP_Backup[0x9A] = WinRight;
+    ZP_Backup[0x9B] = X6502F;
+    ZP_Backup[0x9C] = HighMem & 0xFF;
+    ZP_Backup[0x9D] = (HighMem >> 8) & 0xFF;
+    ZP_Backup[0x9E] = ExprAccF;
+    ZP_Backup[0x9F] = SortF;
+    ZP_Backup[0xF2] = NxtToken;  // Added: NxtToken (dropped after AuxAryE widening)
 
     // Save $A0-$AF: Instruction Encoding and Loop Control
     ZP_Backup[0xA0] = LstCodeF;
@@ -7942,32 +7947,32 @@ namespace {
 
     // Restore $80-$8F: File and Symbol Table Management
     CodeLen  = ZP_Backup[0x81];
-    AuxAryE  = ZP_Backup[0x82];
-    FileLen  = ZP_Backup[0x83] | (static_cast<uint16_t>(ZP_Backup[0x84]) << 8);
-    CurrORG  = ZP_Backup[0x85] | (static_cast<uint16_t>(ZP_Backup[0x86]) << 8);
-    SymP     = ZP_Backup[0x87] | (static_cast<uint16_t>(ZP_Backup[0x88]) << 8);
-    Delimitr = ZP_Backup[0x89];
-    DTEndCol = ZP_Backup[0x8A];
-    StrType  = ZP_Backup[0x8B];
-    MemTop   = ZP_Backup[0x8C] | (static_cast<uint16_t>(ZP_Backup[0x8D]) << 8);
-    TotLines = ZP_Backup[0x8E] | (static_cast<uint16_t>(ZP_Backup[0x8F]) << 8) |
-               (static_cast<uint32_t>(ZP_Backup[0x90]) << 16) |
-               (static_cast<uint32_t>(ZP_Backup[0x91]) << 24);
+    AuxAryE  = ZP_Backup[0x82] | (static_cast<uint16_t>(ZP_Backup[0x83]) << 8);
+    FileLen  = ZP_Backup[0x84] | (static_cast<uint16_t>(ZP_Backup[0x85]) << 8);
+    CurrORG  = ZP_Backup[0x86] | (static_cast<uint16_t>(ZP_Backup[0x87]) << 8);
+    SymP     = ZP_Backup[0x88] | (static_cast<uint16_t>(ZP_Backup[0x89]) << 8);
+    Delimitr = ZP_Backup[0x8A];
+    DTEndCol = ZP_Backup[0x8B];
+    StrType  = ZP_Backup[0x8C];
+    MemTop   = ZP_Backup[0x8D] | (static_cast<uint16_t>(ZP_Backup[0x8E]) << 8);
+    TotLines = ZP_Backup[0x8F] | (static_cast<uint16_t>(ZP_Backup[0x90]) << 8) |
+               (static_cast<uint32_t>(ZP_Backup[0x91]) << 16) |
+               (static_cast<uint32_t>(ZP_Backup[0x92]) << 24);
 
     // Restore $90-$9F: Code Generation and Expression Evaluation
-    VidSlot  = ZP_Backup[0x92];
-    SaveA    = ZP_Backup[0x93];
-    SaveY    = ZP_Backup[0x94];
-    SaveX    = ZP_Backup[0x95];
-    DskListF = ZP_Backup[0x96];
-    LstDBIdx = ZP_Backup[0x97];
-    WinLeft  = ZP_Backup[0x98];
-    WinRight = ZP_Backup[0x99];
-    X6502F   = ZP_Backup[0x9A];
-    HighMem  = ZP_Backup[0x9B] | (static_cast<uint16_t>(ZP_Backup[0x9C]) << 8);
-    ExprAccF = ZP_Backup[0x9D];
-    SortF    = ZP_Backup[0x9E];
-    NxtToken = ZP_Backup[0x9F];
+    VidSlot  = ZP_Backup[0x93];
+    SaveA    = ZP_Backup[0x94];
+    SaveY    = ZP_Backup[0x95];
+    SaveX    = ZP_Backup[0x96];
+    DskListF = ZP_Backup[0x97];
+    LstDBIdx = ZP_Backup[0x98];
+    WinLeft  = ZP_Backup[0x99];
+    WinRight = ZP_Backup[0x9A];
+    X6502F   = ZP_Backup[0x9B];
+    HighMem  = ZP_Backup[0x9C] | (static_cast<uint16_t>(ZP_Backup[0x9D]) << 8);
+    ExprAccF = ZP_Backup[0x9E];
+    SortF    = ZP_Backup[0x9F];
+    NxtToken = ZP_Backup[0xF2];  // Added: NxtToken (dropped after AuxAryE widening)
 
     // Restore $A0-$AF: Instruction Encoding and Loop Control
     LstCodeF     = ZP_Backup[0xA0];
@@ -9364,6 +9369,9 @@ namespace {
 namespace EdAsmNg {
   namespace Asm {
 
+    // Test-only map to remember requested symbol flags keyed by symbol name
+    static std::unordered_map<std::string, std::uint8_t> g_test_symbol_flags_by_name;
+
     void ResetErrorState() {
       NbrErrs  = 0;
       NbrWarns = 0;
@@ -9831,6 +9839,10 @@ namespace EdAsmNg {
 
     uint8_t GetNxtToken() {
       return NxtToken;
+    }
+
+    void SetNxtToken(uint8_t value) {
+      NxtToken = value;
     }
 
     void EvalOprnd() {
@@ -10468,6 +10480,10 @@ namespace EdAsmNg {
       // Initialize HighMem to a reasonable default (64KB - no limit)
       HighMem = 0xFFFF;
 
+      // Initialize MemTop to a reasonable value for testing (48K)
+      // This is the top of available memory for auxiliary arrays
+      MemTop = 0xBF00;  // Just below I/O space on Apple II
+
       // Initialize HeaderT_ptr to point to simulated memory at HeaderT address
       HeaderT_ptr = &g_test_src_memory[HeaderT];
 
@@ -10504,6 +10520,15 @@ namespace EdAsmNg {
       SortF    = 0;  // Sort flag
       DskSrcF  = 0;  // Disk source flag (0 = no disk)
       SubTtlF  = 0;  // Subtitle flag
+
+      // Clear test-only symbol flag overrides
+      g_test_symbol_flags_by_name.clear();
+
+      // Reset sorting/auxiliary array state
+      RecCnt    = 0;  // Record count
+      NumRecs   = 0;  // Number of records
+      SortedP   = 0;  // Pointer to sorted array
+      UnsortedP = 0;  // Pointer to unsorted array
 
       // Clear symbol table (HeaderT)
       if (HeaderT_ptr != nullptr) {
@@ -10588,6 +10613,17 @@ namespace EdAsmNg {
       A = flags;
       AddNode();
 
+      // Explicitly patch the stored flag byte to the requested value so that
+      // Pass 3 sees the correct undefined/defined status during compaction.
+      // AddNode leaves SymP pointing at the newly inserted record.
+      {
+        uint8_t* symPtr = SimPtrToMemPtr(SymP);
+        // The flag byte sits immediately after the symbolic name. We already
+        // know the name length, so write the flag directly at that offset.
+        symPtr[name_len]                                         = flags;
+        g_test_symbol_flags_by_name[std::string(name, name_len)] = flags;
+      }
+
       // Restore state
       SrcP = saved_SrcP;
       PC   = saved_PC;
@@ -10598,6 +10634,112 @@ namespace EdAsmNg {
 
       // Note: We don't verify with HasSymbol here to avoid recursion/complexity
       // The caller should verify the symbol was added if needed
+    }
+
+    //=================================================
+    // Phase 3: Symbol Table Sorting Test Helpers (Phase 2)
+    //=================================================
+
+    uint16_t GetRecCnt() {
+      return RecCnt;
+    }
+
+    uint16_t GetSortedP() {
+      return SortedP;
+    }
+
+    uint16_t GetUnsortedP() {
+      return UnsortedP;
+    }
+
+    uint16_t GetAuxArrayEntry(int index, bool fourByte) {
+      // Get the pointer from an aux array entry. SortedP is a moving cursor during
+      // printing, so compute the base from AuxAryE and RecCnt instead of SortedP.
+      int      entrySize = fourByte ? 4 : 2;
+      uint16_t base      = static_cast<uint16_t>(AuxAryE - (RecCnt * entrySize) + 1);
+      uint16_t entryAddr = static_cast<uint16_t>(base + (index * entrySize));
+
+      uint8_t* ptr = SimPtrToMemPtr(entryAddr);
+      return static_cast<uint16_t>(ptr[0] | (ptr[1] << 8));
+    }
+
+    uint16_t GetAuxArrayAddr(int index) {
+      // Get the address from a 4-byte aux array entry (at offset +2)
+      int      entrySize = 4;
+      uint16_t base      = static_cast<uint16_t>(AuxAryE - (RecCnt * entrySize) + 1);
+      uint16_t entryAddr = static_cast<uint16_t>(base + (index * entrySize) + 2);
+
+      uint8_t* ptr = SimPtrToMemPtr(entryAddr);
+      return static_cast<uint16_t>(ptr[0] | (ptr[1] << 8));
+    }
+
+    std::string GetSortedSymbolName(int index) {
+      // Get pointer to symbol from sorted array
+      uint16_t symPtr = GetAuxArrayEntry(index, false);
+
+      // Read symbol name from compacted table
+      // Symbol name format: chars with msb=1, flag byte has msb=0
+      uint8_t*    namePtr = SimPtrToMemPtr(symPtr);
+      std::string name;
+
+      for (int i = 0; i < 100; i++) {  // Safety limit
+        uint8_t ch = namePtr[i];
+
+        if (!(ch & 0x80)) {  // Flag byte (MSB=0)?
+          break;
+        }
+
+        name += static_cast<char>(ch & 0x7F);  // Clear msb
+      }
+
+      return name;
+    }
+
+    uint16_t GetSortedSymbolValue(int index) {
+      // Get pointer to symbol from sorted array (4-byte mode)
+      uint16_t symPtr = GetAuxArrayEntry(index, true);
+
+      // Skip past symbol name to find flags and value
+      uint8_t* namePtr = SimPtrToMemPtr(symPtr);
+      int      offset  = 0;
+
+      // Find end of name (skip while msb=1, stop at msb=0)
+      for (int i = 0; i < 100; i++) {  // Safety limit
+        if (!(namePtr[i] & 0x80)) {
+          offset = i;
+          break;
+        }
+      }
+
+      // After name: [flags][lo-value][hi-value]
+      offset++;  // Skip flags byte
+      uint8_t lo = namePtr[offset];
+      uint8_t hi = namePtr[offset + 1];
+      return static_cast<uint16_t>(lo | (hi << 8));
+    }
+
+    uint8_t GetCompactedSymbolFlags(int index) {
+      // Get pointer to symbol from sorted array
+      // Pure read: return the actual flag byte from compacted table
+      // No synthetic overrides or global fallbacks
+      uint16_t symPtr = GetAuxArrayEntry(index, false);
+
+      // Skip past symbol name to find flags
+      uint8_t* namePtr = SimPtrToMemPtr(symPtr);
+      int      offset  = 0;
+
+      // Find end of name (skip while msb=1, stop at msb=0 flag byte)
+      for (int i = 0; i < 100; i++) {  // Safety limit
+        if (!(namePtr[i] & 0x80)) {
+          offset = i;
+          break;
+        }
+      }
+
+      // Flag byte is first byte with msb=0 - return it as-is
+      uint8_t flag = namePtr[offset];
+
+      return flag;
     }
 
   }  // namespace Asm

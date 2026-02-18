@@ -2650,6 +2650,27 @@ TEST_F(Phase81InitTest, SaveRestoreZP_GMCBuffer) {
   EXPECT_EQ(EdAsmNg::Asm::GetGMC(3), 0x60);
 }
 
+TEST_F(Phase81InitTest, SaveRestoreZP_NxtToken) {
+  // Test: NxtToken should be saved/restored (was dropped after AuxAryE widening)
+  // NxtToken is used by expression evaluator to track next token type
+
+  // Set test value
+  EdAsmNg::Asm::SetNxtToken(0x42);
+
+  // Save zero-page
+  EdAsmNg::Asm::SaveZP();
+
+  // Modify to different value
+  EdAsmNg::Asm::SetNxtToken(0xAB);
+  EXPECT_EQ(EdAsmNg::Asm::GetNxtToken(), 0xAB);
+
+  // Restore zero-page
+  EdAsmNg::Asm::RestoreZP();
+
+  // Verify original value is restored
+  EXPECT_EQ(EdAsmNg::Asm::GetNxtToken(), 0x42);
+}
+
 TEST_F(Phase81InitTest, InitASM_ClearsCounters) {
   // Original: ASM2.S:570 - InitASM
   // Test that InitASM clears error/warning/line counters
@@ -4654,4 +4675,230 @@ TEST_F(Phase3_CompactionTest, EndSymT_UpdatedCorrectly) {
   // EndSymT should still equal StrtSymT for empty table
   uint16_t endAfter = EdAsmNg::Asm::GetEndSymT();
   EXPECT_EQ(endAfter, startBefore);
+}
+
+//=================================================
+// Phase 3: Symbol Table Sorting Tests (Phase 2)
+//=================================================
+
+class Phase3_SortingTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetAsmState();
+    EdAsmNg::Asm::ResetPass3State();
+  }
+};
+
+TEST_F(Phase3_SortingTest, BuildAuxArray_AlphabeticMode) {
+  // Test: When sorting alphabetically, each aux array entry should be 2 bytes
+  // Entry format: [lo-ptr][hi-ptr] pointing to symbol name in compacted table
+
+  // Add three symbols
+  EdAsmNg::Asm::AddTestSymbol("BETA", 0x2000, 0x00);
+  EdAsmNg::Asm::AddTestSymbol("ALPHA", 0x1000, 0x00);
+  EdAsmNg::Asm::AddTestSymbol("GAMMA", 0x3000, 0x00);
+
+  // Enable alphabetic listing
+  EdAsmNg::Asm::SetLstASym(0x80);
+
+  // Trigger Pass3 which compacts and prepares for sorting
+  EdAsmNg::Asm::DoPass3();
+
+  // Verify the auxiliary array was built
+  // RecCnt should be 3 (one for each symbol)
+  EXPECT_EQ(EdAsmNg::Asm::GetRecCnt(), 3);
+
+  // Verify each entry points to a symbol in the compacted table
+  for (int i = 0; i < 3; i++) {
+    uint16_t entryPtr = EdAsmNg::Asm::GetAuxArrayEntry(i, false);  // false = 2-byte mode
+    EXPECT_GE(entryPtr, EdAsmNg::Asm::GetStrtSymT());
+    EXPECT_LT(entryPtr, EdAsmNg::Asm::GetEndSymT());
+  }
+}
+
+TEST_F(Phase3_SortingTest, BuildAuxArray_ValueMode) {
+  // Test: When sorting by value, each aux array entry should be 4 bytes
+  // Entry format: [lo-ptr][hi-ptr][lo-addr][hi-addr]
+
+  // Add three symbols with different addresses
+  EdAsmNg::Asm::AddTestSymbol("DELTA", 0x3000, 0x00);
+  EdAsmNg::Asm::AddTestSymbol("ECHO", 0x1000, 0x00);
+  EdAsmNg::Asm::AddTestSymbol("FOXTROT", 0x2000, 0x00);
+
+  // Enable value-ordered listing (needs to go through alpha first)
+  EdAsmNg::Asm::SetLstASym(0x80);
+  EdAsmNg::Asm::SetLstVSym(0x80);
+
+  // Trigger Pass3 - it will do alphabetic first, then value
+  EdAsmNg::Asm::DoPass3();
+
+  // After both passes, RecCnt should reflect the value mode pass
+  EXPECT_EQ(EdAsmNg::Asm::GetRecCnt(), 3);
+
+  // Verify each entry has both pointer and address
+  for (int i = 0; i < 3; i++) {
+    uint16_t entryPtr = EdAsmNg::Asm::GetAuxArrayEntry(i, true);  // true = 4-byte mode
+    EXPECT_GE(entryPtr, EdAsmNg::Asm::GetStrtSymT());
+    EXPECT_LT(entryPtr, EdAsmNg::Asm::GetEndSymT());
+
+    // Verify the address field is present (stored at offset +2)
+    uint16_t addr = EdAsmNg::Asm::GetAuxArrayAddr(i);
+    // Addresses should be one of: 0x1000, 0x2000, 0x3000
+    bool validAddr = (addr == 0x1000 || addr == 0x2000 || addr == 0x3000);
+    EXPECT_TRUE(validAddr) << "Address should be 0x1000, 0x2000, or 0x3000, got 0x" << std::hex
+                           << addr;
+  }
+}
+
+TEST_F(Phase3_SortingTest, DoSort_AlphabeticOrder) {
+  // Test: DoSort should sort symbols alphabetically by name
+
+  // Add symbols in non-alphabetic order
+  EdAsmNg::Asm::AddTestSymbol("ZEBRA", 0x1000, 0x00);
+  EdAsmNg::Asm::AddTestSymbol("APPLE", 0x2000, 0x00);
+  EdAsmNg::Asm::AddTestSymbol("MANGO", 0x3000, 0x00);
+
+  // Enable alphabetic listing
+  EdAsmNg::Asm::SetLstASym(0x80);
+
+  // Trigger Pass3 - compacts and sorts
+  EdAsmNg::Asm::DoPass3();
+
+  // After sorting, verify the array is in alphabetic order
+  // Get the symbol names through the sorted array
+  std::string name0 = EdAsmNg::Asm::GetSortedSymbolName(0);
+  std::string name1 = EdAsmNg::Asm::GetSortedSymbolName(1);
+  std::string name2 = EdAsmNg::Asm::GetSortedSymbolName(2);
+
+  EXPECT_EQ(name0, "APPLE");
+  EXPECT_EQ(name1, "MANGO");
+  EXPECT_EQ(name2, "ZEBRA");
+}
+
+TEST_F(Phase3_SortingTest, DoSort_ValueOrder) {
+  // Test: DoSort should sort symbols by address value in ascending order
+
+  // Add symbols with addresses in non-sorted order
+  EdAsmNg::Asm::AddTestSymbol("HIGH", 0x3000, 0x00);
+  EdAsmNg::Asm::AddTestSymbol("LOW", 0x1000, 0x00);
+  EdAsmNg::Asm::AddTestSymbol("MID", 0x2000, 0x00);
+
+  // Enable value-ordered listing
+  EdAsmNg::Asm::SetLstASym(0x80);
+  EdAsmNg::Asm::SetLstVSym(0x80);
+
+  // Trigger Pass3 - will sort by value
+  EdAsmNg::Asm::DoPass3();
+
+  // After sorting, verify the array is in address order
+  // Get the addresses through the sorted array
+  uint16_t addr0 = EdAsmNg::Asm::GetSortedSymbolValue(0);
+  uint16_t addr1 = EdAsmNg::Asm::GetSortedSymbolValue(1);
+  uint16_t addr2 = EdAsmNg::Asm::GetSortedSymbolValue(2);
+
+  EXPECT_EQ(addr0, 0x1000);  // LOW
+  EXPECT_EQ(addr1, 0x2000);  // MID
+  EXPECT_EQ(addr2, 0x3000);  // HIGH
+}
+
+TEST_F(Phase3_SortingTest, UndefinedSymbols_FlaggedInAlphaMode) {
+  // Test: In alphabetic mode, undefined symbols get special flag treatment
+  // Undefined symbols have msb=1 in their flag byte
+  // During array building, the flag byte is marked with pattern 0x7E/0x7F
+  //
+  // Enhancement: Locate symbols by name via aux array, not fixed index
+
+  // Add both defined and undefined symbols
+  EdAsmNg::Asm::AddTestSymbol("CHARLIE", 0x1000, 0x00);  // flag=0x00 (defined)
+  EdAsmNg::Asm::AddTestSymbol("BRAVO", 0x0000, 0x80);    // flag=0x80 (undefined, msb=1)
+  EdAsmNg::Asm::AddTestSymbol("ALPHA", 0x2000, 0x00);    // flag=0x00 (defined)
+
+  // Enable alphabetic listing
+  EdAsmNg::Asm::SetLstASym(0x80);
+
+  // Trigger Pass3
+  EdAsmNg::Asm::DoPass3();
+
+  // Locate symbols by name in sorted array
+  uint16_t recCnt = EdAsmNg::Asm::GetRecCnt();
+  ASSERT_EQ(recCnt, 3) << "Expected 3 symbols in sorted array";
+
+  int alphaIdx = -1, bravoIdx = -1, charlieIdx = -1;
+  for (int i = 0; i < recCnt; i++) {
+    std::string name = EdAsmNg::Asm::GetSortedSymbolName(i);
+    if (name == "ALPHA")
+      alphaIdx = i;
+    else if (name == "BRAVO")
+      bravoIdx = i;
+    else if (name == "CHARLIE")
+      charlieIdx = i;
+  }
+
+  ASSERT_NE(alphaIdx, -1) << "ALPHA not found in sorted array";
+  ASSERT_NE(bravoIdx, -1) << "BRAVO not found in sorted array";
+  ASSERT_NE(charlieIdx, -1) << "CHARLIE not found in sorted array";
+
+  // Get flags from compacted table (pure read, no synthesis)
+  uint8_t alphaFlags   = EdAsmNg::Asm::GetCompactedSymbolFlags(alphaIdx);
+  uint8_t bravoFlags   = EdAsmNg::Asm::GetCompactedSymbolFlags(bravoIdx);
+  uint8_t charlieFlags = EdAsmNg::Asm::GetCompactedSymbolFlags(charlieIdx);
+
+  // Defined symbols should NOT be 0x7E/0x7F (those are for undefined)
+  EXPECT_NE(alphaFlags, 0x7E) << "ALPHA (defined) should not be 0x7E";
+  EXPECT_NE(alphaFlags, 0x7F) << "ALPHA (defined) should not be 0x7F";
+  EXPECT_NE(charlieFlags, 0x7E) << "CHARLIE (defined) should not be 0x7E";
+  EXPECT_NE(charlieFlags, 0x7F) << "CHARLIE (defined) should not be 0x7F";
+
+  // Undefined symbol should have the stored flag byte 0x7E or 0x7F
+  // (original code in alphabetic mode: A |= 0x7E; A ^= 0x80)
+  EXPECT_TRUE((bravoFlags == 0x7E) || (bravoFlags == 0x7F))
+      << "BRAVO (undefined) should be 0x7E or 0x7F, got 0x" << std::hex << (int)bravoFlags;
+}
+
+TEST_F(Phase3_SortingTest, RecCnt_TracksEntryCount) {
+  // Test: RecCnt should correctly track the number of entries in the aux array
+
+  // Test with 0 symbols
+  EdAsmNg::Asm::SetLstASym(0x80);
+  EdAsmNg::Asm::DoPass3();
+  EXPECT_EQ(EdAsmNg::Asm::GetRecCnt(), 0);
+
+  // Reset and test with 1 symbol
+  EdAsmNg::Asm::ResetPass3State();
+  EdAsmNg::Asm::AddTestSymbol("ONE", 0x1000, 0x00);
+  EdAsmNg::Asm::SetLstASym(0x80);
+  EdAsmNg::Asm::DoPass3();
+  EXPECT_EQ(EdAsmNg::Asm::GetRecCnt(), 1);
+
+  // Reset and test with 5 symbols
+  EdAsmNg::Asm::ResetPass3State();
+  EdAsmNg::Asm::AddTestSymbol("ABLE", 0x1000, 0x00);
+  EdAsmNg::Asm::AddTestSymbol("BAKER", 0x2000, 0x00);
+  EdAsmNg::Asm::AddTestSymbol("CHARLIE", 0x3000, 0x00);
+  EdAsmNg::Asm::AddTestSymbol("DOG", 0x4000, 0x00);
+  EdAsmNg::Asm::AddTestSymbol("EASY", 0x5000, 0x00);
+  EdAsmNg::Asm::SetLstASym(0x80);
+  EdAsmNg::Asm::DoPass3();
+  EXPECT_EQ(EdAsmNg::Asm::GetRecCnt(), 5);
+}
+
+TEST_F(Phase3_SortingTest, SaveRestoreZP_NxtToken) {
+  // Test: NxtToken should be saved/restored (was dropped after AuxAryE widening)
+  // NxtToken is used by expression evaluator to track next token type
+
+  // Set test value
+  EdAsmNg::Asm::SetNxtToken(0x42);
+
+  // Save zero-page
+  EdAsmNg::Asm::SaveZP();
+
+  // Modify to different value
+  EdAsmNg::Asm::SetNxtToken(0xAB);
+  EXPECT_EQ(EdAsmNg::Asm::GetNxtToken(), 0xAB);
+
+  // Restore zero-page
+  EdAsmNg::Asm::RestoreZP();
+
+  // Verify original value is restored
+  EXPECT_EQ(EdAsmNg::Asm::GetNxtToken(), 0x42);
 }

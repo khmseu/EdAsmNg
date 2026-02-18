@@ -2,6 +2,7 @@
 #define EDASM_NG_ASM_TEST_HELPERS_HPP
 
 #include <cstdint>
+#include <string>
 
 //=================================================
 // Test Helper Declarations for EdAsmNg::Asm
@@ -39,6 +40,8 @@ namespace EdAsmNg {
     // Assembler State Management
     //=================================================
     void ResetAsmState();
+    void SaveZP();     // Save zero-page workspace
+    void RestoreZP();  // Restore zero-page workspace
 
     //=================================================
     // Instruction Length Test Helpers (GInstLen)
@@ -56,6 +59,8 @@ namespace EdAsmNg {
     void    SetLenTIdx(uint8_t value);             // Set addressing mode index
     uint8_t GetGMC(uint8_t index);                 // Get byte from GMC buffer
     void    SetGMC(uint8_t index, uint8_t value);  // Set byte in GMC buffer
+    uint8_t GetNxtToken();                         // Get NxtToken value
+    void    SetNxtToken(uint8_t value);            // Set NxtToken value
 
     //=================================================
     // Phase 3: Symbol Table Compaction Test Helpers
@@ -63,12 +68,26 @@ namespace EdAsmNg {
     void     ResetPass3State();        // Reset Pass3-relevant state
     bool     IsHeaderTEmpty();         // Check if HeaderT is all zeros
     void     SetLstASym(uint8_t val);  // Set LstASym flag
+    void     SetLstVSym(uint8_t val);  // Set LstVSym flag
     void     DoPass3();                // Execute Pass 3
     uint16_t GetEndSymT();             // Get end of symbol table pointer
     uint16_t GetStrtSymT();            // Get start of symbol table pointer
     uint16_t GetSymNodeP();            // Get current symbol node pointer
     uint16_t GetSavSTS();              // Get saved start of symbol table
     void AddTestSymbol(const char* name, uint16_t value, uint8_t flags);  // Add symbol for testing
+
+    //=================================================
+    // Phase 3: Symbol Table Sorting Test Helpers (Phase 2)
+    //=================================================
+    uint16_t    GetRecCnt();     // Get record count (number of aux array entries)
+    uint16_t    GetSortedP();    // Get SortedP (moving cursor during sort)
+    uint16_t    GetUnsortedP();  // Get pointer to end of unsorted array
+    uint16_t    GetAuxArrayEntry(int index, bool fourByte);  // Get pointer from aux array entry
+    uint16_t    GetAuxArrayAddr(int index);       // Get address from 4-byte aux array entry
+    std::string GetSortedSymbolName(int index);   // Get symbol name from sorted array
+    uint16_t    GetSortedSymbolValue(int index);  // Get symbol value from sorted array
+    uint8_t     GetCompactedSymbolFlags(
+            int index);  // Get symbol flags from compacted table (pure read)
 
   }  // namespace Asm
 }  // namespace EdAsmNg
