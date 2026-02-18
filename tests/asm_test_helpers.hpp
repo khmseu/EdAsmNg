@@ -65,15 +65,17 @@ namespace EdAsmNg {
     //=================================================
     // Phase 3: Symbol Table Compaction Test Helpers
     //=================================================
-    void     ResetPass3State();        // Reset Pass3-relevant state
-    bool     IsHeaderTEmpty();         // Check if HeaderT is all zeros
-    void     SetLstASym(uint8_t val);  // Set LstASym flag
-    void     SetLstVSym(uint8_t val);  // Set LstVSym flag
-    void     DoPass3();                // Execute Pass 3
-    uint16_t GetEndSymT();             // Get end of symbol table pointer
-    uint16_t GetStrtSymT();            // Get start of symbol table pointer
-    uint16_t GetSymNodeP();            // Get current symbol node pointer
-    uint16_t GetSavSTS();              // Get saved start of symbol table
+    void     ResetPass3State();         // Reset Pass3-relevant state
+    bool     IsHeaderTEmpty();          // Check if HeaderT is all zeros
+    void     SetLstASym(uint8_t val);   // Set LstASym flag
+    void     SetLstVSym(uint8_t val);   // Set LstVSym flag
+    uint8_t  GetLst6Cols();             // Get 6-column mode flag
+    void     SetLst6Cols(uint8_t val);  // Set 6-column mode flag
+    void     DoPass3();                 // Execute Pass 3
+    uint16_t GetEndSymT();              // Get end of symbol table pointer
+    uint16_t GetStrtSymT();             // Get start of symbol table pointer
+    uint16_t GetSymNodeP();             // Get current symbol node pointer
+    uint16_t GetSavSTS();               // Get saved start of symbol table
     void AddTestSymbol(const char* name, uint16_t value, uint8_t flags);  // Add symbol for testing
 
     //=================================================
@@ -88,6 +90,16 @@ namespace EdAsmNg {
     uint16_t    GetSortedSymbolValue(int index);  // Get symbol value from sorted array
     uint8_t     GetCompactedSymbolFlags(
             int index);  // Get symbol flags from compacted table (pure read)
+
+    //=================================================
+    // Phase 3: Symbol Table Formatting Test Helpers (Phase 3)
+    //=================================================
+    uint8_t     GetNumCols();               // Get number of print columns (2, 4, or 6)
+    uint8_t     GetPrSlot();                // Get printer slot number (0=video)
+    void        SetPrSlot(uint8_t value);   // Set printer slot number
+    uint8_t     GetSortF();                 // Get current SortF state (alpha/value flow)
+    const char* GetSubTitle();              // Get subtitle buffer as C-string (already exists)
+    void        SetSubTtlF(uint8_t value);  // Set SubTtlF flag (already exists)
 
   }  // namespace Asm
 }  // namespace EdAsmNg

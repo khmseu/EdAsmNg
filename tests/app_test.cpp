@@ -4902,3 +4902,174 @@ TEST_F(Phase3_SortingTest, SaveRestoreZP_NxtToken) {
   // Verify original value is restored
   EXPECT_EQ(EdAsmNg::Asm::GetNxtToken(), 0x42);
 }
+
+//=================================================
+// Phase 3.3: Symbol Table Output Formatting Tests
+//=================================================
+
+class Phase3_FormattingTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetAsmState();
+    EdAsmNg::Asm::ResetPass3State();
+  }
+};
+
+TEST_F(Phase3_FormattingTest, ColumnCount_2Columns_40ColVideo) {
+  // Test: PrSlot=0 (video), default flags -> NumCols==2 after DoPass3
+  // 40-column video mode uses 2 columns for symbol listing
+
+  // Setup: Video output (PrSlot=0), enable alphabetic listing
+  EdAsmNg::Asm::SetPrSlot(0);
+  EdAsmNg::Asm::SetLst6Cols(0x00);  // Not 6-column mode
+  EdAsmNg::Asm::SetLstASym(0x80);   // Enable alphabetic listing
+  // Note: SubTtlF not set to avoid subtitle initialization
+
+  // Add a test symbol so Pass3 proceeds
+  EdAsmNg::Asm::AddTestSymbol("TEST", 0x1000, 0x00);
+
+  // Run Pass 3
+  EdAsmNg::Asm::DoPass3();
+
+  // Verify NumCols is set to 2 (video mode)
+  EXPECT_EQ(EdAsmNg::Asm::GetNumCols(), 2);
+}
+
+TEST_F(Phase3_FormattingTest, ColumnCount_4Columns_DefaultMode) {
+  // Test: PrSlot!=0, Lst6Cols=0 -> NumCols==4
+  // Printer mode with default (4-column) setting
+
+  // Setup: Printer output (PrSlot!=0), 4-column mode
+  EdAsmNg::Asm::SetPrSlot(1);       // Slot 1 printer
+  EdAsmNg::Asm::SetLst6Cols(0x00);  // Not 6-column mode -> defaults to 4
+  EdAsmNg::Asm::SetLstASym(0x80);   // Enable alphabetic listing
+  // Note: SubTtlF not set to avoid subtitle initialization
+
+  // Add a test symbol
+  EdAsmNg::Asm::AddTestSymbol("DATA", 0x2000, 0x00);
+
+  // Run Pass 3
+  EdAsmNg::Asm::DoPass3();
+
+  // Verify NumCols is set to 4 (printer, default mode)
+  EXPECT_EQ(EdAsmNg::Asm::GetNumCols(), 4);
+}
+
+TEST_F(Phase3_FormattingTest, ColumnCount_6Columns_PrinterMode) {
+  // Test: PrSlot!=0, Lst6Cols set -> NumCols==6
+  // Printer mode with 6-column setting
+
+  // Setup: Printer output, 6-column mode
+  EdAsmNg::Asm::SetPrSlot(2);       // Slot 2 printer
+  EdAsmNg::Asm::SetLst6Cols(0x80);  // 6-column mode
+  EdAsmNg::Asm::SetLstASym(0x80);   // Enable alphabetic listing
+  // Note: SubTtlF not set to avoid subtitle initialization
+
+  // Add a test symbol
+  EdAsmNg::Asm::AddTestSymbol("CODE", 0x3000, 0x00);
+
+  // Run Pass 3
+  EdAsmNg::Asm::DoPass3();
+
+  // Verify NumCols is set to 6 (printer, 6-column mode)
+  EXPECT_EQ(EdAsmNg::Asm::GetNumCols(), 6);
+}
+
+TEST_F(Phase3_FormattingTest, Subtitle_SubtitleEnabledUsesAddressText) {
+  // DoPass3 overwrites the subtitle text with "ADDRESS" when SubTtlF is set,
+  // even if value listing is not requested. Verify the buffer is populated
+  // and contains the expected ADDRESS marker.
+
+  EdAsmNg::Asm::SetPrSlot(1);
+  EdAsmNg::Asm::SetLstASym(0x80);  // Enable alphabetic listing
+  EdAsmNg::Asm::SetLstVSym(0x00);  // Value listing disabled
+  EdAsmNg::Asm::SetSubTtlF(0x40);  // Enable subtitle
+
+  EdAsmNg::Asm::AddTestSymbol("LABEL", 0x4000, 0x00);
+  EdAsmNg::Asm::DoPass3();
+
+  std::string subtitle(EdAsmNg::Asm::GetSubTitle());
+  EXPECT_FALSE(subtitle.empty());
+  EXPECT_NE(subtitle.find("ADDRESS"), std::string::npos)
+      << "Expected subtitle to contain 'ADDRESS', got: " << subtitle;
+}
+
+TEST_F(Phase3_FormattingTest, Subtitle_ValueModeAlsoUsesAddressText) {
+  // When value listing is enabled, the subtitle remains the ADDRESS variant.
+
+  EdAsmNg::Asm::SetPrSlot(1);
+  EdAsmNg::Asm::SetLstASym(0x80);  // Enable alphabetic listing
+  EdAsmNg::Asm::SetLstVSym(0x80);  // Enable value listing
+  EdAsmNg::Asm::SetSubTtlF(0x40);  // Enable subtitle
+
+  EdAsmNg::Asm::AddTestSymbol("VECTOR", 0x5000, 0x00);
+  EdAsmNg::Asm::DoPass3();
+
+  std::string subtitle(EdAsmNg::Asm::GetSubTitle());
+  EXPECT_FALSE(subtitle.empty());
+  EXPECT_NE(subtitle.find("ADDRESS"), std::string::npos)
+      << "Expected subtitle to contain 'ADDRESS', got: " << subtitle;
+}
+
+TEST_F(Phase3_FormattingTest, LstASym_EnablesAlphabeticListing) {
+  // Test: When LstASym=0, DoPass3 should skip symbol listing (RecCnt==0)
+  // When LstASym set, RecCnt>0 with added symbol
+
+  // Test with LstASym disabled
+  EdAsmNg::Asm::SetPrSlot(1);
+  EdAsmNg::Asm::SetLstASym(0x00);  // Disable alphabetic listing
+  EdAsmNg::Asm::SetLstVSym(0x00);  // Disable value listing
+  EdAsmNg::Asm::AddTestSymbol("SYM1", 0x6000, 0x00);
+
+  EdAsmNg::Asm::DoPass3();
+
+  // Should exit early, RecCnt should be 0
+  EXPECT_EQ(EdAsmNg::Asm::GetRecCnt(), 0);
+
+  // Reset and test with LstASym enabled
+  EdAsmNg::Asm::ResetPass3State();
+  EdAsmNg::Asm::SetPrSlot(1);
+  EdAsmNg::Asm::SetLstASym(0x80);  // Enable alphabetic listing
+  EdAsmNg::Asm::SetLstVSym(0x00);  // Disable value listing
+  EdAsmNg::Asm::SetSubTtlF(0x40);  // Enable subtitle
+  EdAsmNg::Asm::AddTestSymbol("SYM2", 0x7000, 0x00);
+
+  EdAsmNg::Asm::DoPass3();
+
+  // Should process symbol, RecCnt > 0
+  EXPECT_GT(EdAsmNg::Asm::GetRecCnt(), 0);
+}
+
+TEST_F(Phase3_FormattingTest, LstVSym_EnablesValueListing) {
+  // Test: With LstVSym=0, value pass not run (RecCnt corresponds to alpha only)
+  // With LstVSym set, value pass runs (RecCnt reflects value mode processing)
+
+  // Test with LstVSym disabled (alphabetic only)
+  EdAsmNg::Asm::SetPrSlot(1);
+  EdAsmNg::Asm::SetLstASym(0x80);  // Enable alphabetic listing
+  EdAsmNg::Asm::SetLstVSym(0x00);  // Disable value listing
+  EdAsmNg::Asm::SetSubTtlF(0x40);  // Enable subtitle
+  EdAsmNg::Asm::AddTestSymbol("ALPHA1", 0x8000, 0x00);
+
+  EdAsmNg::Asm::DoPass3();
+  uint16_t recCntAlphaOnly = EdAsmNg::Asm::GetRecCnt();
+  uint8_t  sortAlphaOnly   = EdAsmNg::Asm::GetSortF();
+  EXPECT_GT(recCntAlphaOnly, 0);  // Should have processed alpha pass
+  EXPECT_EQ(sortAlphaOnly, 0xFF) << "Expected SortF=0xFF after alpha-only pass";
+
+  // Reset and test with both LstASym and LstVSym enabled
+  EdAsmNg::Asm::ResetPass3State();
+  EdAsmNg::Asm::SetPrSlot(1);
+  EdAsmNg::Asm::SetLstASym(0x80);  // Enable alphabetic listing
+  EdAsmNg::Asm::SetLstVSym(0x80);  // Enable value listing
+  EdAsmNg::Asm::SetSubTtlF(0x40);  // Enable subtitle
+  EdAsmNg::Asm::AddTestSymbol("ALPHA2", 0x9000, 0x00);
+
+  EdAsmNg::Asm::DoPass3();
+  uint16_t recCntBothModes = EdAsmNg::Asm::GetRecCnt();
+  uint8_t  sortBothModes   = EdAsmNg::Asm::GetSortF();
+
+  // With value listing enabled, SortF decrements after the value pass (0xFE)
+  EXPECT_GT(recCntBothModes, 0);
+  EXPECT_EQ(sortBothModes, 0xFE) << "Expected SortF=0xFE after value pass";
+}

@@ -10537,6 +10537,19 @@ namespace EdAsmNg {
         }
       }
 
+      // Initialize PNTable to point to a safe buffer to avoid crashes
+      // during subtitle initialization in DoPass3
+      std::memset(PNTable, 0, sizeof(PNTable));
+      // Point ChnFile (index 2) to a valid buffer
+      const uint16_t safe_pathname_addr = 0x0200;
+      PNTable[2]                        = safe_pathname_addr & 0xFF;
+      PNTable[3]                        = safe_pathname_addr >> 8;
+      // Write a simple pathname to that location
+      g_test_src_memory[safe_pathname_addr] = '\r';  // Empty name, CR terminator
+
+      // Clear SubTitle buffer
+      std::memset(SubTitle, 0, sizeof(SubTitle));
+
       // Reset symbol table pointers
       StrtSymT = 0x1E00;
       EndSymT  = StrtSymT;
@@ -10740,6 +10753,26 @@ namespace EdAsmNg {
       uint8_t flag = namePtr[offset];
 
       return flag;
+    }
+
+    //=================================================
+    // Phase 3: Symbol Table Formatting Test Helpers (Phase 3)
+    //=================================================
+
+    uint8_t GetNumCols() {
+      return NumCols;
+    }
+
+    uint8_t GetPrSlot() {
+      return PrSlot;
+    }
+
+    void SetPrSlot(uint8_t value) {
+      PrSlot = value;
+    }
+
+    uint8_t GetSortF() {
+      return SortF;
     }
 
   }  // namespace Asm
