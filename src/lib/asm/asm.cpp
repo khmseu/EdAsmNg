@@ -31,7 +31,6 @@
 #include <cstring>
 #include <iostream>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 //=================================================
@@ -512,7 +511,7 @@ namespace {
     std::uint8_t  orig_node_lo  = 0;  // For carry detection in LD096
 
     // DEBUG: Add safety counter for LD076 loop
-    int       loop_count = 0;
+    int       loop_count = 0;  // Initialize loop counter for safety
     const int MAX_LOOPS  = 1000;
 
     // Check if alphabetic symbol listing requested
@@ -625,12 +624,8 @@ namespace {
     //   16-bit value
 
   LD076_label: {
-    loop_count++;  // DEBUG: increment safety counter
-    std::cerr << "DEBUG LD076: loop_count=" << loop_count << " StrtSymT=0x" << std::hex << StrtSymT
-              << " SymNodeP=0x" << SymNodeP << " EndSymT=0x" << EndSymT << std::dec << std::endl;
-    if (loop_count > MAX_LOOPS) {  // DEBUG: prevent infinite loop
-      // Infinite loop detected, return early
-      std::cerr << "DEBUG: MAX_LOOPS exceeded, returning" << std::endl;
+    loop_count++;
+    if (loop_count > MAX_LOOPS) {
       return;
     }
     Y            = 0;
@@ -642,8 +637,7 @@ namespace {
     SymNodeP_ptr[Y] = A;                // move it forward in node
     if (A & 0x80) {                     // MSB=1, not end of symbolicname yet
       Y++;
-      if (Y > 20) {  // DEBUG: prevent runaway
-        std::cerr << "DEBUG: Y>20 in LD078, infinite loop detected!" << std::endl;
+      if (Y > 20) {
         return;
       }
       goto LD078_label;
@@ -9369,9 +9363,6 @@ namespace {
 namespace EdAsmNg {
   namespace Asm {
 
-    // Test-only map to remember requested symbol flags keyed by symbol name
-    static std::unordered_map<std::string, std::uint8_t> g_test_symbol_flags_by_name;
-
     void ResetErrorState() {
       NbrErrs  = 0;
       NbrWarns = 0;
@@ -10521,9 +10512,6 @@ namespace EdAsmNg {
       DskSrcF  = 0;  // Disk source flag (0 = no disk)
       SubTtlF  = 0;  // Subtitle flag
 
-      // Clear test-only symbol flag overrides
-      g_test_symbol_flags_by_name.clear();
-
       // Reset sorting/auxiliary array state
       RecCnt    = 0;  // Record count
       NumRecs   = 0;  // Number of records
@@ -10626,17 +10614,6 @@ namespace EdAsmNg {
       A = flags;
       AddNode();
 
-      // Explicitly patch the stored flag byte to the requested value so that
-      // Pass 3 sees the correct undefined/defined status during compaction.
-      // AddNode leaves SymP pointing at the newly inserted record.
-      {
-        uint8_t* symPtr = SimPtrToMemPtr(SymP);
-        // The flag byte sits immediately after the symbolic name. We already
-        // know the name length, so write the flag directly at that offset.
-        symPtr[name_len]                                         = flags;
-        g_test_symbol_flags_by_name[std::string(name, name_len)] = flags;
-      }
-
       // Restore state
       SrcP = saved_SrcP;
       PC   = saved_PC;
@@ -10687,8 +10664,9 @@ namespace EdAsmNg {
     }
 
     std::string GetSortedSymbolName(int index) {
-      // Get pointer to symbol from sorted array
-      uint16_t symPtr = GetAuxArrayEntry(index, false);
+      // Value-mode builds 4-byte entries; alphabetic mode builds 2-byte entries.
+      bool     fourByte = (LstVSym & 0x80) != 0;
+      uint16_t symPtr   = GetAuxArrayEntry(index, fourByte);
 
       // Read symbol name from compacted table
       // Symbol name format: chars with msb=1, flag byte has msb=0
@@ -10709,8 +10687,9 @@ namespace EdAsmNg {
     }
 
     uint16_t GetSortedSymbolValue(int index) {
-      // Get pointer to symbol from sorted array (4-byte mode)
-      uint16_t symPtr = GetAuxArrayEntry(index, true);
+      // Choose entry size based on listing mode: value mode uses 4-byte entries
+      bool     fourByte = (LstVSym & 0x80) != 0;
+      uint16_t symPtr   = GetAuxArrayEntry(index, fourByte);
 
       // Skip past symbol name to find flags and value
       uint8_t* namePtr = SimPtrToMemPtr(symPtr);
@@ -10732,10 +10711,11 @@ namespace EdAsmNg {
     }
 
     uint8_t GetCompactedSymbolFlags(int index) {
-      // Get pointer to symbol from sorted array
+      // Get pointer to symbol from sorted array (entry size depends on listing mode)
       // Pure read: return the actual flag byte from compacted table
       // No synthetic overrides or global fallbacks
-      uint16_t symPtr = GetAuxArrayEntry(index, false);
+      bool     fourByte = (LstVSym & 0x80) != 0;
+      uint16_t symPtr   = GetAuxArrayEntry(index, fourByte);
 
       // Skip past symbol name to find flags
       uint8_t* namePtr = SimPtrToMemPtr(symPtr);
@@ -10750,9 +10730,7 @@ namespace EdAsmNg {
       }
 
       // Flag byte is first byte with msb=0 - return it as-is
-      uint8_t flag = namePtr[offset];
-
-      return flag;
+      return namePtr[offset];
     }
 
     //=================================================

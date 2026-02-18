@@ -5073,3 +5073,220 @@ TEST_F(Phase3_FormattingTest, LstVSym_EnablesValueListing) {
   EXPECT_GT(recCntBothModes, 0);
   EXPECT_EQ(sortBothModes, 0xFE) << "Expected SortF=0xFE after value pass";
 }
+
+// ============================================================================
+// Phase 4: Integration and Edge Cases
+// ============================================================================
+
+class Phase3_IntegrationTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetAsmState();
+    EdAsmNg::Asm::ResetPass3State();
+  }
+};
+
+TEST_F(Phase3_IntegrationTest, DoPass3_EmptyTable_NoOutput) {
+  // Test: DoPass3 should return early when no symbols exist (RecCnt==0)
+  // Setup: printer output, enable alphabetic listing, but add no symbols
+  EdAsmNg::Asm::SetPrSlot(1);
+  EdAsmNg::Asm::SetLstASym(0x80);  // Enable alphabetic listing
+  EdAsmNg::Asm::SetLstVSym(0x00);  // Disable value listing
+  // Do not add any symbols
+
+  // Run Pass 3
+  EdAsmNg::Asm::DoPass3();
+
+  // Verify: RecCnt should be 0 (early return, no symbols processed)
+  EXPECT_EQ(EdAsmNg::Asm::GetRecCnt(), 0);
+}
+
+TEST_F(Phase3_IntegrationTest, DoPass3_SingleSymbol_Alphabetic) {
+  // Test: DoPass3 with one symbol in alphabetic mode
+  // Verify: RecCnt>0, symbol name and value are correct, flags preserved
+  EdAsmNg::Asm::SetPrSlot(1);
+  EdAsmNg::Asm::SetLstASym(0x80);  // Enable alphabetic listing
+  EdAsmNg::Asm::SetLstVSym(0x00);  // Disable value listing
+
+  // Add a single symbol with no special flags
+  EdAsmNg::Asm::AddTestSymbol("MYSYM", 0x1234, 0x00);
+
+  // Run Pass 3
+  EdAsmNg::Asm::DoPass3();
+
+  // Verify: RecCnt is 1
+  EXPECT_EQ(EdAsmNg::Asm::GetRecCnt(), 1);
+
+  // Verify: Symbol name and value are correct
+  EXPECT_EQ(EdAsmNg::Asm::GetSortedSymbolName(0), "MYSYM");
+  EXPECT_EQ(EdAsmNg::Asm::GetSortedSymbolValue(0), 0x1234);
+
+  // Verify: Flags reflect unreferenced defined symbol (0x40)
+  EXPECT_EQ(EdAsmNg::Asm::GetCompactedSymbolFlags(0), 0x40);
+
+  // Verify: SortF indicates alpha pass completed (0xFF)
+  EXPECT_EQ(EdAsmNg::Asm::GetSortF(), 0xFF);
+}
+
+TEST_F(Phase3_IntegrationTest, DoPass3_MultipleSymbols_ValueOrder) {
+  // Test: DoPass3 with multiple symbols in value order mode
+  // Verify: Symbols are sorted by value (ascending), RecCnt correct
+  EdAsmNg::Asm::SetPrSlot(1);
+  EdAsmNg::Asm::SetLstASym(0x00);  // Disable alphabetic listing
+  EdAsmNg::Asm::SetLstVSym(0x80);  // Enable value listing
+
+  // Add symbols in non-value order
+  EdAsmNg::Asm::AddTestSymbol("CHARLIE", 0x3000, 0x00);
+  EdAsmNg::Asm::AddTestSymbol("ALPHA", 0x1000, 0x00);
+  EdAsmNg::Asm::AddTestSymbol("BRAVO", 0x2000, 0x00);
+
+  // Run Pass 3
+  EdAsmNg::Asm::DoPass3();
+
+  // Verify: RecCnt is 3
+  EXPECT_EQ(EdAsmNg::Asm::GetRecCnt(), 3);
+
+  // Verify: Symbols are sorted by value (ascending)
+  EXPECT_EQ(EdAsmNg::Asm::GetSortedSymbolName(0), "ALPHA");
+  EXPECT_EQ(EdAsmNg::Asm::GetSortedSymbolValue(0), 0x1000);
+
+  EXPECT_EQ(EdAsmNg::Asm::GetSortedSymbolName(1), "BRAVO");
+  EXPECT_EQ(EdAsmNg::Asm::GetSortedSymbolValue(1), 0x2000);
+
+  EXPECT_EQ(EdAsmNg::Asm::GetSortedSymbolName(2), "CHARLIE");
+  EXPECT_EQ(EdAsmNg::Asm::GetSortedSymbolValue(2), 0x3000);
+
+  // Verify: SortF indicates value pass completed (0xFE)
+  EXPECT_EQ(EdAsmNg::Asm::GetSortF(), 0xFE);
+}
+
+TEST_F(Phase3_IntegrationTest, DoPass3_MixedDefinedUndefined) {
+  // Test: DoPass3 with mix of defined and undefined symbols
+  // Verify: Undefined flag (0x80) is preserved in compacted table
+  EdAsmNg::Asm::SetPrSlot(1);
+  EdAsmNg::Asm::SetLstASym(0x80);  // Enable alphabetic listing
+  EdAsmNg::Asm::SetLstVSym(0x00);  // Disable value listing
+
+  // Add defined and undefined symbols
+  EdAsmNg::Asm::AddTestSymbol("DEFA", 0x4000, 0x00);  // Defined
+  EdAsmNg::Asm::AddTestSymbol("UNFA", 0x0000, 0x80);  // Undefined (flag 0x80)
+  EdAsmNg::Asm::AddTestSymbol("DEFB", 0x5000, 0x00);  // Defined
+  EdAsmNg::Asm::AddTestSymbol("UNFB", 0x0000, 0x80);  // Undefined (flag 0x80)
+
+  // Run Pass 3
+  EdAsmNg::Asm::DoPass3();
+
+  // Verify: RecCnt is 4
+  uint16_t recCnt = EdAsmNg::Asm::GetRecCnt();
+  EXPECT_EQ(recCnt, 4);
+
+  // Find symbols by name in sorted array (alphabetically: DEFINED1, DEFINED2, UNDEF1, UNDEF2)
+  int def1Idx = -1, def2Idx = -1, undef1Idx = -1, undef2Idx = -1;
+  for (int i = 0; i < recCnt; i++) {
+    std::string name = EdAsmNg::Asm::GetSortedSymbolName(i);
+    if (name == "DEFA")
+      def1Idx = i;
+    else if (name == "DEFB")
+      def2Idx = i;
+    else if (name == "UNFA")
+      undef1Idx = i;
+    else if (name == "UNFB")
+      undef2Idx = i;
+  }
+
+  ASSERT_NE(def1Idx, -1) << "DEFINED1 not found";
+  ASSERT_NE(def2Idx, -1) << "DEFINED2 not found";
+  ASSERT_NE(undef1Idx, -1) << "UNDEF1 not found";
+  ASSERT_NE(undef2Idx, -1) << "UNDEF2 not found";
+
+  // Verify: Undefined flags carry the transformed value (0x7E/0x7F)
+  uint8_t undef1Flag = EdAsmNg::Asm::GetCompactedSymbolFlags(undef1Idx);
+  uint8_t undef2Flag = EdAsmNg::Asm::GetCompactedSymbolFlags(undef2Idx);
+  EXPECT_TRUE(undef1Flag == 0x7E || undef1Flag == 0x7F);
+  EXPECT_TRUE(undef2Flag == 0x7E || undef2Flag == 0x7F);
+
+  // Verify: Defined symbols carry unreferenced flag (0x40)
+  EXPECT_EQ(EdAsmNg::Asm::GetCompactedSymbolFlags(def1Idx), 0x40);
+  EXPECT_EQ(EdAsmNg::Asm::GetCompactedSymbolFlags(def2Idx), 0x40);
+}
+
+TEST_F(Phase3_IntegrationTest, DoPass3_ExternalSymbols) {
+  // Test: DoPass3 with external symbols
+  // Verify: External flag (0x10) is preserved in compacted table
+  EdAsmNg::Asm::SetPrSlot(1);
+  EdAsmNg::Asm::SetLstASym(0x80);  // Enable alphabetic listing
+  EdAsmNg::Asm::SetLstVSym(0x00);  // Disable value listing
+
+  // Add external and non-external symbols
+  EdAsmNg::Asm::AddTestSymbol("LOCA", 0x6000, 0x00);  // Local
+  EdAsmNg::Asm::AddTestSymbol("EXTA", 0x7000, 0x10);  // External (flag 0x10)
+  EdAsmNg::Asm::AddTestSymbol("LOCB", 0x8000, 0x00);  // Local
+  EdAsmNg::Asm::AddTestSymbol("EXTB", 0x9000, 0x10);  // External (flag 0x10)
+
+  // Run Pass 3
+  EdAsmNg::Asm::DoPass3();
+
+  // Verify: RecCnt is 4
+  uint16_t recCnt = EdAsmNg::Asm::GetRecCnt();
+  EXPECT_EQ(recCnt, 4);
+
+  // Find symbols by name in sorted array (alphabetically: EXTERN1, EXTERN2, LOCAL1, LOCAL2)
+  int ext1Idx = -1, ext2Idx = -1, local1Idx = -1, local2Idx = -1;
+  for (int i = 0; i < recCnt; i++) {
+    std::string name = EdAsmNg::Asm::GetSortedSymbolName(i);
+    if (name == "EXTA")
+      ext1Idx = i;
+    else if (name == "EXTB")
+      ext2Idx = i;
+    else if (name == "LOCA")
+      local1Idx = i;
+    else if (name == "LOCB")
+      local2Idx = i;
+  }
+
+  ASSERT_NE(ext1Idx, -1) << "EXTERN1 not found";
+  ASSERT_NE(ext2Idx, -1) << "EXTERN2 not found";
+  ASSERT_NE(local1Idx, -1) << "LOCAL1 not found";
+  ASSERT_NE(local2Idx, -1) << "LOCAL2 not found";
+
+  // Verify: External flags include unreferenced bit (0x50)
+  EXPECT_EQ(EdAsmNg::Asm::GetCompactedSymbolFlags(ext1Idx), 0x50);
+  EXPECT_EQ(EdAsmNg::Asm::GetCompactedSymbolFlags(ext2Idx), 0x50);
+
+  // Verify: Local symbols carry unreferenced flag (0x40)
+  EXPECT_EQ(EdAsmNg::Asm::GetCompactedSymbolFlags(local1Idx), 0x40);
+  EXPECT_EQ(EdAsmNg::Asm::GetCompactedSymbolFlags(local2Idx), 0x40);
+}
+
+TEST_F(Phase3_IntegrationTest, DoPass3_BothListings_AlphaAndValue) {
+  // Test: DoPass3 with both alphabetic and value listing enabled
+  // Verify: Both passes run, SortF decrements correctly (alpha then value)
+  EdAsmNg::Asm::SetPrSlot(1);
+  EdAsmNg::Asm::SetLstASym(0x80);  // Enable alphabetic listing
+  EdAsmNg::Asm::SetLstVSym(0x80);  // Enable value listing
+
+  // Add symbols in mixed order
+  EdAsmNg::Asm::AddTestSymbol("ZEBRA", 0x2000, 0x00);
+  EdAsmNg::Asm::AddTestSymbol("APPLE", 0x1000, 0x00);
+  EdAsmNg::Asm::AddTestSymbol("MANGO", 0x3000, 0x00);
+
+  // Run Pass 3
+  EdAsmNg::Asm::DoPass3();
+
+  // Verify: RecCnt is 3 (symbols were processed)
+  EXPECT_EQ(EdAsmNg::Asm::GetRecCnt(), 3);
+
+  // Verify: SortF indicates both passes completed (0xFE after value pass)
+  EXPECT_EQ(EdAsmNg::Asm::GetSortF(), 0xFE);
+
+  // Note: After both passes, the sorted array reflects the last pass (value order)
+  // Verify: Symbols are in value order after the second pass
+  EXPECT_EQ(EdAsmNg::Asm::GetSortedSymbolName(0), "APPLE");
+  EXPECT_EQ(EdAsmNg::Asm::GetSortedSymbolValue(0), 0x1000);
+
+  EXPECT_EQ(EdAsmNg::Asm::GetSortedSymbolName(1), "ZEBRA");
+  EXPECT_EQ(EdAsmNg::Asm::GetSortedSymbolValue(1), 0x2000);
+
+  EXPECT_EQ(EdAsmNg::Asm::GetSortedSymbolName(2), "MANGO");
+  EXPECT_EQ(EdAsmNg::Asm::GetSortedSymbolValue(2), 0x3000);
+}
