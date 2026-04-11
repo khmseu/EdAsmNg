@@ -792,22 +792,10 @@ namespace {
     // ObjPC is set by caller or from initialization
     // GenF controls whether code is actually generated
 
-    fprintf(stderr, "DoPass2 stub: starting, GenF=$%02X, PassNbr=%d\n", GenF, PassNbr);
-
-    int line_count = 0;  // Debug
-
     // Main Pass 2 loop: Assemble each source line and emit code
   Pass2Lup:
-    line_count++;
-    fprintf(stderr, "DoPass2 stub: Line %d before GSrcLin, SrcP=$%04X\n", line_count, SrcP);
-
-    GSrcLin();  // Get next source line
-    if (C) {
-      fprintf(stderr, "DoPass2 stub: EOF after %d lines\n", line_count - 1);
-      return;  // EOF reached? (C=1 means no more lines)
-    }
-
-    fprintf(stderr, "DoPass2 stub: Line %d processing\n", line_count);
+    GSrcLin();      // Get next source line
+    if (C) return;  // EOF reached? (C=1 means no more lines)
 
     // Initialize vars before assembling each src line
     Y = 0;  // Start at first character
@@ -1157,32 +1145,16 @@ namespace {
     // A = BINtype / ftypeT[0] = A  - TODO: implement when BINtype/ftypeT are defined
     OpenSrc1();  // Open/rewind source file (handles both memory and file modes)
 
-    // Debug: Log state after OpenSrc1()
-    fprintf(stderr, "DoPass1: OpenSrc1() complete - SrcP=$%04X, TxtEnd=$%04X, DskSrcF=$%02X\n",
-            SrcP, TxtEnd, DskSrcF);
-
-    int line_count = 0;  // Debug counter
-
   // Main Pass 1 loop: Assemble each source line
   Pass1Lup:
-    line_count++;  // Debug: count lines
-    fprintf(stderr, "DoPass1: Line %d - before GSrcLin(), SrcP=$%04X\n", line_count, SrcP);
-
-    GSrcLin();  // Get next source line
-    if (C) {
-      fprintf(stderr, "DoPass1: EOF reached after %d lines\n", line_count - 1);
-      return;  // EOF reached? (C=1 means no more lines)
-    }
-
-    fprintf(stderr, "DoPass1: Line %d - after GSrcLin(), SrcP=$%04X\n", line_count, SrcP);
+    GSrcLin();      // Get next source line
+    if (C) return;  // EOF reached? (C=1 means no more lines)
 
     // Initialize vars before assembling each src line
     Y = 0;  // Start at first character
 
     // Check for comment-only lines
     A = SrcP_at(Y);  // Get 1st char (Y=0)
-    fprintf(stderr, "DoPass1: Line %d - first char=0x%02X ('%c')\n", line_count, A,
-            (A >= 32 && A < 127) ? A : '?');
 
     if (A == '*') goto Pass1Next;  // Pure comment line? Skip it
     if (A == ';') goto Pass1Next;  // Comment line? Skip it
@@ -1226,10 +1198,7 @@ namespace {
       // Check if already defined
       if ((int8_t)A >= 0) {  // Bit 7 clear means defined
         X = 0x02;            // Duplicate identifier error
-        fprintf(stderr, "DoPass1: duplicate label detected, X=0x%02X\n", X);
         RegAsmEW();
-        fprintf(stderr, "DoPass1: after RegAsmEW ErrNbr4=%u, ErrInfo[1]=0x%02X\n", ErrNbr4,
-                ErrInfoT[1]);
         A      = 0x00;
         LabelF = A;  // Flag no label field
         goto SkipLabel;
@@ -3661,11 +3630,40 @@ namespace {
       if (PassNbr == 0) {
         PC += 3;
       } else {
+        NxtField();                  // Skip to operand
+        uint16_t abs_addr = 0x1000;  // Fallback preserves prior behavior
+
+        // Parse absolute hex operand in the form $HHLL (e.g. $C000)
+        if (SrcP_at(Y) == '$') {
+          Y++;
+          uint16_t value   = 0;
+          int      nibbles = 0;
+          while (nibbles < 4) {
+            uint8_t digit = SrcP_at(Y);
+            uint8_t hex   = 0xFF;
+            if (digit >= '0' && digit <= '9') {
+              hex = static_cast<uint8_t>(digit - '0');
+            } else if (digit >= 'A' && digit <= 'F') {
+              hex = static_cast<uint8_t>(digit - 'A' + 10);
+            } else if (digit >= 'a' && digit <= 'f') {
+              hex = static_cast<uint8_t>(digit - 'a' + 10);
+            } else {
+              break;
+            }
+            value = static_cast<uint16_t>((value << 4) | hex);
+            Y++;
+            nibbles++;
+          }
+          if (nibbles > 0) {
+            abs_addr = value;
+          }
+        }
+
         A = 0x8D;
         StorByt();
-        A = 0x00;
+        A = static_cast<uint8_t>(abs_addr & 0xFF);
         StorByt();
-        A = 0x10;
+        A = static_cast<uint8_t>((abs_addr >> 8) & 0xFF);
         StorByt();
         PC = ObjPC;
       }
