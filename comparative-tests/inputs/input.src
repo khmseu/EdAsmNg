@@ -1,0 +1,5 @@
+ LST ON
+ ORG $800
+START NOP
+ NOP
+ RTS
