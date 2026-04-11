@@ -725,17 +725,12 @@ namespace {
     uint16_t term1 = 0, term2 = 0;
     bool     term1_rel = false, term2_rel = false;
 
-    fprintf(stderr, "    EvalExpr (modern): About to parse_term(term1), Y=%d, ch=0x%02X '%c'\n", Y,
-            SrcP_at(Y), (SrcP_at(Y) >= 32 && SrcP_at(Y) < 127) ? SrcP_at(Y) : '?');
     if (!parse_term(term1, term1_rel, true)) {
-      fprintf(stderr, "    EvalExpr (modern): parse_term FAILED\n");
       C = true;
       X = 0x24;
       RegAsmEW(X);
       return;
     }
-    fprintf(stderr, "    EvalExpr (modern): parse_term OK, term1=0x%04X, term1_rel=%d\n", term1,
-            term1_rel);
 
     skip_spaces();
     uint8_t op = SrcP_at(Y);
@@ -4115,6 +4110,58 @@ namespace {
       return;
     }
 
+    if (mnemonic == "ASC" || mnemonic == ".ASC" || mnemonic == "ASCII" || mnemonic == ".ASCII" ||
+        mnemonic == "DCI" || mnemonic == ".DCI") {
+      // ASC/DCI string data directive
+      // ASC: store bytes as-is
+      // DCI: set high bit on all chars except last
+      bool is_dci = (mnemonic == "DCI" || mnemonic == ".DCI");
+
+      ZAB                   = 0x80;
+      g_LastDirectiveCalled = is_dci ? "HndlDCI" : "HndlASCII";
+
+      // Move to operand and find opening quote
+      while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
+      uint8_t quote = SrcP_at(Y);
+      if (quote != '"' && quote != '\'') {
+        // Invalid/missing quoted string operand
+        C = true;
+        return;
+      }
+      Y++;  // skip opening quote
+
+      uint16_t len      = 0;
+      uint16_t strStart = Y;
+      while (true) {
+        uint8_t ch = SrcP_at(Y);
+        if (ch == CR || ch == 0 || ch == quote) break;
+        len++;
+        Y++;
+      }
+
+      Length = static_cast<uint8_t>(len & 0xFF);
+      if (PassNbr == 0) {
+        PC += len;
+        C = false;
+        return;
+      }
+
+      // Pass 2: emit bytes
+      Y = static_cast<uint8_t>(strStart & 0xFF);
+      for (uint16_t i = 0; i < len; i++) {
+        uint8_t out = SrcP_at(Y);
+        if (is_dci && i < (len - 1)) {
+          out |= 0x80;
+        }
+        A = out;
+        StorByt();
+        Y++;
+      }
+      PC = ObjPC;
+      C  = false;
+      return;
+    }
+
     if (mnemonic == "DW" || mnemonic == ".WORD" || mnemonic == ".DW") {
       // DW (Define Word) - with relocatable support
       ZAB                   = 0x80;  // Mark as directive
@@ -4123,10 +4170,6 @@ namespace {
       // Y is already positioned after mnemonic, skip any spaces to operand
       while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
       uint16_t wordCount = 0;
-
-      // DEBUG
-      fprintf(stderr, "DW handler: PassNbr=%d, RelCodeF=0x%02X, Y=%d, ch=0x%02X '%c'\n", PassNbr,
-              RelCodeF, Y, SrcP_at(Y), SrcP_at(Y));
 
       if (PassNbr == 0) {
         // Pass 1: Just count comma-separated operands to determine word count

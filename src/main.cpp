@@ -88,6 +88,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Pass 2...\n";
     EdAsmNg::Asm::RewindSource();
     EdAsmNg::Asm::SetPassNbr(1);
+    uint16_t pass2_start_objpc = EdAsmNg::Asm::GetObjPC();
     EdAsmNg::Asm::SetGenF(0);  // Enable code generation (clear suspension flag)
     EdAsmNg::Asm::DoPass2();
 
@@ -108,27 +109,17 @@ int main(int argc, char* argv[]) {
 
     // Write object file if requested
     if (!object_file.empty() && objpc > 0) {
-      // Find the actual code range (first and last non-zero bytes)
-      // Original EDASM writes only the code region, not the full memory
-      uint16_t first_addr = 0xFFFF;
-      uint16_t last_addr  = 0;
-
-      for (uint16_t addr = 0; addr < objpc; addr++) {
-        if (EdAsmNg::Asm::GetTestObjMemory(addr) != 0) {
-          if (first_addr == 0xFFFF) first_addr = addr;
-          last_addr = addr;
-        }
-      }
-
-      if (first_addr != 0xFFFF) {
-        // Write only the actual code region
+      // Write the full generated object range from pass2 start to final ObjPC.
+      // This preserves valid zero bytes in code/data (e.g., DFB $00).
+      if (objpc > pass2_start_objpc) {
         std::vector<uint8_t> obj_data;
-        for (uint16_t addr = first_addr; addr <= last_addr; addr++) {
+        for (uint16_t addr = pass2_start_objpc; addr < objpc; addr++) {
           obj_data.push_back(EdAsmNg::Asm::GetTestObjMemory(addr));
         }
         write_binary(object_file, obj_data);
         std::cout << "Wrote " << obj_data.size() << " bytes to " << object_file << " (range $"
-                  << std::hex << first_addr << "-$" << last_addr << ")\n";
+                  << std::hex << pass2_start_objpc << "-$" << static_cast<uint16_t>(objpc - 1)
+                  << ")\n";
       } else {
         std::cout << "No code generated, object file not written\n";
       }
