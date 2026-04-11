@@ -792,10 +792,22 @@ namespace {
     // ObjPC is set by caller or from initialization
     // GenF controls whether code is actually generated
 
+    fprintf(stderr, "DoPass2 stub: starting, GenF=$%02X, PassNbr=%d\n", GenF, PassNbr);
+
+    int line_count = 0;  // Debug
+
     // Main Pass 2 loop: Assemble each source line and emit code
   Pass2Lup:
-    GSrcLin();      // Get next source line
-    if (C) return;  // EOF reached? (C=1 means no more lines)
+    line_count++;
+    fprintf(stderr, "DoPass2 stub: Line %d before GSrcLin, SrcP=$%04X\n", line_count, SrcP);
+
+    GSrcLin();  // Get next source line
+    if (C) {
+      fprintf(stderr, "DoPass2 stub: EOF after %d lines\n", line_count - 1);
+      return;  // EOF reached? (C=1 means no more lines)
+    }
+
+    fprintf(stderr, "DoPass2 stub: Line %d processing\n", line_count);
 
     // Initialize vars before assembling each src line
     Y = 0;  // Start at first character
@@ -1073,7 +1085,20 @@ namespace {
 
   // OpenSrc1 - Open/ReOpen initial SRC file for input
   void OpenSrc1() {
-    // TODO: Open source file
+    // Check if we're using memory source mode (set by SetupMemorySource)
+    // Memory mode indicators:
+    // - DskSrcF == 0 (cleared by SetupMemorySource)
+    // - TxtEnd > 0 (set to end of memory source)
+    if (DskSrcF == 0 && TxtEnd > 0) {
+      // Memory source mode - rewind to beginning for re-reading
+      SrcP = g_test_src_base;
+      return;
+    }
+
+    // File-based source mode (future implementation)
+    // TODO: Open ProDOS source file
+    // For now, just set DskSrcF to indicate file mode
+    DskSrcF = 0x80;  // Mark as disk source
   }
 
   // GetSrcPN - Copy the SRC pathname passed by EdAsm Interpreter
@@ -1130,18 +1155,35 @@ namespace {
     SymNbr   = 0;  // # of ENTRY/EXTRN
     PassNbr  = 0;  // Pass 1
     // A = BINtype / ftypeT[0] = A  - TODO: implement when BINtype/ftypeT are defined
-    // OpenSrc1();  // TODO: implement when ready
+    OpenSrc1();  // Open/rewind source file (handles both memory and file modes)
+
+    // Debug: Log state after OpenSrc1()
+    fprintf(stderr, "DoPass1: OpenSrc1() complete - SrcP=$%04X, TxtEnd=$%04X, DskSrcF=$%02X\n",
+            SrcP, TxtEnd, DskSrcF);
+
+    int line_count = 0;  // Debug counter
 
   // Main Pass 1 loop: Assemble each source line
   Pass1Lup:
-    GSrcLin();      // Get next source line
-    if (C) return;  // EOF reached? (C=1 means no more lines)
+    line_count++;  // Debug: count lines
+    fprintf(stderr, "DoPass1: Line %d - before GSrcLin(), SrcP=$%04X\n", line_count, SrcP);
+
+    GSrcLin();  // Get next source line
+    if (C) {
+      fprintf(stderr, "DoPass1: EOF reached after %d lines\n", line_count - 1);
+      return;  // EOF reached? (C=1 means no more lines)
+    }
+
+    fprintf(stderr, "DoPass1: Line %d - after GSrcLin(), SrcP=$%04X\n", line_count, SrcP);
 
     // Initialize vars before assembling each src line
     Y = 0;  // Start at first character
 
     // Check for comment-only lines
-    A = SrcP_at(Y);                // Get 1st char (Y=0)
+    A = SrcP_at(Y);  // Get 1st char (Y=0)
+    fprintf(stderr, "DoPass1: Line %d - first char=0x%02X ('%c')\n", line_count, A,
+            (A >= 32 && A < 127) ? A : '?');
+
     if (A == '*') goto Pass1Next;  // Pure comment line? Skip it
     if (A == ';') goto Pass1Next;  // Comment line? Skip it
     if (A == CR) goto Pass1Next;   // Blank line? Skip it
@@ -2216,9 +2258,10 @@ namespace {
   }
 #endif  // L81A3
 
-#if 0   // TODO: Phase 9+ - Redefinition of DoPass2 (stub already defined at line 1192)
+#if 0  // TODO: Phase 9+ - Real DoPass2 has missing dependencies (CurrORG_hi, SrcP_hi, OpcodeT, etc)
   // DoPass2 - Second pass of assembly
   void DoPass2() {
+    fprintf(stderr, "=== REAL DoPass2() CALLED ===\n");
     PassNbr++;  // Flag we are in 2nd pass
     A        = '*';
     RepChar  = A;
@@ -2226,23 +2269,41 @@ namespace {
     ListingF = A;
     PutCR();
     OpenSrc1();  // Re-open initial src file
+    
+    // Debug: log state
+    fprintf(stderr, "DoPass2: OpenSrc1() complete - SrcP=$%04X, TxtEnd=$%04X, DskSrcF=$%02X, GenF=$%02X\n",
+            SrcP, TxtEnd, DskSrcF, GenF);
+    
     A = GenF;
-    if (A != 0x80) goto Pass2Lup;  // Write obj code into mem? No
+    if (A != 0x80) {
+      fprintf(stderr, "DoPass2: GenF=$%02X (not $80), skipping shift\n", A);
+      goto Pass2Lup;  // Write obj code into mem? No
+    }
 
+    fprintf(stderr, "DoPass2: GenF=$80, shifting to $00 to enable code generation\n");
     A        = CurrORG;     // These 4 inst serves no purpose since
     ObjPC    = A;           // its contents are changed when an
     A        = CurrORG_hi;  // OBJ/ORG directive is declared
     ObjPC_hi = A;           // Renamed as CodeLen if REL file
     GenF <<= 1;             // $00 - Remove suspension
+    fprintf(stderr, "DoPass2: After shift, GenF=$%02X\n", GenF);
+
+    int line_count = 0;  // Debug counter
 
   // Assemble each src line
   Pass2Lup:
+    line_count++;  // Debug: count lines
+    fprintf(stderr, "DoPass2: Line %d - before GSrcLin(), SrcP=$%04X\n", line_count, SrcP);
+    
     GSrcLin();           // Any more src lines to assembled?
     if (!C) goto L7F33;  // BCC
+    
+    fprintf(stderr, "DoPass2: EOF reached after %d lines\n", line_count - 1);
     return;
 
   // Init before each line is scanned/parsed
   L7F33:
+    fprintf(stderr, "DoPass2: Line %d - after GSrcLin(), SrcP=$%04X\n", line_count, SrcP);
     Y   = -1;
     ZAB = Y;  // =$FF
     Y++;      // =0
@@ -2265,10 +2326,13 @@ namespace {
     L80F7();             // Do we have a FIN/ELSE?
     if (!C) goto L7F77;  // No (BCC), skip assembling src line
 
-  // Assemble curr src line
+  // Assembleairr src line
   // Should be the lexical analyser/scanner
   L7F57:
     A = SrcP_at(Y);  // Pure comment line?
+    fprintf(stderr, "DoPass2: Line %d - first char=0x%02X ('%c')\n", line_count, A,
+            (A >= 32 && A < 127) ? A : '?');
+    
     if (A == '*') goto L7F77;
     if (A == ';') goto L7F77;  // Yes, ignore curr src line
 
@@ -6374,7 +6438,9 @@ namespace {
   }
 
   void Bridge_DoPass2() {
+    fprintf(stderr, "Bridge_DoPass2() called\n");
     DoPass2();
+    fprintf(stderr, "Bridge_DoPass2() returning\n");
   }
 
   void Bridge_FindSym() {
@@ -7882,6 +7948,7 @@ namespace EdAsmNg {
       DummyF   = 0;  // Clear DummyF (DSECT) for test isolation
       SymNbr   = 0;
       ErrorF   = 0;
+      GenF     = 0x80;  // Initialize for code generation (will be shifted to 0x00 in Pass 2)
 
       // Initialize HighMem to a reasonable default (64KB - no limit)
       HighMem = 0xFFFF;

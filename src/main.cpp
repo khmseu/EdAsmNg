@@ -80,6 +80,22 @@ int main(int argc, char* argv[]) {
     // Load source
     EdAsmNg::Asm::SetupMemorySource(source.c_str(), source.length());
 
+    // Debug: Check initial state
+    std::cout << "Source length: " << source.length() << " bytes\n";
+    std::cout << "Source content (first 100 chars):\n";
+    for (size_t i = 0; i < std::min(source.length(), size_t(100)); i++) {
+      char c = source[i];
+      if (c == '\r')
+        std::cout << "<CR>";
+      else if (c == '\n')
+        std::cout << "<LF>";
+      else if (c < 32)
+        std::cout << "<" << int(c) << ">";
+      else
+        std::cout << c;
+    }
+    std::cout << "\n";
+
     // Run three-pass assembly
     std::cout << "Pass 1...\n";
     EdAsmNg::Asm::SetPassNbr(0);
@@ -88,6 +104,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Pass 2...\n";
     EdAsmNg::Asm::RewindSource();
     EdAsmNg::Asm::SetPassNbr(1);
+    EdAsmNg::Asm::SetGenF(0);  // Enable code generation (clear suspension flag)
     EdAsmNg::Asm::DoPass2();
 
     std::cout << "Pass 3...\n";
@@ -105,13 +122,30 @@ int main(int argc, char* argv[]) {
     std::cout << "  ObjPC: $" << std::hex << objpc << "\n";
     std::cout << "  CurAdr: $" << std::hex << curadr << "\n";
 
-    // Debug: Check what's at address $800
+    // Debug: Check what's at address $800 and nearby
     std::cout << "  Test mem[$800]: $" << std::hex << (int)EdAsmNg::Asm::GetTestObjMemory(0x800)
               << "\n";
     std::cout << "  Test mem[$801]: $" << std::hex << (int)EdAsmNg::Asm::GetTestObjMemory(0x801)
               << "\n";
     std::cout << "  Test mem[$802]: $" << std::hex << (int)EdAsmNg::Asm::GetTestObjMemory(0x802)
               << "\n";
+
+    // Debug: Check if ANY code was generated ANYWHERE
+    bool found_nonzero = false;
+    for (int addr = 0; addr < 65536; addr++) {
+      uint8_t val = EdAsmNg::Asm::GetTestObjMemory(addr);
+      if (val != 0) {
+        if (!found_nonzero) {
+          std::cout << "Non-zero bytes found in test memory:\n";
+          found_nonzero = true;
+        }
+        std::cout << "  [$" << std::hex << addr << "] = $" << std::hex << (int)val << "\n";
+        if (found_nonzero && addr > 0x850) break;  // Stop after showing first region
+      }
+    }
+    if (!found_nonzero) {
+      std::cout << "No non-zero bytes found in test memory!\n";
+    }
 
     // Write object file if requested
     if (!object_file.empty() && objpc > 0) {
