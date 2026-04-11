@@ -3569,7 +3569,25 @@ namespace {
 
       // Pass 2: Emit opcode and sync PC with ObjPC
       if (PassNbr == 1) {
-        A = 0x00;  // NOP opcode
+        A = 0xEA;  // NOP opcode (was 0x00 - incorrect!)
+        StorByt();
+        // Sync PC with ObjPC after emission
+        PC = ObjPC;
+      } else {
+        // Pass 1: just track PC
+        PC += 1;
+      }
+
+      C = false;  // Success
+      return;
+    }
+
+    if (mnemonic == "RTS") {
+      Length = 1;
+
+      // Pass 2: Emit opcode and sync PC with ObjPC
+      if (PassNbr == 1) {
+        A = 0x60;  // RTS opcode
         StorByt();
         // Sync PC with ObjPC after emission
         PC = ObjPC;
@@ -6438,9 +6456,7 @@ namespace {
   }
 
   void Bridge_DoPass2() {
-    fprintf(stderr, "Bridge_DoPass2() called\n");
     DoPass2();
-    fprintf(stderr, "Bridge_DoPass2() returning\n");
   }
 
   void Bridge_FindSym() {
