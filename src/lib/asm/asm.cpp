@@ -187,15 +187,14 @@ namespace {
   std::uint8_t  BCDNbr[3];  // Source file line numbers in BCD format ($60-$62, 3 bytes)
   std::uint16_t StrtSymT;   // Start address of symbol table (2 bytes: $63-$64)
   std::uint16_t EndSymT;    // Current end address of symbol table (2 bytes: $65-$66)
-#define EndSymT_hi (reinterpret_cast<std::uint8_t*>(&EndSymT)[1])  // High byte access for EndSymT
-  std::uint8_t  PassNbr;   // Current assembly pass: 0=Pass1, 1=Pass2, 2=Pass3
-  std::uint8_t  ListingF;  // Listing flag: $80=LST ON, $00=LST OFF
-  std::uint8_t  SubTtlF;   // Subtitle flag: $00=none, $40=SBTL cmd, $FF=subtitle string
-  std::uint8_t  LineCnt;   // Number of lines printed on current page
-  std::uint16_t PageNbr;   // Current page number (2 bytes: $6B-$6C)
-  std::uint8_t  FileNbr;   // Current file number in assembly
-  std::uint8_t  LogPL;     // Logical page length (lines per page)
-  std::uint8_t  PhyPL;     // Physical page length (actual printer lines)
+  std::uint8_t  PassNbr;    // Current assembly pass: 0=Pass1, 1=Pass2, 2=Pass3
+  std::uint8_t  ListingF;   // Listing flag: $80=LST ON, $00=LST OFF
+  std::uint8_t  SubTtlF;    // Subtitle flag: $00=none, $40=SBTL cmd, $FF=subtitle string
+  std::uint8_t  LineCnt;    // Number of lines printed on current page
+  std::uint16_t PageNbr;    // Current page number (2 bytes: $6B-$6C)
+  std::uint8_t  FileNbr;    // Current file number in assembly
+  std::uint8_t  LogPL;      // Logical page length (lines per page)
+  std::uint8_t  PhyPL;      // Physical page length (actual printer lines)
 
   // $70-$7F: Instruction Processing and Pointers
   std::uint8_t  SavIndX;    // Temporary storage for X register
@@ -216,10 +215,6 @@ namespace {
   std::uint16_t ObjPC;  // Object code Program Counter (where to store in memory, 2 bytes: $7C-$7D)
   std::uint8_t  CodeLen;  // Current length of code image for REL files (stored at BOF)
   std::uint16_t AuxAryE;  // Pointer to last end of sorted array (16-bit)
-
-#define SrcP_hi  (reinterpret_cast<std::uint8_t*>(&SrcP)[1])   // High byte access
-#define PC_hi    (reinterpret_cast<std::uint8_t*>(&PC)[1])     // High byte access for PC
-#define ObjPC_hi (reinterpret_cast<std::uint8_t*>(&ObjPC)[1])  // High byte access for ObjPC
 
   // Global test buffer for unit testing (when non-null, overrides SrcP for array access)
   std::uint8_t* g_test_src_buffer = nullptr;
@@ -274,19 +269,14 @@ namespace {
   std::uint8_t        SaveY;     // Saved Y register value
   std::uint8_t        SaveX;     // Saved X register value
 
-  // High byte access macros for 16-bit values
-#define CurrORG_hi (reinterpret_cast<std::uint8_t*>(&CurrORG)[1])
-#define MemTop_hi  (reinterpret_cast<std::uint8_t*>(&MemTop)[1])
-
   // $90-$9F: Code Generation and Expression Evaluation
-  std::uint8_t  DskListF;  // Disk listing flag: $00=off, $40=partial, $80=lst to file
-  std::uint8_t  LstDBIdx;  // LST data buffer index / number of chars to write
-  std::uint8_t  WinLeft;   // Left edge of 40-column window (for 80-col cards)
-  std::uint8_t  WinRight;  // Right edge of 40-column window
-  std::uint8_t  X6502F;    // 65C02 processor flag (vs 6502)
-  std::uint16_t HighMem;   // High memory address of generated object code
-  std::uint8_t  ExprAccF;  // Expression's accumulated flag bits
-#define HighMem_hi (reinterpret_cast<std::uint8_t*>(&HighMem)[1])  // High byte access for HighMem
+  std::uint8_t  DskListF;      // Disk listing flag: $00=off, $40=partial, $80=lst to file
+  std::uint8_t  LstDBIdx;      // LST data buffer index / number of chars to write
+  std::uint8_t  WinLeft;       // Left edge of 40-column window (for 80-col cards)
+  std::uint8_t  WinRight;      // Right edge of 40-column window
+  std::uint8_t  X6502F;        // 65C02 processor flag (vs 6502)
+  std::uint16_t HighMem;       // High memory address of generated object code
+  std::uint8_t  ExprAccF;      // Expression's accumulated flag bits
   std::uint8_t  ColCnt;        // Current print column count (aliases ExprAccF)
   std::uint8_t  SortF;         // Sort flag for symbol table
   std::uint8_t  NxtToken;      // Next token type flag (indicates nature of next char)
@@ -299,14 +289,12 @@ namespace {
   std::uint8_t  ERfield;       // Expression Result field
   std::uint16_t SymAddr;       // Address associated with symbolic name (2 bytes)
   std::uint16_t ValExpr_word;  // Value of expression as 16-bit word (2 bytes: $9F-$A0)
-#define ValExpr    (reinterpret_cast<std::uint8_t*>(&ValExpr_word)[0])  // Low byte access
-#define ValExpr_hi (reinterpret_cast<std::uint8_t*>(&ValExpr_word)[1])  // High byte access
-  std::uint8_t  ValExpr_2;  // Extended byte 2 for mul/div operations ($A1)
-  std::uint8_t  ValExpr_3;  // Extended byte 3 for mul/div operations ($A2)
-  std::uint16_t RLDEntP;    // Pointer to RLD (Relocation Dictionary) entry
-  std::uint16_t WrkP;       // Work pointer to symbol table entry
-  std::uint16_t JJJ;        // Loop variable J (used during sorting algorithms)
-  std::uint16_t III;        // Loop variable I (used during sorting algorithms)
+  std::uint8_t  ValExpr_2;     // Extended byte 2 for mul/div operations ($A1)
+  std::uint8_t  ValExpr_3;     // Extended byte 3 for mul/div operations ($A2)
+  std::uint16_t RLDEntP;       // Pointer to RLD (Relocation Dictionary) entry
+  std::uint16_t WrkP;          // Work pointer to symbol table entry
+  std::uint16_t JJJ;           // Loop variable J (used during sorting algorithms)
+  std::uint16_t III;           // Loop variable I (used during sorting algorithms)
 
   // $A0-$AF: Instruction Encoding and Loop Control
   std::uint8_t  Length;   // Instruction length: 1=1 byte, 2=2 bytes, 3=3 bytes
@@ -335,7 +323,6 @@ namespace {
   std::uint16_t I_TH;     // Offset/pointer to i-th element of aux array
   std::uint8_t  EndianF;  // Endianness flag: little-endian vs big-endian
   std::uint16_t Accum;    // Main accumulator (2 bytes: $AF-$B0)
-#define Accum_hi (reinterpret_cast<std::uint8_t*>(&Accum)[1])  // High byte access
   std::uint8_t  Accum_2;  // Extended byte 2 for mul/div operations
   std::uint8_t  Accum_3;  // Extended byte 3 for mul/div operations
   std::uint16_t NewPC;    // New Program Counter (used by DS directive)
@@ -6651,6 +6638,122 @@ namespace AsmInternal {
   void HndlNOLIST();    // NOLIST directive handler
   void DoPage();        // PAGE directive handler
   void HndlSBTL();      // SBTL/.TITLE directive handler
+
+  //=================================================
+  // Macro Forwarding Inline Getters for Legacy Byte Access
+  // These provide the actual implementations for the preprocessor macros
+  // They use reinterpret_cast to access individual bytes of 16-bit variables
+  //=================================================
+
+  inline std::uint8_t& ValExpr_word_lo() {
+    return reinterpret_cast<std::uint8_t*>(&ValExpr_word)[0];
+  }
+
+  inline std::uint8_t& ValExpr_word_hi() {
+    return reinterpret_cast<std::uint8_t*>(&ValExpr_word)[1];
+  }
+
+  inline std::uint8_t& Accum_hi_val() {
+    return reinterpret_cast<std::uint8_t*>(&Accum)[1];
+  }
+
+  inline std::uint8_t& ObjPC_hi_val() {
+    return reinterpret_cast<std::uint8_t*>(&ObjPC)[1];
+  }
+
+  inline std::uint8_t& HighMem_hi_val() {
+    return reinterpret_cast<std::uint8_t*>(&HighMem)[1];
+  }
+
+  inline std::uint8_t& EndSymT_hi_val() {
+    return reinterpret_cast<std::uint8_t*>(&EndSymT)[1];
+  }
+
+  inline std::uint8_t& MemTop_hi_val() {
+    return reinterpret_cast<std::uint8_t*>(&MemTop)[1];
+  }
+
+  // Forward declarations for operator handler stubs
+  void ExprADD() {
+  }  // Addition operator handler
+
+  void ExprSUB() {
+  }  // Subtraction operator handler
+
+  void ExprMUL() {
+  }  // Multiplication operator handler
+
+  void ExprDIV() {
+  }  // Division operator handler
+
+  void ExprEOR() {
+  }  // Exclusive OR operator handler
+
+  void ExprAND() {
+  }  // Bitwise AND operator handler
+
+  void ExprORA() {
+  }  // Bitwise OR operator handler
+
+  // Operator helper functions
+  void SkipSpcs() {
+    // Skip whitespace in source line
+    // Y is index into current source line
+    while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') {
+      Y++;
+      if (Y == 0) break;  // Wrapped around
+    }
+  }
+
+  void L87FB() {
+    // Expression error handler
+    // Register a syntax error
+    uint8_t saved_X = X;
+    X               = 0x18;  // Expression syntax error
+    RegAsmEW(X);
+    X = saved_X;
+  }
+
+  //=================================================
+  // Operator Dispatch Tables and State
+  // These are needed by the expression evaluator
+  //=================================================
+
+  // Operators table - dispatch tokens for expression evaluation
+  const std::uint8_t Operators[] = {
+      0x2B,  // +
+      0x2D,  // -
+      0x2A,  // * (multiply)
+      0x2F,  // /
+      0x21,  // ! EOR
+      0x5E,  // ^ AND
+      0x7C   // | OR
+  };
+
+  // Operator jump address tables (low and high bytes)
+  // Point to operator handler functions
+  const std::uint16_t L888E[] = {
+      0x0000,  // + handler
+      0x0000,  // - handler
+      0x0000,  // * handler
+      0x0000,  // / handler
+      0x0000,  // EOR handler
+      0x0000,  // AND handler
+      0x0000   // OR handler
+  };
+
+  const std::uint16_t L8895[] = {
+      0x0000,  // + handler high
+      0x0000,  // - handler high
+      0x0000,  // * handler high
+      0x0000,  // / handler high
+      0x0000,  // EOR handler high
+      0x0000,  // AND handler high
+      0x0000   // OR handler high
+  };
+
+  // Last directive called tracking
+  std::uint8_t g_LastDirectiveCalled = 0;
 
 }  // namespace AsmInternal
 

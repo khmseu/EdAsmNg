@@ -234,4 +234,45 @@ namespace AsmInternal {
   void DoPage();        // PAGE directive handler
   void HndlSBTL();      // SBTL/.TITLE directive handler
 
+  // Additional expression and error handling functions
+  void SkipSpcs();   // Skip whitespace characters
+  void L87FB();      // Expression error handler
+  void EvalOprnd();  // Evaluate operand (duplicate declaration for clarity)
+
+  // Storage for operator dispatch tables (defined in asm_expr.cpp)
+  extern const std::uint8_t  Operators[];  // Operator token table
+  extern const std::uint16_t L888E[];      // Operator JMP address table (low bytes)
+  extern const std::uint16_t L8895[];      // Operator JMP address table (high bytes)
+
+  // Last directive tracking for special handling
+  extern std::uint8_t g_LastDirectiveCalled;
+
+  // Inline getter functions for macro forwarding
+  inline std::uint8_t& ValExpr_word_lo();
+  inline std::uint8_t& ValExpr_word_hi();
+  inline std::uint8_t& Accum_hi_val();
+  inline std::uint8_t& ObjPC_hi_val();
+  inline std::uint8_t& HighMem_hi_val();
+  inline std::uint8_t& EndSymT_hi_val();
+  inline std::uint8_t& MemTop_hi_val();
+
 }  // namespace AsmInternal
+
+//=============================================================================
+// Macro Forwarding for Legacy Byte Access Patterns
+// These macros forward legacy 6502-style byte access to the AsmInternal bridges
+// They enable extracted modules to work seamlessly with the state bridge pattern
+//=============================================================================
+
+// Legacy expression value access (ValExpr_word low/high byte split)
+#define ValExpr    (AsmInternal::ValExpr_word_lo())
+#define ValExpr_hi (AsmInternal::ValExpr_word_hi())
+
+// Legacy accumulator high byte access
+#define Accum_hi (AsmInternal::Accum_hi_val())
+
+// Legacy 16-bit variable high byte access
+#define ObjPC_hi   (AsmInternal::ObjPC_hi_val())
+#define HighMem_hi (AsmInternal::HighMem_hi_val())
+#define EndSymT_hi (AsmInternal::EndSymT_hi_val())
+#define MemTop_hi  (AsmInternal::MemTop_hi_val())
