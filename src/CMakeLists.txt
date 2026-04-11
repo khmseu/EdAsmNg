@@ -4,6 +4,7 @@ add_library(EdAsmNg_lib
   lib/app.cpp
   lib/asm/asm.cpp
   lib/asm/asm_pass3.cpp
+  lib/asm/asm_symtab.cpp
   lib/support/screen.cpp
   lib/support/os.cpp
 )

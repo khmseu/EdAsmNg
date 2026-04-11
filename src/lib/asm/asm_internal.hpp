@@ -26,6 +26,10 @@ namespace AsmInternal {
   extern std::uint16_t&       SavSTS;       // Saved start of symbol table
   extern std::uint8_t*&       HeaderT_ptr;  // Symbol table hash header
   extern const std::uint16_t& HeaderT;      // Symbol table hash header address
+  extern std::uint8_t&        HashIdx;      // Hash table index (0-254, even)
+  extern std::uint16_t&       PrvSymP;      // Previous symbol pointer in chain
+  extern std::uint16_t&       NxtSymP;      // Next symbol pointer in chain
+  extern std::uint16_t&       ZPSaveY;      // Y register temporary save
 
   // Pass 3 Symbol Table Printing State
   extern std::uint16_t& UnsortedP;  // Unsorted array pointer
@@ -70,9 +74,22 @@ namespace AsmInternal {
   extern std::uint16_t* PNTable;   // Pathname table (pointer to array)
   extern std::uint16_t& SrcPathP;  // Source path pointer
 
+  // Program State
+  extern std::uint16_t& PC;        // Program counter
+  extern std::uint16_t& RLDEnd;    // Relocation dictionary end
+  extern std::uint8_t&  PassNbr;   // Current pass number (0/1/2)
+  extern std::uint8_t&  DummyF;    // DSECT dummy section flag
+  extern std::uint8_t&  RelExprF;  // Relative expression flag
+  extern std::uint8_t&  ErrorF;    // Error flag
+  extern std::uint8_t&  RelCodeF;  // Relocatable code flag
+  extern std::uint8_t&  LabelF;    // Label field presence flag
+
   // Buffers (pointers to arrays)
   extern std::uint8_t* ChnPNB;    // Chain pathname buffer
   extern std::uint8_t* SubTitle;  // Subtitle buffer
+
+  // Character classification table
+  extern const std::uint8_t* CharMap1;  // Character map for identifier validation
 
   // Constant string tables (pointers to string literals in asm.cpp)
   extern const char* SymbolTxt;
@@ -80,12 +97,16 @@ namespace AsmInternal {
   extern const char* AddrTxt;
 
   // Symbol flag bit constants
-  constexpr std::uint8_t Bit08    = 0x08;
-  constexpr std::uint8_t Bit10    = 0x10;
-  constexpr std::uint8_t Bit40    = 0x40;
-  constexpr std::uint8_t unrefd   = 0x40;
-  constexpr std::uint8_t relative = 0x20;
-  constexpr std::uint8_t external = 0x10;
+  constexpr std::uint8_t Bit08       = 0x08;
+  constexpr std::uint8_t Bit10       = 0x10;
+  constexpr std::uint8_t Bit40       = 0x40;
+  constexpr std::uint8_t unrefd      = 0x40;
+  constexpr std::uint8_t relative    = 0x20;
+  constexpr std::uint8_t external    = 0x10;
+  constexpr std::uint8_t undefined   = 0x80;
+  constexpr std::uint8_t fwdrefd     = 0x01;
+  constexpr std::uint8_t entry       = 0x08;
+  constexpr std::uint8_t nosuchlabel = 0x02;
 
   // Helper functions (implemented in asm.cpp)
   std::uint8_t* SimPtrToMemPtr(std::uint16_t simAddr);
@@ -97,8 +118,19 @@ namespace AsmInternal {
   void          PrByte(std::uint8_t value);
   void          PutCR();
   void          PrtFF();
+  void          ChrGet();
+  void          ChrGot();
+  void          ChrGet2();
+  void          ChrGot2();
+  void          RegAsmEW(std::uint8_t errorCode);
+  void          CanclAsm(std::uint8_t code);
 
   // Pass 3 entry point (implemented in asm_pass3.cpp)
   void DoPass3();
+
+  // Symbol table functions (implemented in asm_symtab.cpp)
+  void FindSym();
+  void HashFn();
+  void AddNode();
 
 }  // namespace AsmInternal
