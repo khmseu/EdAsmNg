@@ -2664,10 +2664,20 @@ namespace {
   }
 
   void QueueExperimentalBytes(const std::uint8_t* bytes, std::uint8_t count) {
+    if (count == 0) {
+      Length                      = 0;
+      GMCIdx                      = 0;
+      g_experimental_prepared_gmc = false;
+      return;
+    }
+
     Length = count;
     GMCIdx = count;
     for (std::uint8_t index = 0; index < count && index < 4; ++index) {
       GMC[index] = bytes[index];
+    }
+    for (std::uint8_t index = count; index < 4; ++index) {
+      GMC[index] = 0;
     }
     LstCodeF                    = 0x27;
     g_experimental_prepared_gmc = true;
