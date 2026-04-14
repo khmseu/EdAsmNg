@@ -55,14 +55,15 @@ namespace {
   // These simulate the 6502 processor registers and flags
   // used throughout the translated assembly code
   //=================================================
-  std::uint8_t A                        = 0;      // Accumulator
-  std::uint8_t X                        = 0;      // X index register
-  std::uint8_t Y                        = 0;      // Y index register
-  bool         C                        = false;  // Carry flag
-  bool         Z                        = false;  // Zero flag
-  bool         N                        = false;  // Negative flag
-  bool         V                        = false;  // Overflow flag
-  bool         g_use_experimental_pass2 = false;
+  std::uint8_t A                           = 0;      // Accumulator
+  std::uint8_t X                           = 0;      // X index register
+  std::uint8_t Y                           = 0;      // Y index register
+  bool         C                           = false;  // Carry flag
+  bool         Z                           = false;  // Zero flag
+  bool         N                           = false;  // Negative flag
+  bool         V                           = false;  // Overflow flag
+  bool         g_use_experimental_pass2    = false;
+  bool         g_experimental_prepared_gmc = false;
 
   //=================================================
   // Forward Declarations (for functions used before defined)
@@ -99,6 +100,7 @@ namespace {
   void                      IsAXY();
   void                      Wr1Byte();   // Phase 4: Object code writing
   void                      AdvObjPC();  // Phase 4: Object PC advance
+  void                      QueueExperimentalBytes(const std::uint8_t* bytes, std::uint8_t count);
 
   // Phase 8.2: Source line reader forward declarations
   void GSrcLin();
@@ -2268,14 +2270,15 @@ namespace {
     Y   = -1;
     ZAB = Y;  // =$FF
     Y++;      // =0
-    Length    = Y;
-    ErrorF    = Y;
-    LstCodeF  = Y;
-    NumCycles = Y;
-    A         = SrcP;
-    Src2P     = A;  // Save a copy of ptr
-    A         = SrcP_hi;
-    Src2P_hi  = A;  // to curr srcline
+    Length                      = Y;
+    g_experimental_prepared_gmc = false;
+    ErrorF                      = Y;
+    LstCodeF                    = Y;
+    NumCycles                   = Y;
+    A                           = SrcP;
+    Src2P                       = A;  // Save a copy of ptr
+    A                           = SrcP_hi;
+    Src2P_hi                    = A;  // to curr srcline
 
     // BIT CondAsmF - Assembling alt block?
     if ((int8_t)CondAsmF < 0) goto L7F50;    // Yes (BMI), proceed to scan for alt blk
@@ -2306,6 +2309,7 @@ namespace {
         // Compatibility mode: current HndlMnem emits object bytes directly.
         // Skip legacy codegen path to avoid duplicate emission.
         if (ObjPC != pre_objpc) goto L807A;
+        if (g_experimental_prepared_gmc) goto L806F;
         goto L7F7A;
       }
     }
@@ -2657,6 +2661,16 @@ namespace {
       // TODO: Cancel assembly (set abort flag or similar)
     }
     return;  // RTS
+  }
+
+  void QueueExperimentalBytes(const std::uint8_t* bytes, std::uint8_t count) {
+    Length = count;
+    GMCIdx = count;
+    for (std::uint8_t index = 0; index < count && index < 4; ++index) {
+      GMC[index] = bytes[index];
+    }
+    LstCodeF                    = 0x27;
+    g_experimental_prepared_gmc = true;
   }
 
   namespace {
@@ -3616,10 +3630,15 @@ namespace {
 
       // Pass 2: Emit opcode and sync PC with ObjPC
       if (PassNbr == 1) {
-        A = 0xEA;  // NOP opcode (was 0x00 - incorrect!)
-        StorByt();
-        // Sync PC with ObjPC after emission
-        PC = ObjPC;
+        if (g_use_experimental_pass2) {
+          const std::uint8_t bytes[] = {0xEA};
+          QueueExperimentalBytes(bytes, 1);
+        } else {
+          A = 0xEA;  // NOP opcode (was 0x00 - incorrect!)
+          StorByt();
+          // Sync PC with ObjPC after emission
+          PC = ObjPC;
+        }
       } else {
         // Pass 1: just track PC
         PC += 1;
@@ -3634,10 +3653,15 @@ namespace {
 
       // Pass 2: Emit opcode and sync PC with ObjPC
       if (PassNbr == 1) {
-        A = 0x60;  // RTS opcode
-        StorByt();
-        // Sync PC with ObjPC after emission
-        PC = ObjPC;
+        if (g_use_experimental_pass2) {
+          const std::uint8_t bytes[] = {0x60};
+          QueueExperimentalBytes(bytes, 1);
+        } else {
+          A = 0x60;  // RTS opcode
+          StorByt();
+          // Sync PC with ObjPC after emission
+          PC = ObjPC;
+        }
       } else {
         // Pass 1: just track PC
         PC += 1;
@@ -3691,11 +3715,16 @@ namespace {
           }
         }
 
-        A = 0xA9;  // LDA immediate opcode
-        StorByt();
-        A = operand_byte;
-        StorByt();
-        PC = ObjPC;
+        if (g_use_experimental_pass2) {
+          const std::uint8_t bytes[] = {0xA9, operand_byte};
+          QueueExperimentalBytes(bytes, 2);
+        } else {
+          A = 0xA9;  // LDA immediate opcode
+          StorByt();
+          A = operand_byte;
+          StorByt();
+          PC = ObjPC;
+        }
       }
       C = false;
       return;
@@ -3711,13 +3740,19 @@ namespace {
         NxtField();
         EvalExpr();
         uint16_t abs_addr = static_cast<uint16_t>(ValExpr | (ValExpr_hi << 8));
-        A                 = 0x8D;  // STA absolute
-        StorByt();
-        A = static_cast<uint8_t>(abs_addr & 0xFF);
-        StorByt();
-        A = static_cast<uint8_t>((abs_addr >> 8) & 0xFF);
-        StorByt();
-        PC = ObjPC;
+        if (g_use_experimental_pass2) {
+          const std::uint8_t bytes[] = {0x8D, static_cast<std::uint8_t>(abs_addr & 0xFF),
+                                        static_cast<std::uint8_t>((abs_addr >> 8) & 0xFF)};
+          QueueExperimentalBytes(bytes, 3);
+        } else {
+          A = 0x8D;  // STA absolute
+          StorByt();
+          A = static_cast<uint8_t>(abs_addr & 0xFF);
+          StorByt();
+          A = static_cast<uint8_t>((abs_addr >> 8) & 0xFF);
+          StorByt();
+          PC = ObjPC;
+        }
       }
       C = false;
       return;
@@ -3732,13 +3767,19 @@ namespace {
         NxtField();
         EvalExpr();
         uint16_t addr = static_cast<uint16_t>(ValExpr | (ValExpr_hi << 8));
-        A             = 0x4C;  // JMP absolute
-        StorByt();
-        A = static_cast<uint8_t>(addr & 0xFF);
-        StorByt();
-        A = static_cast<uint8_t>((addr >> 8) & 0xFF);
-        StorByt();
-        PC = ObjPC;
+        if (g_use_experimental_pass2) {
+          const std::uint8_t bytes[] = {0x4C, static_cast<std::uint8_t>(addr & 0xFF),
+                                        static_cast<std::uint8_t>((addr >> 8) & 0xFF)};
+          QueueExperimentalBytes(bytes, 3);
+        } else {
+          A = 0x4C;  // JMP absolute
+          StorByt();
+          A = static_cast<uint8_t>(addr & 0xFF);
+          StorByt();
+          A = static_cast<uint8_t>((addr >> 8) & 0xFF);
+          StorByt();
+          PC = ObjPC;
+        }
       }
       C = false;
       return;
@@ -3751,9 +3792,14 @@ namespace {
       if (PassNbr == 0) {
         PC += 1;
       } else {
-        A = 0x00;  // BRK
-        StorByt();
-        PC = ObjPC;
+        if (g_use_experimental_pass2) {
+          const std::uint8_t bytes[] = {0x00};
+          QueueExperimentalBytes(bytes, 1);
+        } else {
+          A = 0x00;  // BRK
+          StorByt();
+          PC = ObjPC;
+        }
       }
       C = false;
       return;
@@ -3771,11 +3817,16 @@ namespace {
         EvalExpr();
         uint16_t target = static_cast<uint16_t>(ValExpr | (ValExpr_hi << 8));
         int16_t  disp   = static_cast<int16_t>(target) - static_cast<int16_t>(branchPC + 2);
-        A               = opcode;
-        StorByt();
-        A = static_cast<uint8_t>(disp & 0xFF);
-        StorByt();
-        PC = ObjPC;
+        if (g_use_experimental_pass2) {
+          const std::uint8_t bytes[] = {opcode, static_cast<std::uint8_t>(disp & 0xFF)};
+          QueueExperimentalBytes(bytes, 2);
+        } else {
+          A = opcode;
+          StorByt();
+          A = static_cast<uint8_t>(disp & 0xFF);
+          StorByt();
+          PC = ObjPC;
+        }
       }
       C = false;
       return;
@@ -4383,11 +4434,16 @@ namespace {
           EvalExpr();
           uint16_t target = static_cast<uint16_t>(ValExpr | (ValExpr_hi << 8));
           int16_t  disp   = static_cast<int16_t>(target) - static_cast<int16_t>(branchPC + 2);
-          A               = branch_op;
-          StorByt();
-          A = static_cast<uint8_t>(disp & 0xFF);
-          StorByt();
-          PC = ObjPC;
+          if (g_use_experimental_pass2) {
+            const std::uint8_t bytes[] = {branch_op, static_cast<std::uint8_t>(disp & 0xFF)};
+            QueueExperimentalBytes(bytes, 2);
+          } else {
+            A = branch_op;
+            StorByt();
+            A = static_cast<uint8_t>(disp & 0xFF);
+            StorByt();
+            PC = ObjPC;
+          }
         }
         C = false;
         return;
@@ -4405,12 +4461,19 @@ namespace {
         if (SrcP_at(Y) == '#') {
           Y++;
           EvalExpr();
-          A = 0xA2;  // LDX immediate
-          StorByt();
-          A = static_cast<uint8_t>(ValExpr & 0xFF);
-          StorByt();
+          if (g_use_experimental_pass2) {
+            const std::uint8_t bytes[] = {0xA2, static_cast<std::uint8_t>(ValExpr & 0xFF)};
+            QueueExperimentalBytes(bytes, 2);
+          } else {
+            A = 0xA2;  // LDX immediate
+            StorByt();
+            A = static_cast<uint8_t>(ValExpr & 0xFF);
+            StorByt();
+          }
         }
-        PC = ObjPC;
+        if (!g_use_experimental_pass2) {
+          PC = ObjPC;
+        }
       }
       C = false;
       return;
@@ -4467,9 +4530,14 @@ namespace {
         ZAB    = 0x7F;
         Length = 1;
         if (PassNbr == 1) {
-          A = implied_op;
-          StorByt();
-          PC = ObjPC;
+          if (g_use_experimental_pass2) {
+            const std::uint8_t bytes[] = {implied_op};
+            QueueExperimentalBytes(bytes, 1);
+          } else {
+            A = implied_op;
+            StorByt();
+            PC = ObjPC;
+          }
         } else {
           PC += 1;
         }
@@ -8189,7 +8257,8 @@ namespace EdAsmNg {
       SymNbr   = 0;
       ErrorF   = 0;
       GenF     = 0x80;  // Initialize for code generation (will be shifted to 0x00 in Pass 2)
-      g_use_experimental_pass2 = false;
+      g_use_experimental_pass2    = false;
+      g_experimental_prepared_gmc = false;
 
       // Initialize HighMem to a reasonable default (64KB - no limit)
       HighMem = 0xFFFF;
