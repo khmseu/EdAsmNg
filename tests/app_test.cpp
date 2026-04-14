@@ -3782,6 +3782,40 @@ TEST_F(Pass2Test, test_pass2_experimental_dw_small_emits_little_endian) {
   EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x4004);
 }
 
+TEST_F(Pass2Test, test_pass2_experimental_asc_small_emits_ascii_bytes) {
+  const char* source =
+      "      ORG $5000\r"
+      "      ASC \"AB\"\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5000), 0x41);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5001), 0x42);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5002);
+}
+
+TEST_F(Pass2Test, test_pass2_experimental_dci_small_sets_high_bit_except_last) {
+  const char* source =
+      "      ORG $5100\r"
+      "      DCI \"AB\"\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5100), 0xC1);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5101), 0x42);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5102);
+}
+
 TEST_F(Pass2Test, test_pass2_lda_operand_emits_opcode_byte) {
   // LDA #$01 should emit 0xA9 (opcode), 0x01 (8-bit immediate)
   // LDA immediate addressing: opcode=0xA9, followed by 1-byte operand

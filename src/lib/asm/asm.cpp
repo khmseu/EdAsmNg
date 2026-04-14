@@ -4271,17 +4271,30 @@ namespace {
 
       // Pass 2: emit bytes
       Y = static_cast<uint8_t>(strStart & 0xFF);
-      for (uint16_t i = 0; i < len; i++) {
-        uint8_t out = SrcP_at(Y);
-        if (is_dci && i < (len - 1)) {
-          out |= 0x80;
+      if (g_use_experimental_pass2 && len <= 4) {
+        std::uint8_t queuedAscii[4] = {0, 0, 0, 0};
+        for (uint16_t i = 0; i < len; i++) {
+          uint8_t out = SrcP_at(Y);
+          if (is_dci && i < (len - 1)) {
+            out |= 0x80;
+          }
+          queuedAscii[i] = out;
+          Y++;
         }
-        A = out;
-        StorByt();
-        Y++;
+        QueueExperimentalBytes(queuedAscii, static_cast<std::uint8_t>(len));
+      } else {
+        for (uint16_t i = 0; i < len; i++) {
+          uint8_t out = SrcP_at(Y);
+          if (is_dci && i < (len - 1)) {
+            out |= 0x80;
+          }
+          A = out;
+          StorByt();
+          Y++;
+        }
+        PC = ObjPC;
       }
-      PC = ObjPC;
-      C  = false;
+      C = false;
       return;
     }
 
