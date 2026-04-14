@@ -480,6 +480,9 @@ namespace {
   std::uint8_t ChnPNB[256];    // Chain pathname buffer
   std::uint8_t SubTitle[256];  // Subtitle buffer
 
+  // Deterministic low-level listing sink used by PutC/PutCR/PrtFF/PrByte.
+  std::string g_listing_sink;
+
   //=================================================
   // Forward Declarations
   //=================================================
@@ -555,21 +558,21 @@ namespace {
   }
 
   void PutC(std::uint8_t ch) {
-    // TODO: Output a character to the listing output
-    (void)ch;
+    g_listing_sink.push_back(static_cast<char>(ch));
   }
 
   void PrByte(std::uint8_t value) {
-    // TODO: Print a byte in hex
-    (void)value;
+    constexpr char kHex[] = "0123456789ABCDEF";
+    PutC(static_cast<std::uint8_t>(kHex[(value >> 4) & 0x0F]));
+    PutC(static_cast<std::uint8_t>(kHex[value & 0x0F]));
   }
 
   void PutCR() {
-    // TODO: Output CR
+    PutC('\n');
   }
 
   void PrtFF() {
-    // TODO: Output form feed
+    PutC('\f');
   }
 
   // Stub commented out - replaced by Phase 8.1 implementation
@@ -8123,6 +8126,22 @@ namespace EdAsmNg {
       ::NextRec();
     }
 
+    void PutC(uint8_t ch) {
+      ::PutC(ch);
+    }
+
+    void PrByte(uint8_t value) {
+      ::PrByte(value);
+    }
+
+    void PutCR() {
+      ::PutCR();
+    }
+
+    void PrtFF() {
+      ::PrtFF();
+    }
+
     void NxtField() {
       ::NxtField();
     }
@@ -8358,6 +8377,17 @@ namespace EdAsmNg {
 
       // Clear test buffer override to prevent contamination
       g_test_src_buffer = nullptr;
+
+      // Reset deterministic low-level listing sink state.
+      g_listing_sink.clear();
+    }
+
+    void ResetListingSink() {
+      g_listing_sink.clear();
+    }
+
+    std::string GetListingSink() {
+      return g_listing_sink;
     }
 
     //=================================================

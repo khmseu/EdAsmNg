@@ -55,6 +55,17 @@ namespace {
 
 }  // namespace
 
+namespace EdAsmNg {
+  namespace Asm {
+    void        PutC(uint8_t ch);
+    void        PutCR();
+    void        PrtFF();
+    void        PrByte(uint8_t value);
+    void        ResetListingSink();
+    std::string GetListingSink();
+  }  // namespace Asm
+}  // namespace EdAsmNg
+
 TEST(GreetTests, DefaultsToWorld) {
   EXPECT_EQ(EdAsmNg::greet(), "Hello, World!");
 }
@@ -89,6 +100,45 @@ TEST(CliListingTests, ListingOutputComesFromAssemblerPathNotPlaceholderBlock) {
   const std::string expectedListing = BuildExpectedAssemblerListing(sourcePath);
 
   EXPECT_EQ(listingText, expectedListing);
+}
+
+class ListingPrimitiveTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    EdAsmNg::Asm::ResetAsmState();
+    EdAsmNg::Asm::ResetListingSink();
+  }
+};
+
+TEST_F(ListingPrimitiveTest, PutCAppendsCharacterToListingSink) {
+  EdAsmNg::Asm::PutC('A');
+  EdAsmNg::Asm::PutC('!');
+
+  EXPECT_EQ(EdAsmNg::Asm::GetListingSink(), "A!");
+}
+
+TEST_F(ListingPrimitiveTest, PutCREmitsDeterministicLineTermination) {
+  EdAsmNg::Asm::PutC('X');
+  EdAsmNg::Asm::PutCR();
+  EdAsmNg::Asm::PutC('Y');
+
+  EXPECT_EQ(EdAsmNg::Asm::GetListingSink(), "X\nY");
+}
+
+TEST_F(ListingPrimitiveTest, PrtFFEmitsDeterministicFormFeedByte) {
+  EdAsmNg::Asm::PutC('A');
+  EdAsmNg::Asm::PrtFF();
+  EdAsmNg::Asm::PutC('B');
+
+  EXPECT_EQ(EdAsmNg::Asm::GetListingSink(), std::string("A\fB", 3));
+}
+
+TEST_F(ListingPrimitiveTest, PrByteEmitsTwoUppercaseHexChars) {
+  EdAsmNg::Asm::PrByte(0x00);
+  EdAsmNg::Asm::PutC(' ');
+  EdAsmNg::Asm::PrByte(0xAF);
+
+  EXPECT_EQ(EdAsmNg::Asm::GetListingSink(), "00 AF");
 }
 
 //=================================================
