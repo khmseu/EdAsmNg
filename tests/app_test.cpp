@@ -3995,6 +3995,49 @@ TEST_F(Pass2Test, test_pass2_experimental_mixed_queue_and_fallback_sequence) {
   EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5A07);
 }
 
+TEST_F(Pass2Test, test_pass2_experimental_ldx_immediate_queue_emits_opcode_and_advances_objpc) {
+  const char* source =
+      "      ORG $5B00\r"
+      "      LDX #$2A\r"
+      "      RTS\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5B00), 0xA2);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5B01), 0x2A);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5B02), 0x60);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5B03);
+}
+
+TEST_F(Pass2Test, test_pass2_experimental_bcc_queue_computes_displacement_and_advances_objpc) {
+  const char* source =
+      "      ORG $5C00\r"
+      "      BCC SKIP\r"
+      "      NOP\r"
+      "SKIP   RTS\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::DoPass1();
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5C00), 0x90);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5C01), 0x01);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5C02), 0xEA);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5C03), 0x60);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5C04);
+}
+
 TEST_F(Pass2Test, test_pass2_lda_operand_emits_opcode_byte) {
   // LDA #$01 should emit 0xA9 (opcode), 0x01 (8-bit immediate)
   // LDA immediate addressing: opcode=0xA9, followed by 1-byte operand
