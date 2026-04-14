@@ -3725,6 +3725,26 @@ TEST_F(Pass2Test, test_pass2_experimental_forward_jump_fixture_matches_expected_
   EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x0805);
 }
 
+TEST_F(Pass2Test, test_pass2_experimental_ds_small_emits_zeros) {
+  const char* source =
+      "      ORG $2000\r"
+      "      DS 3\r"
+      "      RTS\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x2000), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x2001), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x2002), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x2003), 0x60);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x2004);
+}
+
 TEST_F(Pass2Test, test_pass2_lda_operand_emits_opcode_byte) {
   // LDA #$01 should emit 0xA9 (opcode), 0x01 (8-bit immediate)
   // LDA immediate addressing: opcode=0xA9, followed by 1-byte operand

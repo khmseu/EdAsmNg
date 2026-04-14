@@ -3917,12 +3917,17 @@ namespace {
 
       // Pass 2: Emit zeros and sync PC with ObjPC
       if (PassNbr == 1) {
-        for (uint16_t i = 0; i < count; i++) {
-          A = 0x00;
-          StorByt();
+        if (g_use_experimental_pass2 && count <= 4) {
+          const std::uint8_t zeros[4] = {0x00, 0x00, 0x00, 0x00};
+          QueueExperimentalBytes(zeros, static_cast<std::uint8_t>(count));
+        } else {
+          for (uint16_t i = 0; i < count; i++) {
+            A = 0x00;
+            StorByt();
+          }
+          // After emission, PC must equal ObjPC
+          PC = ObjPC;
         }
-        // After emission, PC must equal ObjPC
-        PC = ObjPC;
       } else {
         // Pass 1: Track PC
         PC += count;
