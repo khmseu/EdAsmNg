@@ -2653,6 +2653,63 @@ namespace {
     return;  // RTS
   }
 
+  namespace {
+    bool IsZeroPageMode(uint8_t mode) {
+      return mode == 1 || mode == 3 || mode == 6 || mode == 7 || mode == 8 || mode == 11;
+    }
+  }  // namespace
+
+  void CalcDisp() {
+    ValExpr_word = static_cast<uint16_t>(ValExpr_word - PC - Length);
+  }
+
+  bool ChkRng(std::uint8_t value, std::uint8_t minVal, std::uint8_t maxVal) {
+    bool out_of_range = value < minVal || value > maxVal;
+    C                 = out_of_range;
+    return out_of_range;
+  }
+
+  void ValidateRange() {
+    if ((ModWrdL & 0x08) != 0) {
+      if ((ValExpr_word & 0xFF80) == 0 || (ValExpr_word & 0xFF80) == 0xFF80) {
+        return;
+      }
+      X = 0x26;  // branch range err
+      RegAsmEW(X);
+      return;
+    }
+
+    if (LenTIdx == 2) {
+      return;
+    }
+
+    if (IsZeroPageMode(LenTIdx) && ValExpr_hi != 0) {
+      X = 0x1C;  // zero page range err
+      RegAsmEW(X);
+    }
+  }
+
+  void GOpAdr() {
+    if ((ModWrdL & 0x08) != 0) {
+      CalcDisp();
+      return;
+    }
+
+    if (LenTIdx == 2) {
+      RelExprF = 0;
+      return;
+    }
+
+    if (IsZeroPageMode(LenTIdx)) {
+      if (ValExpr_hi != 0) {
+        X = 0x1C;  // zero page range err
+        RegAsmEW(X);
+      }
+      ValExpr_hi = 0;
+      return;
+    }
+  }
+
 #if 0   // TODO: Phase 9+ - Stub L80F7 already exists at line 2146, this is duplicate/incomplete
   // C=0 - no
   // C=1 - yes
@@ -2673,6 +2730,7 @@ namespace {
       ChrGot();
       if (A != FINTxt[Y]) goto L811A;
       Y++;
+
       X--;
       if (X != 0) goto L810C;
       if (X == 0) goto L812A;  // Got a hit (BEQ)
@@ -6477,22 +6535,15 @@ namespace {
   }
 
   void Bridge_GOpAdr() {
-    // GOpAdr is inside #if 0 block - not compiled
-    // TODO: Implement when handler is enabled
+    GOpAdr();
   }
 
   bool Bridge_ChkRng(uint8_t value, uint8_t minVal, uint8_t maxVal) {
-    // ChkRng is inside #if 0 block - not compiled
-    // TODO: Implement when handler is enabled
-    (void)value;
-    (void)minVal;
-    (void)maxVal;
-    return false;
+    return ChkRng(value, minVal, maxVal);
   }
 
   void Bridge_ValidateRange() {
-    // ValidateRange is inside #if 0 block - not compiled
-    // TODO: Implement when handler is enabled
+    ValidateRange();
   }
 
   void Bridge_HndlMnem() {
