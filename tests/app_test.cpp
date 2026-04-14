@@ -3628,6 +3628,47 @@ TEST_F(Pass2Test, test_pass2_experimental_org_relocates_objpc) {
   EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x1001);
 }
 
+TEST_F(Pass2Test, test_pass2_experimental_output_buffer_tracking) {
+  const char* source =
+      "      NOP\r"
+      "      LDA #$00\r"
+      "      STA $1000\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0000), 0xEA);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0001), 0xA9);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0003), 0x8D);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x0006);
+}
+
+TEST_F(Pass2Test, test_pass2_experimental_equ_symbol_resolves_absolute_addr) {
+  const char* source =
+      "BASE   EQU $C000\r"
+      "      ORG $0800\r"
+      "      LDA #$01\r"
+      "      STA BASE\r"
+      "      RTS\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0800), 0xA9);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0801), 0x01);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0802), 0x8D);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0803), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0804), 0xC0);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0805), 0x60);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x0806);
+}
+
 TEST_F(Pass2Test, test_pass2_lda_operand_emits_opcode_byte) {
   // LDA #$01 should emit 0xA9 (opcode), 0x01 (8-bit immediate)
   // LDA immediate addressing: opcode=0xA9, followed by 1-byte operand
