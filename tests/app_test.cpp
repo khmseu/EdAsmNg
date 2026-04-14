@@ -3877,6 +3877,48 @@ TEST_F(Pass2Test, test_pass2_experimental_asc_large_fallback_emits_all_chars) {
   EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5405);
 }
 
+TEST_F(Pass2Test, test_pass2_experimental_ds_large_fallback_emits_all_zeros) {
+  const char* source =
+      "      ORG $5500\r"
+      "      DS 5\r"
+      "      RTS\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5500), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5501), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5502), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5503), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5504), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5505), 0x60);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5506);
+}
+
+TEST_F(Pass2Test, test_pass2_experimental_dci_large_fallback_sets_bits) {
+  const char* source =
+      "      ORG $5600\r"
+      "      DCI \"ABCDE\"\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5600), 0xC1);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5601), 0xC2);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5602), 0xC3);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5603), 0xC4);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5604), 0x45);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5605);
+}
+
 TEST_F(Pass2Test, test_pass2_lda_operand_emits_opcode_byte) {
   // LDA #$01 should emit 0xA9 (opcode), 0x01 (8-bit immediate)
   // LDA immediate addressing: opcode=0xA9, followed by 1-byte operand
