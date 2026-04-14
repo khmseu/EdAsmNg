@@ -3653,6 +3653,10 @@ TEST_F(Pass2Test, test_pass2_experimental_equ_symbol_resolves_absolute_addr) {
       "      LDA #$01\r"
       "      STA BASE\r"
       "      RTS\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::DoPass1();
+
   EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
   EdAsmNg::Asm::SetObjPC(0);
 
@@ -3667,6 +3671,58 @@ TEST_F(Pass2Test, test_pass2_experimental_equ_symbol_resolves_absolute_addr) {
   EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0804), 0xC0);
   EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0805), 0x60);
   EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x0806);
+}
+
+TEST_F(Pass2Test, test_pass2_experimental_branch_fixture_matches_expected_bytes) {
+  const char* source =
+      "      ORG $0800\r"
+      "      LDX #$05\r"
+      "LOOP   DEX\r"
+      "      BNE LOOP\r"
+      "      RTS\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::DoPass1();
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0800), 0xA2);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0801), 0x05);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0802), 0xCA);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0803), 0xD0);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0804), 0xFD);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0805), 0x60);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x0806);
+}
+
+TEST_F(Pass2Test, test_pass2_experimental_forward_jump_fixture_matches_expected_bytes) {
+  const char* source =
+      "      ORG $0800\r"
+      "      JMP AFTER\r"
+      "      NOP\r"
+      "AFTER  RTS\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::DoPass1();
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0800), 0x4C);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0801), 0x04);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0802), 0x08);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0803), 0xEA);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0804), 0x60);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x0805);
 }
 
 TEST_F(Pass2Test, test_pass2_lda_operand_emits_opcode_byte) {
