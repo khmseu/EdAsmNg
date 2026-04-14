@@ -4014,6 +4014,24 @@ TEST_F(Pass2Test, test_pass2_experimental_ldx_immediate_queue_emits_opcode_and_a
   EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5B03);
 }
 
+TEST_F(Pass2Test, test_pass2_experimental_brk_emits_opcode_and_advances_objpc) {
+  const char* source =
+      "      ORG $5B10\r"
+      "      BRK\r"
+      "      RTS\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5B10), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5B11), 0x60);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5B12);
+}
+
 TEST_F(Pass2Test, test_pass2_experimental_bcc_queue_computes_displacement_and_advances_objpc) {
   const char* source =
       "      ORG $5C00\r"
