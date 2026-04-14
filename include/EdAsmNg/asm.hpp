@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 // EdAsmNg Assembler Public API
 // This header provides the test-facing API for the assembler implementation.
@@ -26,9 +27,10 @@ namespace EdAsmNg {
     // Core Assembler Phases
     //=================================================
 
-    void DoPass1();
-    void DoPass2();
-    void DoPass3();
+    void        DoPass1();
+    void        DoPass2();
+    void        DoPass3();
+    std::string BuildListingOutput(const char* sourceName);
 
     //=================================================
     // Instruction Processing

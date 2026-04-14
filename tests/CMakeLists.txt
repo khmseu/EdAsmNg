@@ -20,6 +20,10 @@ target_link_libraries(EdAsmNg_app_test PRIVATE
   GTest::gtest_main
 )
 
+target_compile_definitions(EdAsmNg_app_test PRIVATE
+  EDASMNG_APP_PATH="$<TARGET_FILE:EdAsmNg_app>"
+)
+
 if(MSVC)
   target_compile_options(EdAsmNg_app_test PRIVATE /W4)
 else()

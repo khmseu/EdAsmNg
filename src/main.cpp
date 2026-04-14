@@ -76,6 +76,9 @@ int main(int argc, char* argv[]) {
     EdAsmNg::Asm::SetPC(0);
     EdAsmNg::Asm::EnableTestObjMemory(true);
     EdAsmNg::Asm::ClearTestObjMemory();
+    if (!listing_file.empty()) {
+      EdAsmNg::Asm::SetListingF(0xFF);
+    }
 
     // Load source
     EdAsmNg::Asm::SetupMemorySource(source.c_str(), source.length());
@@ -125,15 +128,9 @@ int main(int argc, char* argv[]) {
       }
     }
 
-    // Write listing file if requested (placeholder - not yet implemented)
+    // Write listing file if requested using assembler-owned listing API.
     if (!listing_file.empty()) {
-      std::ostringstream listing;
-      listing << "EdAsmNg Listing (placeholder)\n";
-      listing << "Source: " << input_file << "\n";
-      listing << "PC: $" << std::hex << pc << "\n";
-      listing << "ObjPC: $" << std::hex << objpc << "\n";
-      listing << "\n(Full listing generation not yet implemented)\n";
-      write_text(listing_file, listing.str());
+      write_text(listing_file, EdAsmNg::Asm::BuildListingOutput(input_file.c_str()));
       std::cout << "Wrote listing to " << listing_file << "\n";
     }
 

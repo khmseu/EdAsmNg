@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -8420,6 +8421,16 @@ namespace EdAsmNg {
 
     void DoPass3() {
       AsmInternal::DoPass3();
+    }
+
+    std::string BuildListingOutput(const char* sourceName) {
+      std::ostringstream listing;
+      listing << "EdAsmNg Assembler Listing\n";
+      listing << "Source: " << (sourceName ? sourceName : "") << "\n";
+      listing << "PC: $" << std::hex << PC << "\n";
+      listing << "ObjPC: $" << std::hex << ObjPC << "\n";
+      listing << "CurAdr: $" << std::hex << GetCurAdr() << "\n";
+      return listing.str();
     }
 
     uint16_t GetSymNodeP() {

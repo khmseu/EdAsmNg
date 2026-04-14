@@ -2,8 +2,58 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+
 #include "EdAsmNg/asm.hpp"
 #include "asm_test_helpers.hpp"
+
+namespace {
+
+  std::string ReadTextFile(const std::filesystem::path& filePath) {
+    std::ifstream      in(filePath);
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
+  }
+
+  std::string QuoteArg(const std::filesystem::path& arg) {
+    return "\"" + arg.string() + "\"";
+  }
+
+  std::string BuildExpectedAssemblerListing(const std::filesystem::path& sourcePath) {
+    std::string source = ReadTextFile(sourcePath);
+    for (char& c : source) {
+      if (c == '\n') c = '\r';
+    }
+
+    EdAsmNg::Asm::ResetErrorState();
+    EdAsmNg::Asm::ResetAsmState();
+    EdAsmNg::Asm::SetPC(0);
+    EdAsmNg::Asm::EnableTestObjMemory(true);
+    EdAsmNg::Asm::ClearTestObjMemory();
+    EdAsmNg::Asm::SetListingF(0xFF);
+
+    EdAsmNg::Asm::SetupMemorySource(source.c_str(), source.length());
+
+    EdAsmNg::Asm::SetPassNbr(0);
+    EdAsmNg::Asm::DoPass1();
+
+    EdAsmNg::Asm::RewindSource();
+    EdAsmNg::Asm::SetPassNbr(1);
+    EdAsmNg::Asm::SetGenF(0);
+    EdAsmNg::Asm::DoPass2();
+
+    EdAsmNg::Asm::RewindSource();
+    EdAsmNg::Asm::SetPassNbr(2);
+    EdAsmNg::Asm::DoPass3();
+
+    return EdAsmNg::Asm::BuildListingOutput(sourcePath.string().c_str());
+  }
+
+}  // namespace
 
 TEST(GreetTests, DefaultsToWorld) {
   EXPECT_EQ(EdAsmNg::greet(), "Hello, World!");
@@ -11,6 +61,34 @@ TEST(GreetTests, DefaultsToWorld) {
 
 TEST(GreetTests, UsesProvidedName) {
   EXPECT_EQ(EdAsmNg::greet("Kai"), "Hello, Kai!");
+}
+
+TEST(CliListingTests, ListingOutputComesFromAssemblerPathNotPlaceholderBlock) {
+  const std::filesystem::path tempDir =
+      std::filesystem::temp_directory_path() / "edasmng_cli_listing_test";
+  const std::filesystem::path sourcePath  = tempDir / "input.asm";
+  const std::filesystem::path listingPath = tempDir / "output.lst";
+
+  std::filesystem::create_directories(tempDir);
+
+  {
+    std::ofstream sourceFile(sourcePath);
+    ASSERT_TRUE(sourceFile.is_open());
+    sourceFile << "NOP\n";
+  }
+
+  std::filesystem::remove(listingPath);
+
+  std::string cmd = QuoteArg(std::filesystem::path(EDASMNG_APP_PATH)) + " " + QuoteArg(sourcePath) +
+                    " --listing " + QuoteArg(listingPath) + " > /dev/null 2>&1";
+  const int rc = std::system(cmd.c_str());
+  ASSERT_EQ(rc, 0);
+
+  ASSERT_TRUE(std::filesystem::exists(listingPath));
+  const std::string listingText     = ReadTextFile(listingPath);
+  const std::string expectedListing = BuildExpectedAssemblerListing(sourcePath);
+
+  EXPECT_EQ(listingText, expectedListing);
 }
 
 //=================================================
