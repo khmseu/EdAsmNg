@@ -4153,6 +4153,9 @@ namespace {
       }
 
       // Pass 2: Evaluate expressions and emit bytes
+      std::uint8_t queuedBytes[4] = {0, 0, 0, 0};
+      std::uint8_t queuedCount    = 0;
+      bool         queueMode      = g_use_experimental_pass2;
       while (true) {
         // Skip spaces
         while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
@@ -4176,20 +4179,34 @@ namespace {
 
         // Pass 2: Emit byte and check for relocatable
         if (PassNbr == 1) {
-          // Check if relocatable expression requires RLD entry
-          if (RelExprF != 0) {
-            // Create RLD entry for relocatable byte
-            uint8_t save_X = X;
-            uint8_t save_Y = Y;
-            A              = byteCount;  // offset in GMC
-            X              = 1;          // 8-bit value
-            Y              = 0;          // no endian issue for byte
-            AddRLDEnt();
-            X = save_X;
-            Y = save_Y;
+          if (queueMode && RelExprF == 0 && queuedCount < 4) {
+            queuedBytes[queuedCount] = static_cast<std::uint8_t>(ValExpr & 0xFF);
+            queuedCount++;
+          } else {
+            if (queueMode) {
+              // Fall back to direct emission and flush any queued bytes first.
+              for (std::uint8_t index = 0; index < queuedCount; ++index) {
+                A = queuedBytes[index];
+                StorByt();
+              }
+              queueMode = false;
+            }
+
+            // Check if relocatable expression requires RLD entry
+            if (RelExprF != 0) {
+              // Create RLD entry for relocatable byte
+              uint8_t save_X = X;
+              uint8_t save_Y = Y;
+              A              = byteCount;  // offset in GMC
+              X              = 1;          // 8-bit value
+              Y              = 0;          // no endian issue for byte
+              AddRLDEnt();
+              X = save_X;
+              Y = save_Y;
+            }
+            A = (ValExpr & 0xFF);
+            StorByt();
           }
-          A = (ValExpr & 0xFF);
-          StorByt();
         }
         byteCount++;
 
@@ -4206,7 +4223,11 @@ namespace {
       if (PassNbr == 0) {
         PC += byteCount;
       } else {
-        PC = ObjPC;
+        if (queueMode) {
+          QueueExperimentalBytes(queuedBytes, queuedCount);
+        } else {
+          PC = ObjPC;
+        }
       }
       C = false;
       return;
@@ -4303,6 +4324,8 @@ namespace {
       }
 
       // Pass 2: Evaluate expressions and emit words
+      std::uint8_t queuedWords[4] = {0, 0, 0, 0};
+      bool         queueWordsMode = g_use_experimental_pass2;
       while (true) {
         // Skip spaces
         while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
@@ -4320,23 +4343,38 @@ namespace {
 
         // Pass 2: Emit word and check for relocatable
         if (PassNbr == 1) {
-          // Check if relocatable expression requires RLD entry
-          if (RelExprF != 0) {
-            // Create RLD entry for relocatable word
-            uint8_t save_X = X;
-            uint8_t save_Y = Y;
-            A              = 0;  // offset = 0 (first byte in word)
-            X              = 2;  // 16-bit value
-            Y              = 0;  // little-endian (DW order)
-            AddRLDEnt();
-            X = save_X;
-            Y = save_Y;
+          if (queueWordsMode && RelExprF == 0 && wordCount < 2) {
+            std::uint8_t wordIndex     = static_cast<std::uint8_t>(wordCount * 2);
+            queuedWords[wordIndex]     = static_cast<std::uint8_t>(ValExpr & 0xFF);
+            queuedWords[wordIndex + 1] = static_cast<std::uint8_t>(ValExpr_hi & 0xFF);
+          } else {
+            if (queueWordsMode) {
+              // Fall back to direct emission and flush queued words first.
+              for (std::uint16_t index = 0; index < wordCount * 2; ++index) {
+                A = queuedWords[index];
+                StorByt();
+              }
+              queueWordsMode = false;
+            }
+
+            // Check if relocatable expression requires RLD entry
+            if (RelExprF != 0) {
+              // Create RLD entry for relocatable word
+              uint8_t save_X = X;
+              uint8_t save_Y = Y;
+              A              = 0;  // offset = 0 (first byte in word)
+              X              = 2;  // 16-bit value
+              Y              = 0;  // little-endian (DW order)
+              AddRLDEnt();
+              X = save_X;
+              Y = save_Y;
+            }
+            // Emit little-endian word
+            A = (ValExpr & 0xFF);  // Low byte
+            StorByt();
+            A = (ValExpr_hi & 0xFF);  // High byte
+            StorByt();
           }
-          // Emit little-endian word
-          A = (ValExpr & 0xFF);  // Low byte
-          StorByt();
-          A = (ValExpr_hi & 0xFF);  // High byte
-          StorByt();
         }
         wordCount++;
 
@@ -4353,7 +4391,11 @@ namespace {
       if (PassNbr == 0) {
         PC += wordCount * 2;
       } else {
-        PC = ObjPC;
+        if (queueWordsMode) {
+          QueueExperimentalBytes(queuedWords, static_cast<std::uint8_t>(wordCount * 2));
+        } else {
+          PC = ObjPC;
+        }
       }
       C = false;
       return;
