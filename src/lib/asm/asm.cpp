@@ -62,7 +62,7 @@ namespace {
   bool         Z                           = false;  // Zero flag
   bool         N                           = false;  // Negative flag
   bool         V                           = false;  // Overflow flag
-  bool         g_use_experimental_pass2    = false;
+  bool         g_use_experimental_pass2    = true;
   bool         g_experimental_prepared_gmc = false;
 
   //=================================================
@@ -8327,7 +8327,7 @@ namespace EdAsmNg {
       SymNbr   = 0;
       ErrorF   = 0;
       GenF     = 0x80;  // Initialize for code generation (will be shifted to 0x00 in Pass 2)
-      g_use_experimental_pass2    = false;
+      g_use_experimental_pass2    = true;
       g_experimental_prepared_gmc = false;
 
       // Initialize HighMem to a reasonable default (64KB - no limit)

@@ -3566,6 +3566,24 @@ class Pass2Test : public ::testing::Test {
   }
 };
 
+TEST_F(Pass2Test, test_pass2_default_uses_experimental_path_toggle_enabled) {
+  EXPECT_TRUE(EdAsmNg::Asm::GetUseExperimentalPass2());
+}
+
+TEST_F(Pass2Test, test_pass2_can_opt_out_to_legacy_path_with_toggle) {
+  const char* source = "      NOP\r";
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+  EXPECT_FALSE(EdAsmNg::Asm::GetUseExperimentalPass2());
+
+  EdAsmNg::Asm::DoPass2();
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0000), 0xEA);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x0001);
+}
+
 TEST_F(Pass2Test, test_pass2_nop_emits_opcode) {
   // NOP instruction should emit byte 0xEA to output buffer
   // Note: statement must start in operand column (leading spaces) —
