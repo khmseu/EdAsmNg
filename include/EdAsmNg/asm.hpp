@@ -131,6 +131,8 @@ namespace EdAsmNg {
     void         SetLabelF(std::uint8_t value);
     std::uint8_t GetPassNbr();
     void         SetPassNbr(std::uint8_t pass);
+    void         SetUseExperimentalPass2(bool enable);
+    bool         GetUseExperimentalPass2();
     bool         GetCarryFlag();
     void         SetCarryFlag(bool value);
     bool         GetLastCarryFlag();

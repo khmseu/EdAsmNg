@@ -55,13 +55,14 @@ namespace {
   // These simulate the 6502 processor registers and flags
   // used throughout the translated assembly code
   //=================================================
-  std::uint8_t A = 0;      // Accumulator
-  std::uint8_t X = 0;      // X index register
-  std::uint8_t Y = 0;      // Y index register
-  bool         C = false;  // Carry flag
-  bool         Z = false;  // Zero flag
-  bool         N = false;  // Negative flag
-  bool         V = false;  // Overflow flag
+  std::uint8_t A                        = 0;      // Accumulator
+  std::uint8_t X                        = 0;      // X index register
+  std::uint8_t Y                        = 0;      // Y index register
+  bool         C                        = false;  // Carry flag
+  bool         Z                        = false;  // Zero flag
+  bool         N                        = false;  // Negative flag
+  bool         V                        = false;  // Overflow flag
+  bool         g_use_experimental_pass2 = false;
 
   //=================================================
   // Forward Declarations (for functions used before defined)
@@ -787,6 +788,11 @@ namespace {
   // Source code reading, code generation
   // Original: ASM2.S lines ~456-650 (approximate)
   void DoPass2() {
+    if (g_use_experimental_pass2) {
+      DoPass2_ExperimentalCore();
+      return;
+    }
+
     // Initialize Pass 2 state
     PassNbr = 1;  // Pass 2
     // ObjPC is set by caller or from initialization
@@ -2293,8 +2299,16 @@ namespace {
     L81F0();            // Skip over non-blanks
     if (Z) goto L7F6E;  // Got a cr (BNE -> BEQ inverted)
     NxtField();         // Skip over 1 or more blanks
-    HndlMnem();
-    if (!C) goto L7F7A;  // BCC
+    {
+      uint16_t pre_objpc = ObjPC;
+      HndlMnem();
+      if (!C) {
+        // Compatibility mode: current HndlMnem emits object bytes directly.
+        // Skip legacy codegen path to avoid duplicate emission.
+        if (ObjPC != pre_objpc) goto L807A;
+        goto L7F7A;
+      }
+    }
 
   L7F6E:
     X = 0x04;  // undefined opcode
@@ -7527,6 +7541,14 @@ namespace EdAsmNg {
       PassNbr = pass;
     }
 
+    void SetUseExperimentalPass2(bool enable) {
+      g_use_experimental_pass2 = enable;
+    }
+
+    bool GetUseExperimentalPass2() {
+      return g_use_experimental_pass2;
+    }
+
     uint8_t GetNxtToken() {
       return NxtToken;
     }
@@ -8167,6 +8189,7 @@ namespace EdAsmNg {
       SymNbr   = 0;
       ErrorF   = 0;
       GenF     = 0x80;  // Initialize for code generation (will be shifted to 0x00 in Pass 2)
+      g_use_experimental_pass2 = false;
 
       // Initialize HighMem to a reasonable default (64KB - no limit)
       HighMem = 0xFFFF;
