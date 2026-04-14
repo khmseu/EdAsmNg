@@ -3953,6 +3953,23 @@ TEST_F(Pass2Test, test_pass2_experimental_asc_empty_emits_no_bytes) {
   EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5801);
 }
 
+TEST_F(Pass2Test, test_pass2_experimental_dci_empty_emits_no_bytes) {
+  const char* source =
+      "      ORG $5900\r"
+      "      DCI \"\"\r"
+      "      RTS\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5900), 0x60);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5901);
+}
+
 TEST_F(Pass2Test, test_pass2_lda_operand_emits_opcode_byte) {
   // LDA #$01 should emit 0xA9 (opcode), 0x01 (8-bit immediate)
   // LDA immediate addressing: opcode=0xA9, followed by 1-byte operand
