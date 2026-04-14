@@ -251,6 +251,10 @@ namespace AsmInternal {
   inline std::uint8_t& ValExpr_word_lo();
   inline std::uint8_t& ValExpr_word_hi();
   inline std::uint8_t& Accum_hi_val();
+  inline std::uint8_t& CurrORG_hi_val();
+  inline std::uint8_t& SrcP_hi_val();
+  inline std::uint8_t& Src2P_hi_val();
+  inline std::uint8_t& ERfield_hi_val();
   inline std::uint8_t& ObjPC_hi_val();
   inline std::uint8_t& HighMem_hi_val();
   inline std::uint8_t& EndSymT_hi_val();
@@ -272,6 +276,10 @@ namespace AsmInternal {
 #define Accum_hi (AsmInternal::Accum_hi_val())
 
 // Legacy 16-bit variable high byte access
+#define CurrORG_hi (AsmInternal::CurrORG_hi_val())
+#define SrcP_hi    (AsmInternal::SrcP_hi_val())
+#define Src2P_hi   (AsmInternal::Src2P_hi_val())
+#define ERfield_hi (AsmInternal::ERfield_hi_val())
 #define ObjPC_hi   (AsmInternal::ObjPC_hi_val())
 #define HighMem_hi (AsmInternal::HighMem_hi_val())
 #define EndSymT_hi (AsmInternal::EndSymT_hi_val())

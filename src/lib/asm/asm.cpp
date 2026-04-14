@@ -6909,6 +6909,22 @@ namespace AsmInternal {
     return reinterpret_cast<std::uint8_t*>(&Accum)[1];
   }
 
+  inline std::uint8_t& CurrORG_hi_val() {
+    return reinterpret_cast<std::uint8_t*>(&CurrORG)[1];
+  }
+
+  inline std::uint8_t& SrcP_hi_val() {
+    return reinterpret_cast<std::uint8_t*>(&SrcP)[1];
+  }
+
+  inline std::uint8_t& Src2P_hi_val() {
+    return reinterpret_cast<std::uint8_t*>(&Src2P)[1];
+  }
+
+  inline std::uint8_t& ERfield_hi_val() {
+    return reinterpret_cast<std::uint8_t*>(&ERfield)[1];
+  }
+
   inline std::uint8_t& ObjPC_hi_val() {
     return reinterpret_cast<std::uint8_t*>(&ObjPC)[1];
   }
