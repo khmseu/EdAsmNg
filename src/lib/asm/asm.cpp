@@ -637,8 +637,6 @@ namespace {
 
     auto parse_symbol = [&](uint16_t& out_val, uint8_t& out_flags) -> bool {
       uint8_t start_y = Y;
-      fprintf(stderr, "    parse_symbol: Looking for symbol starting at Y=%d, ch='%c'\n", Y,
-              (SrcP_at(Y) >= 32) ? SrcP_at(Y) : '?');
 
       // CRITICAL: FindSym() needs to read from the current position in the source.
       // In the original 6502 code, symbol names were always at the start of a line (Y=0),
@@ -648,10 +646,7 @@ namespace {
       Y = 0;            // FindSym expects Y=0
       AsmInternal::FindSym();
       SrcP = saved_SrcP;  // Restore SrcP
-      fprintf(stderr, "    parse_symbol: After FindSym(), C=%d, A=0x%02X, SymP=0x%04X, Y=%d\n", C,
-              A, SymP, Y);
       if (C) {
-        fprintf(stderr, "    parse_symbol: ERROR - symbol not found\n");
         Y = start_y;  // Restore Y before returning
         return false;
       }
@@ -3619,42 +3614,15 @@ namespace {
     }
 
     if (mnemonic == "STA") {
-      MnemP  = reinterpret_cast<const uint8_t*>(0x1001);
       ZAB    = 0x7F;
       Length = 3;
       if (PassNbr == 0) {
         PC += 3;
       } else {
-        NxtField();                  // Skip to operand
-        uint16_t abs_addr = 0x1000;  // Fallback preserves prior behavior
-
-        // Parse absolute hex operand in the form $HHLL (e.g. $C000)
-        if (SrcP_at(Y) == '$') {
-          Y++;
-          uint16_t value   = 0;
-          int      nibbles = 0;
-          while (nibbles < 4) {
-            uint8_t digit = SrcP_at(Y);
-            uint8_t hex   = 0xFF;
-            if (digit >= '0' && digit <= '9') {
-              hex = static_cast<uint8_t>(digit - '0');
-            } else if (digit >= 'A' && digit <= 'F') {
-              hex = static_cast<uint8_t>(digit - 'A' + 10);
-            } else if (digit >= 'a' && digit <= 'f') {
-              hex = static_cast<uint8_t>(digit - 'a' + 10);
-            } else {
-              break;
-            }
-            value = static_cast<uint16_t>((value << 4) | hex);
-            Y++;
-            nibbles++;
-          }
-          if (nibbles > 0) {
-            abs_addr = value;
-          }
-        }
-
-        A = 0x8D;
+        NxtField();
+        EvalExpr();
+        uint16_t abs_addr = static_cast<uint16_t>(ValExpr | (ValExpr_hi << 8));
+        A                 = 0x8D;  // STA absolute
         StorByt();
         A = static_cast<uint8_t>(abs_addr & 0xFF);
         StorByt();
@@ -3667,17 +3635,19 @@ namespace {
     }
 
     if (mnemonic == "JMP") {
-      MnemP  = reinterpret_cast<const uint8_t*>(0x1002);
       ZAB    = 0x7F;
       Length = 3;
       if (PassNbr == 0) {
         PC += 3;
       } else {
-        A = 0x4C;  // JMP absolute
+        NxtField();
+        EvalExpr();
+        uint16_t addr = static_cast<uint16_t>(ValExpr | (ValExpr_hi << 8));
+        A             = 0x4C;  // JMP absolute
         StorByt();
-        A = 0x00;
+        A = static_cast<uint8_t>(addr & 0xFF);
         StorByt();
-        A = 0x00;
+        A = static_cast<uint8_t>((addr >> 8) & 0xFF);
         StorByt();
         PC = ObjPC;
       }
@@ -3701,15 +3671,20 @@ namespace {
     }
 
     if (mnemonic == "BCC" || mnemonic == "BCS") {
-      MnemP  = reinterpret_cast<const uint8_t*>(0x1004);
       ZAB    = 0x7F;
-      Length = 2;  // Branch instructions are 2 bytes
+      Length = 2;
       if (PassNbr == 0) {
         PC += 2;
       } else {
-        A = (mnemonic == "BCC") ? 0x90 : 0xB0;
+        uint8_t  opcode   = (mnemonic == "BCC") ? 0x90 : 0xB0;
+        uint16_t branchPC = ObjPC;
+        NxtField();
+        EvalExpr();
+        uint16_t target = static_cast<uint16_t>(ValExpr | (ValExpr_hi << 8));
+        int16_t  disp   = static_cast<int16_t>(target) - static_cast<int16_t>(branchPC + 2);
+        A               = opcode;
         StorByt();
-        A = 0x00;
+        A = static_cast<uint8_t>(disp & 0xFF);
         StorByt();
         PC = ObjPC;
       }
@@ -3835,24 +3810,15 @@ namespace {
 
     // Handle directives with proper flag and routing
     if (mnemonic == ".EQU" || mnemonic == "EQU") {
-      fprintf(stderr, "  EQU handler: PassNbr=%d, LabelF=%d, SymP=0x%04X\n", PassNbr, LabelF, SymP);
       ZAB                   = 0x80;  // Directive flag
       g_LastDirectiveCalled = "HndlEQU";
 
-      // For dispatch-only tests (using g_test_src_buffer), just return success
-      if (g_test_src_buffer != nullptr) {
-        Length = 0;
-        C      = false;
-        return;
-      }
-
-      // Inline EQU handling - evaluate the operand and store in symbol table
+      // Evaluate the operand and store in symbol table
       NxtField();  // Skip to operand field
 
-      // Check if there's an operand (dispatch-only tests may have no operand)
       uint8_t ch = SrcP_at(Y);
       if (ch == CR || ch == 0) {
-        // No operand - just succeed as dispatch test
+        // No operand
         Length = 0;
         C      = false;
         return;
@@ -3860,12 +3826,9 @@ namespace {
 
       // Evaluate the expression (sets ValExpr, ValExpr_hi, RelExprF)
       EvalOprnd();
-      fprintf(stderr, "  EQU after EvalOprnd: C=%d, ValExpr=0x%04X, RelExprF=%d\n", C,
-              (uint16_t)(ValExpr | (ValExpr_hi << 8)), RelExprF);
       if (C) {
-        // Error in evaluation
         Length = 0;
-        return;  // C already set by EvalOprnd
+        return;
       }
 
       // Check for valid end-of-operand
@@ -3877,37 +3840,23 @@ namespace {
         return;
       }
 
-      // For Pass 1, we need to find the label and update its value
-      if (PassNbr == 0) {
-        fprintf(stderr, "  EQU Pass 1: updating symbol, LabelF=%d, SymP=0x%04X\n", LabelF, SymP);
-        // Try to find and update the symbol with the EQU value
-        if (LabelF != 0 && SymP != 0) {
-          uint8_t* symptr = SimPtrToMemPtr(SymP);
-          // Find the flag byte by scanning DCI-encoded name
-          // DCI: MSB set on all chars except the last (terminator has MSB clear)
-          int idx = 1;                              // Start after length byte
-          while ((symptr[idx] & 0x80) != 0) idx++;  // Skip all name bytes with MSB=1
-          idx++;                                    // Now at flag byte
+      // Pass 1: update the symbol table entry with the evaluated value
+      if (PassNbr == 0 && LabelF != 0 && SymP != 0) {
+        uint8_t* symptr = SimPtrToMemPtr(SymP);
+        // DCI: MSB set on all name bytes except the last
+        int idx = 1;                              // Start after length byte
+        while ((symptr[idx] & 0x80) != 0) idx++;  // Skip name bytes
+        idx++;                                    // Now at flag byte
 
-          fprintf(stderr, "  EQU updating: idx=%d, old_flags=0x%02X\n", idx, symptr[idx]);
-
-          // Update symbol flags
-          uint8_t flags = symptr[idx];
-          flags &= static_cast<uint8_t>(~undefined);  // Clear undefined
-          flags |= (RelExprF & relative);
-          if ((int8_t)DummyF < 0) flags |= relative;
-          flags |= unrefd;
-          symptr[idx] = flags;
-
-          // Store the value
-          symptr[idx + 1] = ValExpr;
-          symptr[idx + 2] = ValExpr_hi;
-
-          fprintf(stderr, "  EQU updated: new_flags=0x%02X, value=0x%04X\n", flags,
-                  (uint16_t)(ValExpr | (ValExpr_hi << 8)));
-        } else {
-          fprintf(stderr, "  EQU Pass 1: skipping update (LabelF=%d, SymP=0x%04X)\n", LabelF, SymP);
-        }
+        uint8_t flags = symptr[idx];
+        flags &= static_cast<uint8_t>(~undefined);  // Clear undefined
+        flags |= (RelExprF & relative);
+        if ((int8_t)DummyF < 0) flags |= relative;
+        if ((int8_t)RelCodeF < 0) flags |= relative;
+        flags |= unrefd;
+        symptr[idx]     = flags;
+        symptr[idx + 1] = ValExpr;
+        symptr[idx + 2] = ValExpr_hi;
       }
 
       Length = 0;
@@ -4201,34 +4150,25 @@ namespace {
       }
 
       // Pass 2: Evaluate expressions and emit words
-      fprintf(stderr, "  Entering Pass 2 loop, Y=%d, ch=0x%02X '%c'\\n", Y, SrcP_at(Y),
-              SrcP_at(Y) >= 32 ? SrcP_at(Y) : '?');
       while (true) {
         // Skip spaces
         while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
 
         uint8_t ch = SrcP_at(Y);
-        fprintf(stderr, "  Top of loop: Y=%d, ch=0x%02X\n", Y, ch);
         if (ch == CR || ch == 0) {
-          fprintf(stderr, "  Breaking - found CR or 0\n");
           break;
         }
 
         // Evaluate expression (handles symbols, constants)
-        fprintf(stderr, "  About to call EvalExpr(), C=%d\n", C);
         EvalExpr();
-        fprintf(stderr, "  After EvalExpr(), C=%d\n", C);
         if (C) {
-          fprintf(stderr, "  Breaking - error from EvalExpr\n");
           break;
         }
 
         // Pass 2: Emit word and check for relocatable
         if (PassNbr == 1) {
-          fprintf(stderr, "  In Pass 2 block, checking RelExprF=%d\n", RelExprF);
           // Check if relocatable expression requires RLD entry
           if (RelExprF != 0) {
-            fprintf(stderr, "  Calling AddRLDEnt()\n");
             // Create RLD entry for relocatable word
             uint8_t save_X = X;
             uint8_t save_Y = Y;
@@ -4317,6 +4257,135 @@ namespace {
       }
 
       C = false;
+      return;
+    }
+
+    // --- Branch instructions (6502 relative, 2 bytes): BNE BEQ BPL BMI BVC BVS ---
+    {
+      uint8_t branch_op = 0;
+      if (mnemonic == "BNE")
+        branch_op = 0xD0;
+      else if (mnemonic == "BEQ")
+        branch_op = 0xF0;
+      else if (mnemonic == "BPL")
+        branch_op = 0x10;
+      else if (mnemonic == "BMI")
+        branch_op = 0x30;
+      else if (mnemonic == "BVC")
+        branch_op = 0x50;
+      else if (mnemonic == "BVS")
+        branch_op = 0x70;
+      if (branch_op != 0) {
+        ZAB    = 0x7F;
+        Length = 2;
+        if (PassNbr == 0) {
+          PC += 2;
+        } else {
+          uint16_t branchPC = ObjPC;
+          NxtField();
+          EvalExpr();
+          uint16_t target = static_cast<uint16_t>(ValExpr | (ValExpr_hi << 8));
+          int16_t  disp   = static_cast<int16_t>(target) - static_cast<int16_t>(branchPC + 2);
+          A               = branch_op;
+          StorByt();
+          A = static_cast<uint8_t>(disp & 0xFF);
+          StorByt();
+          PC = ObjPC;
+        }
+        C = false;
+        return;
+      }
+    }
+
+    // --- LDX immediate (#value) ---
+    if (mnemonic == "LDX") {
+      ZAB    = 0x7F;
+      Length = 2;
+      if (PassNbr == 0) {
+        PC += 2;
+      } else {
+        NxtField();
+        if (SrcP_at(Y) == '#') {
+          Y++;
+          EvalExpr();
+          A = 0xA2;  // LDX immediate
+          StorByt();
+          A = static_cast<uint8_t>(ValExpr & 0xFF);
+          StorByt();
+        }
+        PC = ObjPC;
+      }
+      C = false;
+      return;
+    }
+
+    // --- Implied-mode 1-byte instructions ---
+    {
+      uint8_t implied_op = 0;
+      if (mnemonic == "DEX")
+        implied_op = 0xCA;
+      else if (mnemonic == "INX")
+        implied_op = 0xE8;
+      else if (mnemonic == "DEY")
+        implied_op = 0x88;
+      else if (mnemonic == "INY")
+        implied_op = 0xC8;
+      else if (mnemonic == "TAX")
+        implied_op = 0xAA;
+      else if (mnemonic == "TXA")
+        implied_op = 0x8A;
+      else if (mnemonic == "TAY")
+        implied_op = 0xA8;
+      else if (mnemonic == "TYA")
+        implied_op = 0x98;
+      else if (mnemonic == "TSX")
+        implied_op = 0xBA;
+      else if (mnemonic == "TXS")
+        implied_op = 0x9A;
+      else if (mnemonic == "PHA")
+        implied_op = 0x48;
+      else if (mnemonic == "PLA")
+        implied_op = 0x68;
+      else if (mnemonic == "PHP")
+        implied_op = 0x08;
+      else if (mnemonic == "PLP")
+        implied_op = 0x28;
+      else if (mnemonic == "CLC")
+        implied_op = 0x18;
+      else if (mnemonic == "SEC")
+        implied_op = 0x38;
+      else if (mnemonic == "CLI")
+        implied_op = 0x58;
+      else if (mnemonic == "SEI")
+        implied_op = 0x78;
+      else if (mnemonic == "CLV")
+        implied_op = 0xB8;
+      else if (mnemonic == "CLD")
+        implied_op = 0xD8;
+      else if (mnemonic == "SED")
+        implied_op = 0xF8;
+      else if (mnemonic == "RTI")
+        implied_op = 0x40;
+      if (implied_op != 0) {
+        ZAB    = 0x7F;
+        Length = 1;
+        if (PassNbr == 1) {
+          A = implied_op;
+          StorByt();
+          PC = ObjPC;
+        } else {
+          PC += 1;
+        }
+        C = false;
+        return;
+      }
+    }
+
+    // --- END directive ---
+    if (mnemonic == "END") {
+      ZAB    = 0x80;
+      Length = 0;
+      C      = false;
       return;
     }
 

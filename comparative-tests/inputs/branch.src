@@ -1,0 +1,6 @@
+* BRANCH TEST - LDX immediate, DEX, BNE backward label
+         ORG   $0800
+         LDX   #$05
+LOOP     DEX
+         BNE   LOOP
+         RTS

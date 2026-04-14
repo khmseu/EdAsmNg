@@ -1,0 +1,5 @@
+* FORWARD JUMP TEST - JMP to label defined later
+         ORG   $0800
+         JMP   AFTER
+         NOP
+AFTER    RTS

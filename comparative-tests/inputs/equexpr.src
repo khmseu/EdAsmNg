@@ -1,0 +1,6 @@
+* EQU EXPRESSION TEST - symbol defined via EQU used as operand
+BASE     EQU   $C000
+         ORG   $0800
+         LDA   #$01
+         STA   BASE
+         RTS
