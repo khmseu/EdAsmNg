@@ -4062,6 +4062,54 @@ TEST_F(Pass2Test, test_pass2_experimental_bcc_queue_supports_negative_displaceme
   EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5D04);
 }
 
+TEST_F(Pass2Test, test_pass2_experimental_bcs_queue_computes_displacement_and_advances_objpc) {
+  const char* source =
+      "      ORG $5E00\r"
+      "      BCS SKIP\r"
+      "      NOP\r"
+      "SKIP   RTS\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::DoPass1();
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5E00), 0xB0);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5E01), 0x01);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5E02), 0xEA);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5E03), 0x60);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5E04);
+}
+
+TEST_F(Pass2Test, test_pass2_experimental_bcs_queue_supports_negative_displacement) {
+  const char* source =
+      "      ORG $5F00\r"
+      "LOOP  NOP\r"
+      "      BCS LOOP\r"
+      "      RTS\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::DoPass1();
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5F00), 0xEA);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5F01), 0xB0);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5F02), 0xFD);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5F03), 0x60);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5F04);
+}
+
 TEST_F(Pass2Test, test_pass2_lda_operand_emits_opcode_byte) {
   // LDA #$01 should emit 0xA9 (opcode), 0x01 (8-bit immediate)
   // LDA immediate addressing: opcode=0xA9, followed by 1-byte operand
