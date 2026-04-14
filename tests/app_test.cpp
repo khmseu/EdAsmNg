@@ -3567,7 +3567,7 @@ class Pass2Test : public ::testing::Test {
 };
 
 TEST_F(Pass2Test, test_pass2_nop_emits_opcode) {
-  // NOP instruction should emit byte 0x00 to output buffer
+  // NOP instruction should emit byte 0xEA to output buffer
   // Note: statement must start in operand column (leading spaces) —
   // a token in column 0 is treated as a label by the assembler.
   const char* source = "      NOP\r";
@@ -3579,8 +3579,8 @@ TEST_F(Pass2Test, test_pass2_nop_emits_opcode) {
   // Run Pass 2
   EdAsmNg::Asm::DoPass2();
 
-  // Verify opcode 0x00 was written at address 0x0000
-  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0000), 0x00);
+  // Verify opcode 0xEA was written at address 0x0000
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0000), 0xEA);
 
   // Verify ObjPC advanced to 0x0001
   EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x0001);
@@ -3620,7 +3620,7 @@ TEST_F(Pass2Test, test_pass2_output_buffer_tracking) {
   EdAsmNg::Asm::DoPass2();
 
   // Verify opcodes at correct positions
-  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0000), 0x00);  // NOP
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0000), 0xEA);  // NOP
   EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0001), 0xA9);  // LDA opcode
   EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x0003), 0x8D);  // STA opcode (LDA is 2 bytes)
 
@@ -3641,8 +3641,8 @@ TEST_F(Pass2Test, test_pass2_org_relocates_objpc) {
   // Run Pass 2
   EdAsmNg::Asm::DoPass2();
 
-  // Verify NOP opcode (0x00) is at address 0x1000
-  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x1000), 0x00);
+  // Verify NOP opcode (0xEA) is at address 0x1000
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x1000), 0xEA);
 
   // Verify ObjPC advanced to 0x1001 after NOP
   EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x1001);
@@ -3670,7 +3670,7 @@ TEST_F(Pass2Test, test_pass2_ds_emits_zeros) {
   EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x2004), 0x00);
 
   // Verify NOP is at 0x2005
-  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x2005), 0x00);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x2005), 0xEA);
 
   // Verify ObjPC advanced to 0x2006 (5 DS bytes + 1 NOP)
   EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x2006);
