@@ -70,22 +70,28 @@ namespace {
   void ChrGot2();
   void GAdrMod();
   void GOpAdr();
+  void CalcDisp();
   bool ChkRng(std::uint8_t value, std::uint8_t minVal, std::uint8_t maxVal);
   void ValidateRange();
   void EvalExpr();
   void EvalOprnd();
   void AddRLDEnt();  // Phase 8.5.3: RLD entry creation
   void AdvSrcP();
+  void StorGMC();
 
   // Helper functions for GAdrMod
   void IsZPMod();
   void IsAccMod();
   void Is65C02();
+  void IsSW16Reg();
+  void IsC02Op();
   void L8598();
 
   // Tables for GAdrMod
   extern const std::uint8_t AModTkns[];
   extern const std::uint8_t AModCmds[];
+  extern const std::uint8_t OpcodeT[];
+  extern const std::uint8_t CycTimes[];
   void                      SkipSpcs();
   void                      AdvPC();
   void                      Is16K();
@@ -97,6 +103,10 @@ namespace {
   void GSrcLin();
   void ReadMore();
   void SetupMemorySource(const char* sourceText, size_t length);
+  void DoPass2_ExperimentalCore();
+  void PrtAsmLn();
+  void ListCode();
+  void LstSrcLn();
 
   // Phase 8.3: Line processing helper forward declarations
   void NextRec();
@@ -2217,52 +2227,38 @@ namespace {
   }
 #endif  // L81A3
 
-#if 0  // TODO: Phase 9+ - Real DoPass2 has missing dependencies (CurrORG_hi, SrcP_hi, OpcodeT, etc)
-  // DoPass2 - Second pass of assembly
-  void DoPass2() {
-    fprintf(stderr, "=== REAL DoPass2() CALLED ===\n");
-    PassNbr++;  // Flag we are in 2nd pass
+  // Experimental real Pass 2 core.
+  // This is compiled for incremental activation work but is not the default
+  // execution path yet.
+  void DoPass2_ExperimentalCore() {
+    PassNbr  = 1;
     A        = '*';
     RepChar  = A;
     A        = -1;
     ListingF = A;
     PutCR();
     OpenSrc1();  // Re-open initial src file
-    
-    // Debug: log state
-    fprintf(stderr, "DoPass2: OpenSrc1() complete - SrcP=$%04X, TxtEnd=$%04X, DskSrcF=$%02X, GenF=$%02X\n",
-            SrcP, TxtEnd, DskSrcF, GenF);
-    
+
     A = GenF;
     if (A != 0x80) {
-      fprintf(stderr, "DoPass2: GenF=$%02X (not $80), skipping shift\n", A);
       goto Pass2Lup;  // Write obj code into mem? No
     }
 
-    fprintf(stderr, "DoPass2: GenF=$80, shifting to $00 to enable code generation\n");
     A        = CurrORG;     // These 4 inst serves no purpose since
     ObjPC    = A;           // its contents are changed when an
     A        = CurrORG_hi;  // OBJ/ORG directive is declared
     ObjPC_hi = A;           // Renamed as CodeLen if REL file
     GenF <<= 1;             // $00 - Remove suspension
-    fprintf(stderr, "DoPass2: After shift, GenF=$%02X\n", GenF);
-
-    int line_count = 0;  // Debug counter
 
   // Assemble each src line
   Pass2Lup:
-    line_count++;  // Debug: count lines
-    fprintf(stderr, "DoPass2: Line %d - before GSrcLin(), SrcP=$%04X\n", line_count, SrcP);
-    
     GSrcLin();           // Any more src lines to assembled?
     if (!C) goto L7F33;  // BCC
-    
-    fprintf(stderr, "DoPass2: EOF reached after %d lines\n", line_count - 1);
+
     return;
 
   // Init before each line is scanned/parsed
   L7F33:
-    fprintf(stderr, "DoPass2: Line %d - after GSrcLin(), SrcP=$%04X\n", line_count, SrcP);
     Y   = -1;
     ZAB = Y;  // =$FF
     Y++;      // =0
@@ -2289,9 +2285,7 @@ namespace {
   // Should be the lexical analyser/scanner
   L7F57:
     A = SrcP_at(Y);  // Pure comment line?
-    fprintf(stderr, "DoPass2: Line %d - first char=0x%02X ('%c')\n", line_count, A,
-            (A >= 32 && A < 127) ? A : '?');
-    
+
     if (A == '*') goto L7F77;
     if (A == ';') goto L7F77;  // Yes, ignore curr src line
 
@@ -2312,6 +2306,7 @@ namespace {
     goto L806F;
 
   L7F7A:
+    A   = ZAB;
     ZAB = A;  // 1st flag byte after mnem/directive byte
     // BIT Bit80 - Directives?
     if ((A & 0x80) == 0) goto CodeGen;  // No (BEQ)
@@ -2376,7 +2371,7 @@ namespace {
   L7FD5:
     std::abort();  // BRK
   L7FD6:
-    if (A < 9) goto L7FED;    // 0-8 (first 9 modes of AModTbl) (BCC)
+    if (A < 9) goto L7FED;  // 0-8 (first 9 modes of AModTbl) (BCC)
     C = (A >= 12);
     if (A != 12) goto L7FE5;  // (abs,X) (BNE)
     Is65C02();                // Are 65C02 opcodes allowed?
@@ -2497,9 +2492,8 @@ namespace {
     L81A3();
     goto Pass2Lup;  // Assemble next srcline
   L8088:
-    CanclAsm();
+    CanclAsm(0);
   }
-#endif  // DoPass2 redefinition
 
   // RVLsting - Chk if instruction is to be printed
   // C=0 - Yes
@@ -2524,7 +2518,6 @@ namespace {
     C = true;  // SEC
   }
 
-#if 0   // TODO: Phase 9+ - Stub PrtAsmLn calls undeclared ListCode/LstSrcLn
   // PrtAsmLn - Print Assembled Line
   void PrtAsmLn() {
     RVLsting();
@@ -2532,7 +2525,6 @@ namespace {
     ListCode();     // Print generated code
     LstSrcLn();     // Print src stmt
   }
-#endif  // PrtAsmLn
 
   // StorGMC - Store generated machine code
   void StorGMC() {
@@ -2687,6 +2679,30 @@ namespace {
       X = 0x1C;  // zero page range err
       RegAsmEW(X);
     }
+  }
+
+  void IsSW16Reg() {
+    Z = (ValExpr_hi == 0) && ((ValExpr & 0xF0) == 0);
+    if (!Z) {
+      X = 0x32;  // SW16 reg err
+      RegAsmEW(X);
+    }
+  }
+
+  void IsC02Op() {
+    C = false;
+  }
+
+  void ListCode() {
+    // Listing output is still placeholder-driven in the current path.
+  }
+
+  void LstSrcLn() {
+    // Listing output is still placeholder-driven in the current path.
+  }
+
+  void L81A3() {
+    // End-of-line/listing side effects are not wired yet for the experimental path.
   }
 
   void GOpAdr() {
