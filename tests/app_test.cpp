@@ -3816,6 +3816,67 @@ TEST_F(Pass2Test, test_pass2_experimental_dci_small_sets_high_bit_except_last) {
   EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5102);
 }
 
+TEST_F(Pass2Test, test_pass2_experimental_dfb_large_fallback_emits_all_bytes) {
+  const char* source =
+      "      ORG $5200\r"
+      "      DFB $01,$02,$03,$04,$05\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5200), 0x01);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5201), 0x02);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5202), 0x03);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5203), 0x04);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5204), 0x05);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5205);
+}
+
+TEST_F(Pass2Test, test_pass2_experimental_dw_large_fallback_emits_all_words) {
+  const char* source =
+      "      ORG $5300\r"
+      "      DW $1111,$2222,$3333\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5300), 0x11);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5301), 0x11);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5302), 0x22);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5303), 0x22);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5304), 0x33);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5305), 0x33);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5306);
+}
+
+TEST_F(Pass2Test, test_pass2_experimental_asc_large_fallback_emits_all_chars) {
+  const char* source =
+      "      ORG $5400\r"
+      "      ASC \"ABCDE\"\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5400), 0x41);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5401), 0x42);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5402), 0x43);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5403), 0x44);
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5404), 0x45);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5405);
+}
+
 TEST_F(Pass2Test, test_pass2_lda_operand_emits_opcode_byte) {
   // LDA #$01 should emit 0xA9 (opcode), 0x01 (8-bit immediate)
   // LDA immediate addressing: opcode=0xA9, followed by 1-byte operand
