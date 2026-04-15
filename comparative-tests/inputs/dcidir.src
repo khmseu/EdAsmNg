@@ -1,0 +1,4 @@
+ LST ON
+ ORG $800
+ DCI ""
+ DFB $AA
