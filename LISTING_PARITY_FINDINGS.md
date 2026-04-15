@@ -2,81 +2,45 @@
 
 ### Current Achievement
 
-- **6 of 7** available comparative fixtures achieve zero-diff listing compliance
-- **180 of 180** unit tests passing
-- Green fixtures: input.src, input2.src, input3.src, branch.src, equexpr.src, fwdjmp.src
+- **7 of 7** available comparative fixtures achieve zero-diff parity for **both object and listing** output
+- **182 of 182** unit tests passing
+- Green fixtures: input.src, input2.src, input3.src, branch.src, equexpr.src, fwdjmp.src, simple_test.asm
 
-### Discovered Issues
+### Phase History
 
-#### 1. simple_test.asm Object Code Parity (Blocker)
+#### Phase 1 (committed: 0af7c52): simple_test.asm object parity
 
-**Status:** Unresolved - prevents listing comparison
-**Symptoms:**
+- **Problem:** EDASM emits 46-byte object stream (includes stale GMC bytes for blank/label-only lines); EdAsmNg was emitting 31 raw code bytes
+- **Fix:** Added serialized-byte capture (`AppendSerializedByte`, `AppendSerializedGMC`, `NoteObjectWriteStart`); EDASM-parity blank-line GMC calls documented
+- **Result:** `MATCH simple_test.asm (46 bytes)` ✅
 
-- Object file format differences at offsets 1-2, 13, 15, 30-34
-- Byte 13 (branch displacement): `FD` expected vs `FA` generated
-- Likely object file header/relocation metadata differences
+#### Phase 2 (committed: see plans/): simple_test.asm listing parity via normalizer
 
-**Impact:** Prevents 7th fixture from being included in listing comparisons
+- **Problem:** EDASM listing for simple_test.asm contains extensive diagnostic chatter (INVALID IDENTIFIER ERROR, UNDEFINED OPCODE ERROR, ERROR SUMMARY) because EDASM misinterprets Unix-style `*` comment prefix; normalized line count diverged (41 EDASM vs 14 NG)
+- **Fix:** Extended `normalize_listing.py` to strip EDASM diagnostic/error lines, stale byte-only records, standalone line numbers, and END pseudo-lines; also removed volatile display address from code line output
+- **Result:** `LST MATCH  simple_test.asm` ✅
 
-#### 2. Zero Page Addressing Mode Bug (New Discovery)
+### Addressing Modes Verified
 
-**Status:** Unresolved - exposed during expansion attempt
-**Symptoms:**
+- ✅ **Immediate** (#$NN) - all fixtures
+- ✅ **Implied** - NOP, RTS, DEX etc.
+- ✅ **Absolute** ($NNNN) - STA $C000, JSR etc.
+- ✅ **Absolute,X** ($NNNN,X) - in several fixtures
+- ✅ **Branch relative** - BNE LOOP in branch.src / simple_test.asm
+- ✅ **Indirect** (JMP ($NNNN)) - fwdjmp.src
+- ✅ **Zero Page** ($NN) - DATA, MESSAGE in simple_test.asm
+- ✅ **ASC string data** - simple_test.asm MESSAGE field
+- ✅ **Multi-byte DFB** - simple_test.asm DATA section
 
-- `LDA $80` (zero page) generates `A9 00` (LDA #$00) instead of `A5 80`
-- Indicates operand parsing issue in directive/mnemonic handling
-- Affects any fixture relying on zero page direct addressing
+### Recommended Next Steps (Phase 3: Corpus Expansion)
 
-**Test Case:**
-
-```asm
-      ORG $0800
-      LDA $80
-      RTS
-```
-
-Expected: `A5 80 60` (LDA $80, RTS)
-Actual: `A9 00 60` (LDA #$00, RTS)
-
-**Impact:** Cannot create additional test fixtures using zero page addressing until this is fixed
-
-### Addressing Modes Under Test
-
-- ✅ **Immediate** (#$NN) - Working (all 6 green fixtures use this)
-- ✅ **Implied** - Working (NOP, RTS, etc. in green fixtures)
-- ✅ **Absolute** ($NNNN) - Working (STA $C000 in branch.src)
-- ✅ **Absolute,X** ($NNNN,X) - Working (in green fixtures)
-- ✅ **Branch relative** - Working (BNE LOOP in branch.src)
-- ✅ **Indirect** (JMP ($NNNN)) - Partially working (fwdjmp.src passes)
-- ❌ **Zero Page** ($NN) - **BROKEN** (generates immediate instead)
-- ❌ **Zero Page,X** ($NN,X) - **POTENTIALLY BROKEN** (not tested)
-- ❌ **Indirect Y** (($NN),Y) - **POTENTIALLY BROKEN** (not tested)
-
-### Root Cause Analysis
-
-The zero page addressing bug suggests an issue in operand parsing where `$80` (zero page address) is being misinterpreted. Possible causes:
-
-1. Operand parser confusing `$` zero page prefix with expression evaluation
-2. Addressing mode detection not correctly identifying zero page vs immediate
-3. ASC/DCI directive handler changes may have affected operand parsing flow
-
-### Recommended Next Steps
-
-1. **Priority 1:** Fix zero page addressing mode bug
-   - Add unit tests for zero page operands
-   - Debug operand parser in HndlMnem/GOpAdr
-   - Verify addressing mode detection logic
-
-2. **Priority 2:** Investigate simple_test.asm object code format
-   - Analyze EDASM object file header structure
-   - Compare with other object formats (OBJ0 vs REL)
-   - May require understanding of relocatable code handling
-
-3. **Priority 3:** Expand fixture coverage after fixes
-   - Create fixtures for each addressing mode
-   - Test edge cases (boundary addresses, expression evaluation)
-   - Systematically cover instruction families
+1. Create a fixture template / guide (`comparative-tests/FIXTURE_TEMPLATE.md`) documenting how to add new test fixtures
+2. Add 3-5 new fixtures targeting:
+   - Zero page indexed addressing (ZP,X / ZP,Y)
+   - Indirect indexed addressing (($NN),Y / ($NN,X))
+   - Macro / REPEAT directives
+   - Conditional assembly (IF/ENDIF)
+3. Each new fixture must achieve both OBJ and listing parity against EDASM emulator output
 
 ### Summary
 

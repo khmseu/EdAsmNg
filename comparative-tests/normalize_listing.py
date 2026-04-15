@@ -26,6 +26,17 @@ def _canonicalize_listing_line(line: str) -> str | None:
     if not line:
         return None
 
+    # Drop EDASM diagnostic chatter and summary blocks; these are tool-specific
+    # and can be emitted even when object bytes are equivalent.
+    if re.match(r'^\*{5}\s+.+ERROR IN LINE\s+\d+', line):
+        return None
+    if re.match(r'^ERROR SUMMARY\s*$', line):
+        return None
+    if re.match(r'^[A-Z ]+ERROR IN LINE\s+\d+\s+OF FILE', line):
+        return None
+    if re.match(r'^\**\s*\d+\s+ERRORS IN THIS ASSEMBLY\s*$', line):
+        return None
+
     if re.match(r'\*\*\s*ASSEMBLER CREATED ON', line):
         return None
     if re.match(r'\*\*\s*FREE SPACE PAGE COUNT', line):
@@ -63,8 +74,8 @@ def _canonicalize_listing_line(line: str) -> str | None:
 
     source_tokens = tokens[idx:]
     if not source_tokens:
-        if byte_tokens:
-            return f"{address}:{' '.join(byte_tokens)}"
+        # Raw EDASM object-record carryover bytes without source context are
+        # volatile and do not represent semantic listing content.
         return None
 
     mnemonic_index = None
@@ -84,12 +95,19 @@ def _canonicalize_listing_line(line: str) -> str | None:
     if not source_text:
         return None
 
+    # Drop standalone line-number suffixes and END pseudo-lines with stale bytes.
+    if re.fullmatch(r'\d+', source_text):
+        return None
+    if source_text.upper() == 'END':
+        return None
+
     first_token = source_text.split()[0].upper()
     if first_token in DIRECTIVE_TOKENS and first_token not in {'ASC', 'ASCII', 'DCI', 'DFB', 'BYTE', 'DS', 'DW', 'WORD'}:
         return source_text
 
     if byte_tokens:
-        return f"{address}:{' '.join(byte_tokens)} {source_text}"
+        # Compare semantic listing content independent of shifted display address.
+        return f"{' '.join(byte_tokens)} {source_text}"
     return source_text
 
 
