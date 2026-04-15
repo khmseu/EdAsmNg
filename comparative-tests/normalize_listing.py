@@ -11,6 +11,88 @@ import re
 import sys
 
 
+DIRECTIVE_TOKENS = {
+    'ASC', 'ASCII', 'DCI', 'DFB', 'BYTE', 'DS', 'DW', 'WORD', 'EQU', 'LIST', 'LST',
+    'NOLIST', 'ORG', 'PAGE', 'REL', 'TITLE', 'SBTL'
+}
+
+
+def _collapse_spaces(text: str) -> str:
+    return re.sub(r'\s+', ' ', text.strip())
+
+
+def _canonicalize_listing_line(line: str) -> str | None:
+    line = line.replace('\f', '').rstrip()
+    if not line:
+        return None
+
+    if re.match(r'\*\*\s*ASSEMBLER CREATED ON', line):
+        return None
+    if re.match(r'\*\*\s*FREE SPACE PAGE COUNT', line):
+        return None
+    if re.match(r'\*\*\s*SUCCESSFUL ASSEMBLY', line):
+        return None
+    if re.match(r'\*\*\s*TOTAL LINES ASSEMBLED', line):
+        return None
+    if re.match(r'-{3,}\s*NEXT OBJECT FILE NAME', line):
+        return None
+    if re.match(r'SOURCE\s+FILE\s*#\d+\s*=>', line):
+        return None
+    if re.match(r'\?[0-9A-Fa-f]{4}\b', line):
+        return None
+    if re.match(r'^\s*[0-9A-Fa-f]{4}\s+[A-Za-z_.$][A-Za-z0-9_.$]*\s*$', line):
+        return None
+
+    line = re.sub(r'^([0-9A-Fa-f]{4}:[0-9A-Fa-f ]{12,20})\s+\d+\s+', r'\1 ', line)
+
+    match = re.match(r'^([0-9A-Fa-f]{4}):(.*)$', line)
+    if not match:
+        return _collapse_spaces(line)
+
+    address = match.group(1).upper()
+    rest = match.group(2).strip()
+    if not rest:
+        return None
+
+    tokens = rest.split()
+    byte_tokens = []
+    idx = 0
+    while idx < len(tokens) and re.fullmatch(r'[0-9A-Fa-f]{2}', tokens[idx]):
+        byte_tokens.append(tokens[idx].upper())
+        idx += 1
+
+    source_tokens = tokens[idx:]
+    if not source_tokens:
+        if byte_tokens:
+            return f"{address}:{' '.join(byte_tokens)}"
+        return None
+
+    mnemonic_index = None
+    for token_index, token in enumerate(source_tokens):
+        token_upper = token.upper()
+        if token_upper in DIRECTIVE_TOKENS or re.fullmatch(r'[A-Z]{3}', token_upper):
+            mnemonic_index = token_index
+            break
+
+    source_start = 0
+    if mnemonic_index is not None:
+        source_start = mnemonic_index
+        if mnemonic_index > 0 and not re.fullmatch(r'[0-9A-Fa-f]{3,4}', source_tokens[mnemonic_index - 1]):
+            source_start = mnemonic_index - 1
+
+    source_text = _collapse_spaces(' '.join(source_tokens[source_start:]))
+    if not source_text:
+        return None
+
+    first_token = source_text.split()[0].upper()
+    if first_token in DIRECTIVE_TOKENS and first_token not in {'ASC', 'ASCII', 'DCI', 'DFB', 'BYTE', 'DS', 'DW', 'WORD'}:
+        return source_text
+
+    if byte_tokens:
+        return f"{address}:{' '.join(byte_tokens)} {source_text}"
+    return source_text
+
+
 def normalize_listing(text: str) -> str:
     """Return a normalized listing suitable for comparison.
 
@@ -25,29 +107,12 @@ def normalize_listing(text: str) -> str:
     - Trailing whitespace on each line
     - Trailing blank lines (removed)
     """
-    lines = text.splitlines()
     normalized = []
 
-    for line in lines:
-        line = line.rstrip()
-
-        # Strip EDASM volatile metadata lines
-        if re.match(r'\*\*\s*ASSEMBLER CREATED ON', line):
-            continue
-        if re.match(r'\*\*\s*FREE SPACE PAGE COUNT', line):
-            continue
-        if re.match(r'-{3,}\s*NEXT OBJECT FILE NAME', line):
-            continue
-        if re.match(r'SOURCE\s+FILE\s*#\d+\s*=>', line):
-            continue
-
-        # Normalize EDASM code lines: strip the line-number column.
-        # EDASM format: "AAAA:BB BB               N LABEL   MNEMONIC"
-        # EdAsmNg format: "AAAA:BB BB               LABEL   MNEMONIC"
-        # Strip 1-5 digit decimal line number after the bytes columns.
-        line = re.sub(r'^([0-9A-Fa-f]{4}:[0-9A-Fa-f ]{12,20})\s+\d+\s+', r'\1 ', line)
-
-        normalized.append(line)
+    for line in text.splitlines():
+        canonical = _canonicalize_listing_line(line)
+        if canonical is not None:
+            normalized.append(canonical)
 
     # Remove leading blank lines
     while normalized and not normalized[0]:

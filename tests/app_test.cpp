@@ -4045,6 +4045,33 @@ TEST_F(Pass2Test, test_pass2_listing_line_source_copy_includes_char_at_0xFF_boun
   EXPECT_EQ(listing, expectedListing);
 }
 
+TEST_F(Pass2Test,
+       test_pass2_listing_line_large_asc_emits_first_four_bytes_and_preserves_following_line) {
+  const char* source =
+      "      ORG $0800\r"
+      "      ASC \"HELLO\"\r"
+      "      DFB $00\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::DoPass1();
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+  EdAsmNg::Asm::SetListingF(0xFF);
+  EdAsmNg::Asm::ResetListingSink();
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  const std::string listing = EdAsmNg::Asm::GetListingSink();
+  const std::string expectedListing =
+      "\n"
+      "0800:48 45 4C 4C        ASC \"HELLO\"\n"
+      "0805:00                 DFB $00\n";
+  EXPECT_EQ(listing, expectedListing);
+}
+
 TEST_F(Pass2Test, test_pass2_list_directive_sets_listing_flag) {
   EdAsmNg::Asm::SetPassNbr(1);
   EdAsmNg::Asm::SetListingF(0x00);

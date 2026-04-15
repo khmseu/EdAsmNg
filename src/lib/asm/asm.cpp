@@ -2785,6 +2785,36 @@ namespace {
     PutCR();
   }
 
+  void EmitExplicitListingLine(std::uint16_t lineAddress, const std::uint8_t* bytes,
+                               std::uint8_t byteCount) {
+    RVLsting();
+    if (C) return;
+
+    EmitListingHex16(lineAddress);
+    PutC(':');
+
+    std::uint8_t printedLen = byteCount;
+    if (printedLen > 4) {
+      printedLen = 4;
+    }
+
+    std::uint8_t codeChars = 0;
+    for (std::uint8_t i = 0; i < printedLen; ++i) {
+      if (i != 0) {
+        PutC(' ');
+        codeChars++;
+      }
+      PrByte(bytes[i]);
+      codeChars += 2;
+    }
+
+    if (codeChars < 12) {
+      EmitListingSpaces(static_cast<std::uint8_t>(12 - codeChars));
+    }
+    PutC(' ');
+    LstSrcLn();
+  }
+
   void L81A3() {
     // End-of-line/listing side effects are not wired yet for the experimental path.
   }
@@ -4351,16 +4381,26 @@ namespace {
         }
         QueueExperimentalBytes(queuedAscii, static_cast<std::uint8_t>(len));
       } else {
+        std::uint16_t listingAddr         = ObjPC;
+        std::uint8_t  displayedAscii[4]   = {0, 0, 0, 0};
+        std::uint8_t  displayedAsciiCount = 0;
         for (uint16_t i = 0; i < len; i++) {
           uint8_t out = SrcP_at(Y);
           if (is_dci && i < (len - 1)) {
             out |= 0x80;
+          }
+          if (displayedAsciiCount < 4) {
+            displayedAscii[displayedAsciiCount] = out;
+            displayedAsciiCount++;
           }
           A = out;
           StorByt();
           Y++;
         }
         PC = ObjPC;
+        if (g_use_experimental_pass2) {
+          EmitExplicitListingLine(listingAddr, displayedAscii, displayedAsciiCount);
+        }
       }
       C = false;
       return;
