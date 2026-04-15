@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 // EdAsmNg Assembler Public API
 // This header provides the test-facing API for the assembler implementation.
@@ -73,13 +74,18 @@ namespace EdAsmNg {
     // Memory & Code Generation
     //=================================================
 
-    void         StorByt(std::uint8_t byte);
-    std::uint8_t ReadObjMemory(std::uint16_t addr);
-    void         WriteObjMemory(std::uint16_t addr, std::uint8_t value);
-    void         InitObjMemory();
-    void         EnableTestObjMemory(bool enable);
-    std::uint8_t GetTestObjMemory(std::uint16_t addr);
-    void         ClearTestObjMemory();
+    void                      StorByt(std::uint8_t byte);
+    std::uint8_t              ReadObjMemory(std::uint16_t addr);
+    void                      WriteObjMemory(std::uint16_t addr, std::uint8_t value);
+    void                      InitObjMemory();
+    void                      EnableTestObjMemory(bool enable);
+    std::uint8_t              GetTestObjMemory(std::uint16_t addr);
+    void                      ClearTestObjMemory();
+    void                      EnableSerializedObjectCapture(bool enable);
+    void                      ClearSerializedObjectBytes();
+    std::vector<std::uint8_t> GetSerializedObjectBytes();
+    bool                      HasObjectWriteStartAddr();
+    std::uint16_t             GetObjectWriteStartAddr();
 
     //=================================================
     // Instruction Encoding State

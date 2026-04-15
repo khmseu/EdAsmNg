@@ -2,10 +2,12 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
 #include "EdAsmNg/asm.hpp"
 #include "asm_test_helpers.hpp"
@@ -17,6 +19,12 @@ namespace {
     std::ostringstream ss;
     ss << in.rdbuf();
     return ss.str();
+  }
+
+  std::vector<std::uint8_t> ReadBinaryFile(const std::filesystem::path& filePath) {
+    std::ifstream in(filePath, std::ios::binary);
+    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(in),
+                                     std::istreambuf_iterator<char>());
   }
 
   std::string QuoteArg(const std::filesystem::path& arg) {
@@ -130,6 +138,87 @@ TEST(CliListingTests, ListingOutputContainsActualCodeLines) {
   EXPECT_NE(listingText.find("0800:EA"), std::string::npos)
       << "Listing should contain actual code line '0800:EA', got:\n"
       << listingText;
+}
+
+TEST(CliObjectTests, SimpleProgramWithBlankLinesMatchesEDASMParitySerializedObjectBytes) {
+  const std::filesystem::path tempDir =
+      std::filesystem::temp_directory_path() / "edasmng_cli_object_simple_test";
+  const std::filesystem::path sourcePath = tempDir / "simple_test.asm";
+  const std::filesystem::path objectPath = tempDir / "simple_test.obj";
+
+  std::filesystem::create_directories(tempDir);
+
+  {
+    std::ofstream sourceFile(sourcePath);
+    ASSERT_TRUE(sourceFile.is_open());
+    sourceFile << "* SIMPLE TEST FILE FOR EDASM COMPARISON\n";
+    sourceFile << "* Tests basic assembly operations\n";
+    sourceFile << "\n";
+    sourceFile << "        ORG   $0800\n";
+    sourceFile << "\n";
+    sourceFile << "START   LDA   #$00\n";
+    sourceFile << "        STA   $C000\n";
+    sourceFile << "        LDX   #$10\n";
+    sourceFile << "LOOP    DEX\n";
+    sourceFile << "        BNE   LOOP\n";
+    sourceFile << "        RTS\n";
+    sourceFile << "\n";
+    sourceFile << "DATA    DFB   $01,$02,$03,$04\n";
+    sourceFile << "        DFB   $05,$06,$07,$08\n";
+    sourceFile << "\n";
+    sourceFile << "MESSAGE ASC   \"HELLO WORLD\"\n";
+    sourceFile << "        DFB   $00\n";
+    sourceFile << "\n";
+    sourceFile << "END\n";
+  }
+
+  std::filesystem::remove(objectPath);
+
+  std::string cmd = QuoteArg(std::filesystem::path(EDASMNG_APP_PATH)) + " " + QuoteArg(sourcePath) +
+                    " --object " + QuoteArg(objectPath) + " > /dev/null 2>&1";
+  const int rc = std::system(cmd.c_str());
+  ASSERT_EQ(rc, 0);
+
+  ASSERT_TRUE(std::filesystem::exists(objectPath));
+  const std::vector<std::uint8_t> objectBytes = ReadBinaryFile(objectPath);
+  // This intentionally matches EDASM parity serialization, including legacy
+  // stale-GMC carryover bytes around blank/label-only source records.
+  // It is not a clean contiguous in-memory image dump.
+  const std::vector<std::uint8_t> expectedBytes = {
+      0x00, 0x06, 0x07, 0xA9, 0x00, 0x8D, 0x00, 0xC0, 0xA2, 0x10, 0xCA, 0xD0,
+      0xFD, 0x60, 0x60, 0xFD, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+      0x08, 0x05, 0x06, 0x07, 0x48, 0x45, 0x4C, 0x4C, 0x4F, 0x20, 0x57, 0x4F,
+      0x52, 0x4C, 0x44, 0x00, 0x00, 0x4C, 0x44, 0x00, 0x4C, 0x44,
+  };
+
+  EXPECT_EQ(objectBytes, expectedBytes);
+}
+
+TEST(CliObjectTests, ObjectWriteStartTracksFirstPass2EmissionWithoutSerializedCapture) {
+  EdAsmNg::Asm::ResetErrorState();
+  EdAsmNg::Asm::ResetAsmState();
+  EdAsmNg::Asm::SetPC(0);
+  EdAsmNg::Asm::EnableTestObjMemory(true);
+  EdAsmNg::Asm::ClearTestObjMemory();
+  EdAsmNg::Asm::EnableSerializedObjectCapture(false);
+  EdAsmNg::Asm::ClearSerializedObjectBytes();
+
+  const std::string source =
+      "        ORG   $0800\r"
+      "        NOP\r";
+  EdAsmNg::Asm::SetupMemorySource(source.c_str(), source.size());
+
+  EdAsmNg::Asm::SetPassNbr(0);
+  EdAsmNg::Asm::DoPass1();
+
+  EdAsmNg::Asm::RewindSource();
+  EdAsmNg::Asm::SetPassNbr(1);
+  EdAsmNg::Asm::SetGenF(0);
+  EdAsmNg::Asm::DoPass2();
+
+  EXPECT_TRUE(EdAsmNg::Asm::HasObjectWriteStartAddr());
+  EXPECT_EQ(EdAsmNg::Asm::GetObjectWriteStartAddr(), 0x0800);
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x0801);
 }
 
 class ListingPrimitiveTest : public ::testing::Test {

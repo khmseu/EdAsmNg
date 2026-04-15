@@ -76,6 +76,8 @@ int main(int argc, char* argv[]) {
     EdAsmNg::Asm::SetPC(0);
     EdAsmNg::Asm::EnableTestObjMemory(true);
     EdAsmNg::Asm::ClearTestObjMemory();
+    EdAsmNg::Asm::EnableSerializedObjectCapture(true);
+    EdAsmNg::Asm::ClearSerializedObjectBytes();
     if (!listing_file.empty()) {
       EdAsmNg::Asm::SetListingF(0xFF);
     }
@@ -91,9 +93,9 @@ int main(int argc, char* argv[]) {
     std::cout << "Pass 2...\n";
     EdAsmNg::Asm::RewindSource();
     EdAsmNg::Asm::SetPassNbr(1);
-    uint16_t pass2_start_objpc = EdAsmNg::Asm::GetObjPC();
     EdAsmNg::Asm::SetGenF(0);  // Enable code generation (clear suspension flag)
     EdAsmNg::Asm::DoPass2();
+    uint16_t pass2_end_objpc = EdAsmNg::Asm::GetObjPC();
 
     std::cout << "Pass 3...\n";
     EdAsmNg::Asm::RewindSource();
@@ -111,18 +113,29 @@ int main(int argc, char* argv[]) {
     std::cout << "  CurAdr: $" << std::hex << curadr << "\n";
 
     // Write object file if requested
-    if (!object_file.empty() && objpc > 0) {
-      // Write the full generated object range from pass2 start to final ObjPC.
-      // This preserves valid zero bytes in code/data (e.g., DFB $00).
-      if (objpc > pass2_start_objpc) {
-        std::vector<uint8_t> obj_data;
-        for (uint16_t addr = pass2_start_objpc; addr < objpc; addr++) {
+    if (!object_file.empty() && pass2_end_objpc > 0) {
+      std::vector<uint8_t> obj_data          = EdAsmNg::Asm::GetSerializedObjectBytes();
+      uint16_t             object_start_addr = 0;
+
+      if (!obj_data.empty()) {
+        if (EdAsmNg::Asm::HasObjectWriteStartAddr()) {
+          object_start_addr = EdAsmNg::Asm::GetObjectWriteStartAddr();
+        } else if (pass2_end_objpc >= obj_data.size()) {
+          object_start_addr = static_cast<uint16_t>(pass2_end_objpc - obj_data.size());
+        }
+      } else if (EdAsmNg::Asm::HasObjectWriteStartAddr() &&
+                 pass2_end_objpc > EdAsmNg::Asm::GetObjectWriteStartAddr()) {
+        object_start_addr = EdAsmNg::Asm::GetObjectWriteStartAddr();
+        for (uint16_t addr = object_start_addr; addr < pass2_end_objpc; addr++) {
           obj_data.push_back(EdAsmNg::Asm::GetTestObjMemory(addr));
         }
+      }
+
+      if (!obj_data.empty()) {
         write_binary(object_file, obj_data);
         std::cout << "Wrote " << obj_data.size() << " bytes to " << object_file << " (range $"
-                  << std::hex << pass2_start_objpc << "-$" << static_cast<uint16_t>(objpc - 1)
-                  << ")\n";
+                  << std::hex << object_start_addr << "-$"
+                  << static_cast<uint16_t>(object_start_addr + obj_data.size() - 1) << ")\n";
       } else {
         std::cout << "No code generated, object file not written\n";
       }

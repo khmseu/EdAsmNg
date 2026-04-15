@@ -56,15 +56,20 @@ namespace {
   // These simulate the 6502 processor registers and flags
   // used throughout the translated assembly code
   //=================================================
-  std::uint8_t A                           = 0;      // Accumulator
-  std::uint8_t X                           = 0;      // X index register
-  std::uint8_t Y                           = 0;      // Y index register
-  bool         C                           = false;  // Carry flag
-  bool         Z                           = false;  // Zero flag
-  bool         N                           = false;  // Negative flag
-  bool         V                           = false;  // Overflow flag
-  bool         g_use_experimental_pass2    = true;
-  bool         g_experimental_prepared_gmc = false;
+  std::uint8_t              A                           = 0;      // Accumulator
+  std::uint8_t              X                           = 0;      // X index register
+  std::uint8_t              Y                           = 0;      // Y index register
+  bool                      C                           = false;  // Carry flag
+  bool                      Z                           = false;  // Zero flag
+  bool                      N                           = false;  // Negative flag
+  bool                      V                           = false;  // Overflow flag
+  bool                      g_use_experimental_pass2    = true;
+  bool                      g_experimental_prepared_gmc = false;
+  bool                      g_capture_serialized_obj    = false;
+  bool                      g_serialized_obj_active     = false;
+  bool                      g_object_write_start_valid  = false;
+  std::uint16_t             g_object_write_start_addr   = 0;
+  std::vector<std::uint8_t> g_serialized_obj_bytes;
 
   //=================================================
   // Forward Declarations (for functions used before defined)
@@ -81,6 +86,29 @@ namespace {
   void AddRLDEnt();  // Phase 8.5.3: RLD entry creation
   void AdvSrcP();
   void StorGMC();
+
+  void AppendSerializedByte(std::uint8_t value) {
+    if (g_capture_serialized_obj && AsmInternal::PassNbr == 1) {
+      g_serialized_obj_active = true;
+      g_serialized_obj_bytes.push_back(value);
+    }
+  }
+
+  void AppendSerializedGMC(std::uint8_t count) {
+    if (!(g_capture_serialized_obj && g_serialized_obj_active && AsmInternal::PassNbr == 1)) {
+      return;
+    }
+    for (std::uint8_t index = 0; index < count && index < 4; ++index) {
+      g_serialized_obj_bytes.push_back(AsmInternal::GMC[index]);
+    }
+  }
+
+  void NoteObjectWriteStart(std::uint16_t addr) {
+    if (!g_object_write_start_valid) {
+      g_object_write_start_valid = true;
+      g_object_write_start_addr  = addr;
+    }
+  }
 
   // Helper functions for GAdrMod
   void IsZPMod();
@@ -2243,11 +2271,12 @@ namespace {
   // This is compiled for incremental activation work but is not the default
   // execution path yet.
   void DoPass2_ExperimentalCore() {
-    PassNbr  = 1;
-    A        = '*';
-    RepChar  = A;
-    A        = -1;
-    ListingF = A;
+    PassNbr                 = 1;
+    g_serialized_obj_active = false;
+    A                       = '*';
+    RepChar                 = A;
+    A                       = -1;
+    ListingF                = A;
     PutCR();
     OpenSrc1();  // Re-open initial src file
 
@@ -2301,11 +2330,22 @@ namespace {
 
     if (A == '*') goto L7F77;
     if (A == ';') goto L7F77;  // Yes, ignore curr src line
+    if (A == CR) {
+      // EDASM parity behavior: blank lines serialize stale GMC bytes from the
+      // prior generated statement; do not "clean up" without parity review.
+      AppendSerializedGMC(3);
+      goto L7F77;
+    }
 
     // Ignore the label field and go directly to the mnemonic field
-    L81F0();            // Skip over non-blanks
-    if (Z) goto L7F6E;  // Got a cr (BNE -> BEQ inverted)
-    NxtField();         // Skip over 1 or more blanks
+    L81F0();  // Skip over non-blanks
+    if (Z) {
+      // EDASM parity behavior: label-only records also serialize stale GMC.
+      // This is intentional for current serialized-object compatibility.
+      AppendSerializedGMC(3);
+      goto L7F77;
+    }
+    NxtField();  // Skip over 1 or more blanks
     {
       uint16_t pre_objpc = ObjPC;
       HndlMnem();
@@ -2318,7 +2358,6 @@ namespace {
       }
     }
 
-  L7F6E:
     X = 0x04;  // undefined opcode
     RegAsmEW(X);
   L7F73:
@@ -2559,9 +2598,11 @@ namespace {
     // BIT GenF - Is code generation suppressed?
     if ((int8_t)GenF < 0) return;        // Yes (BMI doRTS7)
     if ((GenF & 0x40) != 0) goto L80C5;  // Write to disk (BVS)
+    NoteObjectWriteStart(static_cast<std::uint16_t>(ObjPC + Y));
     if (g_test_obj_memory_enabled) {
       g_test_obj_memory[static_cast<uint16_t>(ObjPC + Y)] = A;  // Write to mem
     }
+    AppendSerializedByte(A);
     // BVC L80C8 - always
     goto L80C8;
   L80C5:
@@ -2647,9 +2688,11 @@ namespace {
     if ((int8_t)GenF < 0) return;  // Yes (BMI doRTS8)
 
     // Write to memory (test mode)
+    NoteObjectWriteStart(ObjPC);
     if (g_test_obj_memory_enabled) {
       g_test_obj_memory[ObjPC] = A;
     }
+    AppendSerializedByte(A);
 
     // INC ObjPC - Increment 16-bit ObjPC
     ObjPC++;
@@ -2680,8 +2723,10 @@ namespace {
     for (std::uint8_t index = 0; index < count && index < 4; ++index) {
       GMC[index] = bytes[index];
     }
-    for (std::uint8_t index = count; index < 4; ++index) {
-      GMC[index] = 0;
+    if (count != 1) {
+      for (std::uint8_t index = count; index < 4; ++index) {
+        GMC[index] = 0;
+      }
     }
     LstCodeF                    = 0x27;
     g_experimental_prepared_gmc = true;
@@ -3954,8 +3999,9 @@ namespace {
           Y = savedY;
         } else {
           // Valid address: Set both PC and ObjPC in both passes
-          PC    = addr;
-          ObjPC = addr;
+          PC                      = addr;
+          ObjPC                   = addr;
+          g_serialized_obj_active = true;
         }
       }
 
@@ -4131,8 +4177,9 @@ namespace {
           X = 0x24;
           RegAsmEW(X);
         } else {
-          PC    = addr;
-          ObjPC = addr;
+          PC                      = addr;
+          ObjPC                   = addr;
+          g_serialized_obj_active = true;
         }
       }
       Length = 0;
@@ -4222,26 +4269,57 @@ namespace {
       uint16_t byteCount = 0;
 
       if (PassNbr == 0) {
-        // Pass 1: Just count comma-separated operands to determine byte count
+        // Pass 1: Count comma-separated operands and preserve the last parsed
+        // GMC bytes so pass-2 blank-line serialization matches EDASM.
+        std::uint8_t previewBytes[4] = {GMC[0], GMC[1], GMC[2], GMC[3]};
         while (true) {
           while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
           uint8_t ch = SrcP_at(Y);
           if (ch == CR || ch == 0) break;
 
-          //  Skip over the operand (any non-comma, non-CR sequence)
-          while (true) {
-            ch = SrcP_at(Y);
-            if (ch == CR || ch == 0 || ch == ',') break;
+          if (ch == '$') {
+            std::uint16_t value = 0;
             Y++;
+            while (true) {
+              ch = SrcP_at(Y);
+              if (ch >= '0' && ch <= '9') {
+                value = static_cast<std::uint16_t>((value << 4) | (ch - '0'));
+                Y++;
+              } else if (ch >= 'A' && ch <= 'F') {
+                value = static_cast<std::uint16_t>((value << 4) | (ch - 'A' + 10));
+                Y++;
+              } else if (ch >= 'a' && ch <= 'f') {
+                value = static_cast<std::uint16_t>((value << 4) | (ch - 'a' + 10));
+                Y++;
+              } else {
+                break;
+              }
+            }
+            if (byteCount < 4) {
+              previewBytes[byteCount] = static_cast<std::uint8_t>(value & 0xFF);
+            }
+          } else {
+            while (true) {
+              ch = SrcP_at(Y);
+              if (ch == CR || ch == 0 || ch == ',') break;
+              Y++;
+            }
           }
           byteCount++;
 
-          // Look for comma
           while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
           if (SrcP_at(Y) == ',') {
             Y++;
           } else {
             break;
+          }
+        }
+        if (byteCount > 0) {
+          GMC[0] = previewBytes[0];
+          if (byteCount > 1) {
+            GMC[1] = previewBytes[1];
+            GMC[2] = previewBytes[2];
+            GMC[3] = previewBytes[3];
           }
         }
         Length = byteCount;
@@ -4384,6 +4462,7 @@ namespace {
         std::uint16_t listingAddr         = ObjPC;
         std::uint8_t  displayedAscii[4]   = {0, 0, 0, 0};
         std::uint8_t  displayedAsciiCount = 0;
+        std::uint8_t  chunkIndex          = 0;
         for (uint16_t i = 0; i < len; i++) {
           uint8_t out = SrcP_at(Y);
           if (is_dci && i < (len - 1)) {
@@ -4393,11 +4472,17 @@ namespace {
             displayedAscii[displayedAsciiCount] = out;
             displayedAsciiCount++;
           }
+          GMC[chunkIndex] = out;
+          chunkIndex++;
+          if (chunkIndex == 4) {
+            chunkIndex = 0;
+          }
           A = out;
           StorByt();
           Y++;
         }
-        PC = ObjPC;
+        GMCIdx = chunkIndex == 0 ? 4 : chunkIndex;
+        PC     = ObjPC;
         if (g_use_experimental_pass2) {
           EmitExplicitListingLine(listingAddr, displayedAscii, displayedAsciiCount);
         }
@@ -8063,6 +8148,31 @@ namespace EdAsmNg {
       std::memset(g_test_obj_memory, 0, sizeof(g_test_obj_memory));
     }
 
+    void EnableSerializedObjectCapture(bool enable) {
+      g_capture_serialized_obj = enable;
+      g_serialized_obj_active  = false;
+      if (!enable) {
+        g_serialized_obj_bytes.clear();
+      }
+    }
+
+    void ClearSerializedObjectBytes() {
+      g_serialized_obj_bytes.clear();
+      g_serialized_obj_active = false;
+    }
+
+    std::vector<std::uint8_t> GetSerializedObjectBytes() {
+      return g_serialized_obj_bytes;
+    }
+
+    bool HasObjectWriteStartAddr() {
+      return g_object_write_start_valid;
+    }
+
+    std::uint16_t GetObjectWriteStartAddr() {
+      return g_object_write_start_addr;
+    }
+
     // Get GMC buffer (for testing direct byte output)
     uint8_t GetGMC(uint8_t index) {
       if (index < 4) {
@@ -8591,14 +8701,17 @@ namespace EdAsmNg {
     // Reset assembler state for clean testing
     void ResetAsmState() {
       // Reset Pass 1 relevant state
-      PassNbr  = 0;
-      PC       = 0;
-      ObjPC    = 0;
-      RelCodeF = 0;
-      DummyF   = 0;  // Clear DummyF (DSECT) for test isolation
-      SymNbr   = 0;
-      ErrorF   = 0;
-      GenF     = 0x80;  // Initialize for code generation (will be shifted to 0x00 in Pass 2)
+      PassNbr                    = 0;
+      PC                         = 0;
+      ObjPC                      = 0;
+      RelCodeF                   = 0;
+      DummyF                     = 0;  // Clear DummyF (DSECT) for test isolation
+      SymNbr                     = 0;
+      g_serialized_obj_active    = false;
+      g_object_write_start_valid = false;
+      g_object_write_start_addr  = 0;
+      ErrorF                     = 0;
+      GenF = 0x80;  // Initialize for code generation (will be shifted to 0x00 in Pass 2)
       g_use_experimental_pass2    = true;
       g_experimental_prepared_gmc = false;
 
@@ -8632,6 +8745,8 @@ namespace EdAsmNg {
 
       // Reset deterministic low-level listing sink state.
       g_listing_sink.clear();
+      g_serialized_obj_bytes.clear();
+      g_capture_serialized_obj = false;
     }
 
     void ResetListingSink() {
