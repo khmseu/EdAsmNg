@@ -1,54 +1,63 @@
-## Plan: Expand Listing Parity to Simple Test & Beyond
+## Plan: Expand Comparative Fixture Corpus
 
-Achieve zero-diff listing comparison across all available comparative test fixtures, and establish infrastructure for expanding the test corpus. Currently 6 of 7 fixtures pass listing comparison (input.src, input2.src, input3.src, branch.src, equexpr.src, fwdjmp.src). The simple_test.asm fixture has object code parity issues that prevent listing comparison inclusion. This plan addresses object parity remediation and establishes a path forward for creating additional comparable fixtures.
+Preserve the core project goal: EdAsmNg should accept the same sources as original EDASM and produce matching binary, object, and listing output aside from OS-specific differences such as charset, line endings, and file attributes. With 7 of 7 current fixtures now green, this plan expands the comparative corpus in small phases that either document parity-safe fixture authoring or add fixtures for behavior EdAsmNg already mirrors closely.
 
-**Phases: 3 phases**
+**Phases: 4 phases**
 
-1. **Phase 1: Investigate and Fix simple_test.asm Object Parity**
-   - **Objective:** Resolve the object code differences in simple_test.asm (currently 5 byte mismatches at offsets 1-2, 13, 15, and 30-34 in object file header/relocation sections) so it can be included in listing comparison.
+1. **Phase 1: Document Parity-Safe Fixture Authoring**
+   - **Objective:** Create a fixture guide that documents how to add sources that both EDASM and EdAsmNg can assemble with matching semantic output, including naming rules, syntax constraints, and validation steps.
    - **Files/Functions to Modify/Create:**
-     - src/lib/asm/asm.cpp (Pass 2 object generation, relocation handling)
-     - tests/app_test.cpp (if new regressions tests needed for object-file format)
+     - comparative-tests/FIXTURE_TEMPLATE.md
    - **Tests to Write:**
-     - Unit test for object file header format correctness
-     - Test for relocation data structures in object output
-     - Test for DFB relative addressing in object code
+     - No code tests; verification is review of guidance against compare.py discovery rules and current fixture behavior.
    - **Steps:**
-     1. Write unit test for object file header format (expected 46 bytes from simple_test.asm)
-     2. Run test to see current vs expected format
-     3. Identify which phase-2 or phase-3 code generates object header bytes (offsets 0-2)
-     4. Identify relocation data encoding differences (offsets 13, 15, 30-34)
-     5. Fix object generation to match EDASM format
-     6. Verify all tests pass and simple_test.asm comparision goes green
+     1. Document fixture naming and extension rules used by compare.py (`.src`/`.asm`, ProDOS-safe stems)
+     2. Document source-authoring constraints needed for EDASM parity, including comment syntax and directives already covered in the current corpus
+     3. Document the verification workflow using compare.py object and listing comparison modes
+     4. Review the guide against current green fixtures to ensure it matches real repo behavior
 
-2. **Phase 2: Enable Listing Comparison for simple_test.asm**
-   - **Objective:** Once object parity is fixed, add simple_test.asm to the listing comparison test set to achieve 7/7 green.
+2. **Phase 2: Add Directive-Only Fixtures That Already Mirror EDASM**
+   - **Objective:** Add new comparative fixtures for directives already implemented and covered by unit tests, increasing corpus breadth without first expanding instruction dispatch.
    - **Files/Functions to Modify/Create:**
-     - comparative-tests/compare.py (update test list)
+     - comparative-tests/inputs/dwdir.src
+     - comparative-tests/inputs/dsdir.src
+     - comparative-tests/inputs/dcidir.src
    - **Tests to Write:**
-     - Comparative listing test for simple_test.asm
+     - Comparative checks showing `MATCH` and `LST MATCH` for each new fixture
    - **Steps:**
-     1. Verify object parity is green: `python3 compare.py --no-build simple_test.asm`
-     2. Run listing comparison: `python3 compare.py --no-build --compare-listing simple_test.asm`
-     3. If differences remain, debug normalized listing output
-     4. Commit when 7 matched fixtures achieved
+     1. Add a `DW` fixture that exercises little-endian word emission
+     2. Add a `DS` fixture that exercises zero-filled storage generation
+     3. Add a `DCI` fixture that exercises EDASM-compatible string encoding
+     4. Run compare.py for each fixture and fix any parity gaps exposed by real EDASM output
 
-3. **Phase 3: Establish Corpus Expansion Infrastructure**
-   - **Objective:** Create a documented process and set of fixture templates for adding new test cases to the comparative harness, enabling broader coverage without manual fixture creation.
+3. **Phase 3: Add Minimal Instruction Coverage Extensions Needed for New Fixtures**
+   - **Objective:** Extend the experimental pass-2 mnemonic handling only where needed to support new parity-driven fixtures, starting with opcodes EDASM accepts and that fit the current structure closely.
    - **Files/Functions to Modify/Create:**
-     - comparative-tests/FIXTURE_TEMPLATE.md (new)
-     - comparative-tests/inputs/ (new fixture examples)
-     - plans/expansion-strategy.md (new)
+     - src/lib/asm/asm.cpp
+     - tests/app_test.cpp
+     - comparative-tests/inputs/jsrsubr.src
+     - comparative-tests/inputs/absidx.src
    - **Tests to Write:**
-     - New fixture files covering: zero-page addressing, indirect addressing, macros/repeats, conditional assembly, expression evaluation
+     - Unit test for `JSR` absolute emission
+     - Unit test for absolute-indexed `LDA` emission
+     - Unit test for absolute-indexed `STA` emission
+     - Comparative checks for the new fixtures
    - **Steps:**
-     1. Document fixture creation template and guidelines
-     2. Create 3-5 new fixture files targeting underrepresented addressing modes or features
-     3. Verify each fixture achieves object AND listing parity
-     4. Document lessons learned and next fixtures to prioritize
+     1. Add failing unit tests for `JSR`, `LDA abs,X`, and `STA abs,Y`
+     2. Implement the minimal `HndlMnem()` support needed for those modes while preserving EDASM-style behavior
+     3. Add fixture sources that exercise those opcodes in parity-safe ways
+     4. Run unit and comparative tests to confirm object and listing parity
+
+4. **Phase 4: Update Coverage Summary**
+   - **Objective:** Refresh the parity findings to reflect the expanded corpus and note what remains intentionally deferred.
+   - **Files/Functions to Modify/Create:**
+     - LISTING_PARITY_FINDINGS.md
+   - **Tests to Write:**
+     - No new code tests; verification comes from the completed compare.py runs from earlier phases
+   - **Steps:**
+     1. Update fixture counts and covered directives/addressing modes
+     2. Document remaining deferred parity work such as zero-page and indirect indexed instruction support
 
 **Open Questions:**
 
-1. Should simple_test.asm object differences be handled as a separate bug fix, or is this blockable on Phase 1 completion?
-2. Are there preferred addressing modes or features for new fixtures in Phase 3 expansion?
-3. Should Phase 3 defer to a later task, or pursue in this session if time permits?
+1. None blocking for implementation; use short, parity-safe fixtures and prefer local labels over ROM-specific addresses.
