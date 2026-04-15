@@ -8666,13 +8666,8 @@ namespace EdAsmNg {
     }
 
     std::string BuildListingOutput(const char* sourceName) {
-      std::ostringstream listing;
-      listing << "EdAsmNg Assembler Listing\n";
-      listing << "Source: " << (sourceName ? sourceName : "") << "\n";
-      listing << "PC: $" << std::hex << PC << "\n";
-      listing << "ObjPC: $" << std::hex << ObjPC << "\n";
-      listing << "CurAdr: $" << std::hex << GetCurAdr() << "\n";
-      return listing.str();
+      (void)sourceName;
+      return g_listing_sink;
     }
 
     uint16_t GetSymNodeP() {

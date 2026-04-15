@@ -9,6 +9,7 @@ Usage:
 
 If no inputs are given, all files in comparative-tests/inputs/ are tested.
 Pass --max-instructions N to raise the emulator budget (default: 2000000).
+Pass --compare-listing to also compare normalized listing files.
 """
 
 from __future__ import annotations
@@ -21,6 +22,10 @@ import subprocess  # nosec B404
 import sys
 import tempfile
 from pathlib import Path
+
+# Import listing normalizer from same directory
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from normalize_listing import normalize_listing  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PRODOS_EMU = Path("/bigdata/KAI/projects/ProDOS8Emu")
@@ -125,6 +130,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--debug",
         action="store_true",
         help="Pass --debug to ProDOS8Emu EDASM runner.",
+    )
+    p.add_argument(
+        "--compare-listing",
+        action="store_true",
+        help="Also compare normalized listing files (report-only, does not fail overall).",
     )
     return p.parse_args(argv)
 
@@ -256,6 +266,44 @@ def compare(ref_path: Path, ng_path: Path, label: str) -> bool:
     return False
 
 
+def compare_listings(edasm_lst: Path | None, ng_lst: Path | None, label: str) -> str:
+    """Compare normalized listing files. Returns 'match', 'diff', or 'skip'."""
+    if edasm_lst is None or not edasm_lst.exists():
+        print(f"  {YELLOW}LST SKIP{RESET}  {label} (EDASM listing not found)")
+        return 'skip'
+    if ng_lst is None or not ng_lst.exists():
+        print(f"  {YELLOW}LST SKIP{RESET}  {label} (EdAsmNg listing not found)")
+        return 'skip'
+
+    edasm_text = edasm_lst.read_text(errors='replace')
+    ng_text = ng_lst.read_text(errors='replace')
+
+    edasm_norm = normalize_listing(edasm_text)
+    ng_norm = normalize_listing(ng_text)
+
+    if edasm_norm == ng_norm:
+        print(f"  {GREEN}LST MATCH{RESET}  {label}")
+        return 'match'
+
+    print(f"  {RED}LST DIFF{RESET}  {label}")
+    edasm_lines = edasm_norm.splitlines()
+    ng_lines = ng_norm.splitlines()
+    max_show = 10
+    shown = 0
+    for i, (el, nl) in enumerate(zip(edasm_lines, ng_lines)):
+        if el != nl:
+            print(f"    Line {i + 1} differs:")
+            print(f"      EDASM:   {el!r}")
+            print(f"      EdAsmNg: {nl!r}")
+            shown += 1
+            if shown >= max_show:
+                print(f"    ... (truncated at {max_show} differences)")
+                break
+    if len(edasm_lines) != len(ng_lines):
+        print(f"    Line count: EDASM={len(edasm_lines)} EdAsmNg={len(ng_lines)}")
+    return 'diff'
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
@@ -282,6 +330,9 @@ def main(argv: list[str] | None = None) -> int:
     passed = 0
     failed = 0
     skipped = 0
+    listing_passed = 0
+    listing_failed = 0
+    listing_skipped = 0
 
     for src in sources:
         print(f"\n{'='*60}")
@@ -329,8 +380,22 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 failed += 1
 
+            if args.compare_listing:
+                prodos_stem = to_prodos_name(src.stem)
+                edasm_lst = edasm_work / "volumes" / "OUT" / f"{prodos_stem}.LST"
+                ng_lst = ng_out / f"{src.stem.upper()}.LST"
+                lst_result = compare_listings(edasm_lst, ng_lst, src.name)
+                if lst_result == 'match':
+                    listing_passed += 1
+                elif lst_result == 'diff':
+                    listing_failed += 1
+                else:
+                    listing_skipped += 1
+
     print(f"\n{'='*60}")
     print(f"Results: {GREEN}{passed} passed{RESET}  {RED}{failed} failed{RESET}  {YELLOW}{skipped} skipped{RESET}")
+    if args.compare_listing:
+        print(f"Listing: {GREEN}{listing_passed} matched{RESET}  {RED}{listing_failed} differed{RESET}  {YELLOW}{listing_skipped} skipped{RESET}")
     return 0 if failed == 0 else 1
 
 

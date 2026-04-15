@@ -102,6 +102,36 @@ TEST(CliListingTests, ListingOutputComesFromAssemblerPathNotPlaceholderBlock) {
   EXPECT_EQ(listingText, expectedListing);
 }
 
+TEST(CliListingTests, ListingOutputContainsActualCodeLines) {
+  const std::filesystem::path tempDir =
+      std::filesystem::temp_directory_path() / "edasmng_cli_listing_codelines_test";
+  const std::filesystem::path sourcePath  = tempDir / "codelines.asm";
+  const std::filesystem::path listingPath = tempDir / "codelines.lst";
+
+  std::filesystem::create_directories(tempDir);
+
+  {
+    std::ofstream sourceFile(sourcePath);
+    ASSERT_TRUE(sourceFile.is_open());
+    sourceFile << "      ORG $800\n";
+    sourceFile << "      NOP\n";
+  }
+
+  std::filesystem::remove(listingPath);
+
+  std::string cmd = QuoteArg(std::filesystem::path(EDASMNG_APP_PATH)) + " " + QuoteArg(sourcePath) +
+                    " --listing " + QuoteArg(listingPath) + " > /dev/null 2>&1";
+  const int rc = std::system(cmd.c_str());
+  ASSERT_EQ(rc, 0);
+
+  ASSERT_TRUE(std::filesystem::exists(listingPath));
+  const std::string listingText = ReadTextFile(listingPath);
+
+  EXPECT_NE(listingText.find("0800:EA"), std::string::npos)
+      << "Listing should contain actual code line '0800:EA', got:\n"
+      << listingText;
+}
+
 class ListingPrimitiveTest : public ::testing::Test {
  protected:
   void SetUp() override {
