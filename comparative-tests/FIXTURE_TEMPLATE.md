@@ -58,11 +58,11 @@ Treat anything outside that set as new coverage work, not template-safe baseline
 Save a new fixture as either `.src` or `.asm` under `comparative-tests/inputs/`.
 
 ```asm
-        ORG   $0800
+python3 comparative-tests/compare.py comparative-tests/inputs/yourfixture.src
 
 START   LDA   #$01
         STA   $C000
-        RTS
+python3 comparative-tests/compare.py --no-build comparative-tests/inputs/yourfixture.src
 
         END
 ```
@@ -87,7 +87,7 @@ Useful notes:
 
 - Omit the file path to run the full corpus.
 - Add `--no-build` if `build/src/EdAsmNg_app` is already up to date.
-- `--compare-listing` reports listing matches and diffs, but object comparison remains the primary pass or fail result.
+- Listing comparison is always enabled and reported for each fixture.
 
 ## Short Checklist
 

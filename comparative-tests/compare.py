@@ -2,14 +2,13 @@
 """Compare EDASM (via ProDOS8Emu) and EdAsmNg assembly outputs.
 
 For each .src/.asm file under inputs/, assemble with both implementations,
-then diff the resulting object files byte-by-byte.
+then compare both object files byte-by-byte and normalized listing files.
 
 Usage:
     python3 comparative-tests/compare.py [input.src ...]
 
 If no inputs are given, all files in comparative-tests/inputs/ are tested.
 Pass --max-instructions N to raise the emulator budget (default: 2000000).
-Pass --compare-listing to also compare normalized listing files.
 """
 
 from __future__ import annotations
@@ -134,7 +133,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--compare-listing",
         action="store_true",
-        help="Also compare normalized listing files (report-only, does not fail overall).",
+        help="Deprecated: listing comparison is always enabled.",
     )
     return p.parse_args(argv)
 
@@ -307,6 +306,9 @@ def compare_listings(edasm_lst: Path | None, ng_lst: Path | None, label: str) ->
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
+    if args.compare_listing:
+        print(f"{YELLOW}Note:{RESET} --compare-listing is deprecated; listing comparison is always enabled.")
+
     if not EDASMNG_BIN.exists() and not args.no_build:
         print(f"{YELLOW}EdAsmNg binary not found, will build.{RESET}")
 
@@ -380,22 +382,20 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 failed += 1
 
-            if args.compare_listing:
-                prodos_stem = to_prodos_name(src.stem)
-                edasm_lst = edasm_work / "volumes" / "OUT" / f"{prodos_stem}.LST"
-                ng_lst = ng_out / f"{src.stem.upper()}.LST"
-                lst_result = compare_listings(edasm_lst, ng_lst, src.name)
-                if lst_result == 'match':
-                    listing_passed += 1
-                elif lst_result == 'diff':
-                    listing_failed += 1
-                else:
-                    listing_skipped += 1
+            prodos_stem = to_prodos_name(src.stem)
+            edasm_lst = edasm_work / "volumes" / "OUT" / f"{prodos_stem}.LST"
+            ng_lst = ng_out / f"{src.stem.upper()}.LST"
+            lst_result = compare_listings(edasm_lst, ng_lst, src.name)
+            if lst_result == 'match':
+                listing_passed += 1
+            elif lst_result == 'diff':
+                listing_failed += 1
+            else:
+                listing_skipped += 1
 
     print(f"\n{'='*60}")
     print(f"Results: {GREEN}{passed} passed{RESET}  {RED}{failed} failed{RESET}  {YELLOW}{skipped} skipped{RESET}")
-    if args.compare_listing:
-        print(f"Listing: {GREEN}{listing_passed} matched{RESET}  {RED}{listing_failed} differed{RESET}  {YELLOW}{listing_skipped} skipped{RESET}")
+    print(f"Listing: {GREEN}{listing_passed} matched{RESET}  {RED}{listing_failed} differed{RESET}  {YELLOW}{listing_skipped} skipped{RESET}")
     return 0 if failed == 0 else 1
 
 
