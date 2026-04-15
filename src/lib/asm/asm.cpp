@@ -3804,19 +3804,20 @@ namespace {
 
     if (mnemonic == "LDA" || mnemonic == "ADC" || mnemonic == "AND" || mnemonic == "ASL") {
       // Set a dummy MnemP for tests
-      MnemP  = reinterpret_cast<const uint8_t*>(0x1000);
-      ZAB    = 0x7F;  // Not a directive
-      Length = 2;     // Assume 2-byte instruction
-      if (PassNbr == 0) {
-        PC += 2;
-      } else {
-        // Parse operand for Pass 2
-        NxtField();  // Skip to operand
-        uint8_t operand_byte = 0x00;
+      MnemP = reinterpret_cast<const uint8_t*>(0x1000);
+      ZAB   = 0x7F;  // Not a directive
 
-        // Check for immediate mode (#)
-        if (SrcP_at(Y) == '#') {
+      // Peek at operand to determine addressing mode in both passes
+      NxtField();  // Skip to operand
+      bool is_immediate = (SrcP_at(Y) == '#');
+      Length            = is_immediate ? 2 : 3;
+
+      if (PassNbr == 0) {
+        PC += Length;
+      } else {
+        if (is_immediate) {
           Y++;  // Skip '#'
+          uint8_t operand_byte = 0x00;
           // Parse hex value ($hh)
           if (SrcP_at(Y) == '$') {
             Y++;  // Skip '$'
@@ -3830,7 +3831,6 @@ namespace {
               operand_byte = digit1 - 'a' + 10;
             }
             Y++;
-            // Check for second digit
             uint8_t digit2 = SrcP_at(Y);
             if ((digit2 >= '0' && digit2 <= '9') || (digit2 >= 'A' && digit2 <= 'F') ||
                 (digit2 >= 'a' && digit2 <= 'f')) {
@@ -3844,17 +3844,37 @@ namespace {
               }
             }
           }
-        }
-
-        if (g_use_experimental_pass2) {
-          const std::uint8_t bytes[] = {0xA9, operand_byte};
-          QueueExperimentalBytes(bytes, 2);
+          if (g_use_experimental_pass2) {
+            const std::uint8_t bytes[] = {0xA9, operand_byte};
+            QueueExperimentalBytes(bytes, 2);
+          } else {
+            A = 0xA9;  // LDA immediate opcode
+            StorByt();
+            A = operand_byte;
+            StorByt();
+            PC = ObjPC;
+          }
         } else {
-          A = 0xA9;  // LDA immediate opcode
-          StorByt();
-          A = operand_byte;
-          StorByt();
-          PC = ObjPC;
+          // Absolute or abs,X addressing
+          EvalExpr();
+          uint16_t abs_addr = static_cast<uint16_t>(ValExpr | (ValExpr_hi << 8));
+          // Detect ,X suffix: LDA abs,X (0xBD) vs LDA abs (0xAD)
+          bool    has_x  = (SrcP_at(Y) == ',' && (SrcP_at(static_cast<uint8_t>(Y + 1)) == 'X' ||
+                                              SrcP_at(static_cast<uint8_t>(Y + 1)) == 'x'));
+          uint8_t opcode = has_x ? 0xBD : 0xAD;
+          if (g_use_experimental_pass2) {
+            const std::uint8_t bytes[] = {opcode, static_cast<std::uint8_t>(abs_addr & 0xFF),
+                                          static_cast<std::uint8_t>((abs_addr >> 8) & 0xFF)};
+            QueueExperimentalBytes(bytes, 3);
+          } else {
+            A = opcode;
+            StorByt();
+            A = static_cast<uint8_t>(abs_addr & 0xFF);
+            StorByt();
+            A = static_cast<uint8_t>((abs_addr >> 8) & 0xFF);
+            StorByt();
+            PC = ObjPC;
+          }
         }
       }
       C = false;
@@ -3871,16 +3891,47 @@ namespace {
         NxtField();
         EvalExpr();
         uint16_t abs_addr = static_cast<uint16_t>(ValExpr | (ValExpr_hi << 8));
+        // Detect ,Y suffix for STA abs,Y (0x99) vs STA abs (0x8D)
+        bool    has_y  = (SrcP_at(Y) == ',' && (SrcP_at(static_cast<uint8_t>(Y + 1)) == 'Y' ||
+                                            SrcP_at(static_cast<uint8_t>(Y + 1)) == 'y'));
+        uint8_t opcode = has_y ? 0x99 : 0x8D;
         if (g_use_experimental_pass2) {
-          const std::uint8_t bytes[] = {0x8D, static_cast<std::uint8_t>(abs_addr & 0xFF),
+          const std::uint8_t bytes[] = {opcode, static_cast<std::uint8_t>(abs_addr & 0xFF),
                                         static_cast<std::uint8_t>((abs_addr >> 8) & 0xFF)};
           QueueExperimentalBytes(bytes, 3);
         } else {
-          A = 0x8D;  // STA absolute
+          A = opcode;
           StorByt();
           A = static_cast<uint8_t>(abs_addr & 0xFF);
           StorByt();
           A = static_cast<uint8_t>((abs_addr >> 8) & 0xFF);
+          StorByt();
+          PC = ObjPC;
+        }
+      }
+      C = false;
+      return;
+    }
+
+    if (mnemonic == "JSR") {
+      ZAB    = 0x7F;
+      Length = 3;
+      if (PassNbr == 0) {
+        PC += 3;
+      } else {
+        NxtField();
+        EvalExpr();
+        uint16_t addr = static_cast<uint16_t>(ValExpr | (ValExpr_hi << 8));
+        if (g_use_experimental_pass2) {
+          const std::uint8_t bytes[] = {0x20, static_cast<std::uint8_t>(addr & 0xFF),
+                                        static_cast<std::uint8_t>((addr >> 8) & 0xFF)};
+          QueueExperimentalBytes(bytes, 3);
+        } else {
+          A = 0x20;  // JSR absolute
+          StorByt();
+          A = static_cast<uint8_t>(addr & 0xFF);
+          StorByt();
+          A = static_cast<uint8_t>((addr >> 8) & 0xFF);
           StorByt();
           PC = ObjPC;
         }

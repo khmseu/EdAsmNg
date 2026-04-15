@@ -3778,8 +3778,8 @@ TEST_F(Phase84Pass1Test, Pass1_ForwardRefResolved) {
   EdAsmNg::Asm::DoPass1();
 
   EXPECT_TRUE(EdAsmNg::Asm::HasSymbol("FWD"));
-  EXPECT_EQ(EdAsmNg::Asm::GetSymbolValue("FWD"), 0x0003);
-  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x0004);
+  EXPECT_EQ(EdAsmNg::Asm::GetSymbolValue("FWD"), 0x0004);  // LDA abs=3 bytes + NOP=1
+  EXPECT_EQ(EdAsmNg::Asm::GetPC(), 0x0005);
 }
 
 TEST_F(Phase84Pass1Test, test_pass1_reserved_label_A_error) {
@@ -4601,6 +4601,94 @@ TEST_F(Pass2Test, test_pass2_experimental_bcs_queue_supports_negative_displaceme
   EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5F02), 0xFD);
   EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x5F03), 0x60);
   EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x5F04);
+}
+
+TEST_F(Pass2Test, test_pass2_experimental_jsr_absolute_emits_opcode_addr) {
+  const char* source =
+      "      ORG $6000\r"
+      "SUB   NOP\r"
+      "      RTS\r"
+      "      JSR SUB\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::DoPass1();
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x6000), 0xEA);  // NOP
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x6001), 0x60);  // RTS
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x6002), 0x20);  // JSR opcode
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x6003), 0x00);  // lo($6000)
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x6004), 0x60);  // hi($6000)
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x6005);
+}
+
+TEST_F(Pass2Test, test_pass2_experimental_lda_abs_x_emits_opcode_addr) {
+  const char* source =
+      "      ORG $6100\r"
+      "      LDA $C000,X\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::DoPass1();
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x6100), 0xBD);  // LDA abs,X opcode
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x6101), 0x00);  // lo($C000)
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x6102), 0xC0);  // hi($C000)
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x6103);
+}
+
+TEST_F(Pass2Test, test_pass2_experimental_lda_absolute_emits_opcode_addr) {
+  const char* source =
+      "      ORG $6150\r"
+      "      LDA $C000\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::DoPass1();
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x6150), 0xAD);  // LDA abs opcode
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x6151), 0x00);  // lo($C000)
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x6152), 0xC0);  // hi($C000)
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x6153);
+}
+
+TEST_F(Pass2Test, test_pass2_experimental_sta_abs_y_emits_opcode_addr) {
+  const char* source =
+      "      ORG $6200\r"
+      "      STA $C100,Y\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::DoPass1();
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x6200), 0x99);  // STA abs,Y opcode
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x6201), 0x00);  // lo($C100)
+  EXPECT_EQ(EdAsmNg::Asm::ReadObjMemory(0x6202), 0xC1);  // hi($C100)
+  EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x6203);
 }
 
 TEST_F(Pass2Test, test_pass2_lda_operand_emits_opcode_byte) {

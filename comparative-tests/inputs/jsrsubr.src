@@ -1,0 +1,5 @@
+ LST ON
+ ORG $800
+SUB NOP
+ RTS
+ JSR SUB

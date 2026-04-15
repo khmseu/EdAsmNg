@@ -1,0 +1,4 @@
+ LST ON
+ ORG $800
+ LDA $C000,X
+ STA $C100,Y
