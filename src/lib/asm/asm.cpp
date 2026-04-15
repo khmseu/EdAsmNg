@@ -4115,6 +4115,9 @@ namespace {
       g_LastDirectiveCalled = "HndlLIST";
       Length                = 0;
       C                     = false;
+      if (g_test_src_buffer == nullptr) {
+        HndlLIST();
+      }
       return;
     }
 
@@ -4123,6 +4126,9 @@ namespace {
       g_LastDirectiveCalled = "HndlLST";
       Length                = 0;
       C                     = false;
+      if (g_test_src_buffer == nullptr) {
+        HndlLST();
+      }
       return;
     }
 
@@ -4131,6 +4137,9 @@ namespace {
       g_LastDirectiveCalled = "DoPage";
       Length                = 0;
       C                     = false;
+      if (g_test_src_buffer == nullptr) {
+        DoPage();
+      }
       return;
     }
 
@@ -4147,6 +4156,9 @@ namespace {
       g_LastDirectiveCalled = "HndlNOLIST";
       Length                = 0;
       C                     = false;
+      if (g_test_src_buffer == nullptr) {
+        HndlNOLIST();
+      }
       return;
     }
 
@@ -6799,19 +6811,173 @@ namespace {
     // TODO: Implement when handler is enabled
   }
 
+  void SkipSpcs() {
+    while (SrcP_at(Y) == SPACE || SrcP_at(Y) == '\t') {
+      ++Y;
+      if (Y == 0) {
+        break;
+      }
+    }
+  }
+
+  void DrtvDone() {
+    Y = 0;
+    A = ZAB;
+    C = false;
+  }
+
+  void HndlLIST() {
+    g_LastDirectiveCalled = "HndlLIST";
+    ListingF              = static_cast<std::uint8_t>((ListingF >> 1) | 0x80);
+    DrtvDone();
+  }
+
+  void HndlLST() {
+    g_LastDirectiveCalled = "HndlLST";
+
+    const char*   options = "CUEWGAVS";
+    std::uint8_t* flags[] = {
+        &LstCyc, &LstUnAsm, &LstExpMac, &LstWarns, &LstGCode, &LstASym, &LstVSym, &Lst6Cols,
+    };
+    constexpr std::size_t optionCount = sizeof(flags) / sizeof(flags[0]);
+
+    auto registerDirectiveOperandError = []() {
+      X = 0x24;
+      RegAsmEW(X);
+    };
+
+    SkipSpcs();
+    ChrGot();
+    if (C) {
+      registerDirectiveOperandError();
+      DrtvDone();
+      return;
+    }
+
+    if (A == 'O') {
+      ChrGet();
+      if (C) {
+        registerDirectiveOperandError();
+        DrtvDone();
+        return;
+      }
+
+      if (A == 'N') {
+        ListingF = static_cast<std::uint8_t>((ListingF >> 1) | 0x80);
+      } else if (A == 'F') {
+        ListingF = static_cast<std::uint8_t>(ListingF >> 1);
+      } else {
+        registerDirectiveOperandError();
+        DrtvDone();
+        return;
+      }
+    } else {
+      while (true) {
+        bool enable = true;
+
+        ChrGot();
+        if (A == '+') {
+          ChrGet();
+          if (C) {
+            registerDirectiveOperandError();
+            DrtvDone();
+            return;
+          }
+        } else if (A == '-') {
+          enable = false;
+          ChrGet();
+          if (C) {
+            registerDirectiveOperandError();
+            DrtvDone();
+            return;
+          }
+        } else if (C) {
+          registerDirectiveOperandError();
+          DrtvDone();
+          return;
+        }
+
+        std::size_t optionIndex = 0;
+        while (optionIndex < optionCount && A != options[optionIndex]) {
+          ++optionIndex;
+        }
+        if (optionIndex == optionCount) {
+          registerDirectiveOperandError();
+          DrtvDone();
+          return;
+        }
+
+        *flags[optionIndex] =
+            static_cast<std::uint8_t>((*flags[optionIndex] >> 1) | (enable ? 0x80 : 0x00));
+
+        while (true) {
+          ChrGet();
+          if (C) {
+            break;
+          }
+        }
+
+        if (A == ',') {
+          Y++;
+          continue;
+        }
+        if (A == SPACE || A == CR) {
+          DrtvDone();
+          return;
+        }
+
+        registerDirectiveOperandError();
+        DrtvDone();
+        return;
+      }
+    }
+
+    while (true) {
+      ChrGet();
+      if (C) {
+        break;
+      }
+    }
+
+    if (A != SPACE && A != CR) {
+      if (A == ',') {
+        Y++;
+      } else {
+        registerDirectiveOperandError();
+      }
+    }
+
+    DrtvDone();
+  }
+
+  void HndlNOLIST() {
+    g_LastDirectiveCalled = "HndlNOLIST";
+    ListingF              = static_cast<std::uint8_t>(ListingF >> 1);
+    DrtvDone();
+  }
+
+  void DoPage() {
+    g_LastDirectiveCalled = "DoPage";
+    if (PassNbr != 0 && static_cast<std::int8_t>(ListingF) < 0) {
+      PrtFF();
+    }
+    DrtvDone();
+  }
+
+  void Bridge_HndlLIST() {
+    HndlLIST();
+  }
+
   void Bridge_HndlLST() {
-    // HndlLST is inside #if 0 block - not compiled
-    // TODO: Implement when handler is enabled
+    HndlLST();
   }
 
   void Bridge_HndlNOLIST() {
-    // HndlNOLIST is inside #if 0 block - not compiled
-    // TODO: Implement when handler is enabled
+    HndlNOLIST();
   }
 
   void Bridge_DoPage() {
-    // DoPage is inside #if 0 block - not compiled
-    // TODO: Implement when handler is enabled
+    DoPage();
   }
 
   void Bridge_HndlSBTL() {
@@ -7943,6 +8109,10 @@ namespace EdAsmNg {
     }
 
     // Direct handler call
+    void HndlLIST() {
+      Bridge_HndlLIST();
+    }
+
     void HndlLST() {
       Bridge_HndlLST();
     }

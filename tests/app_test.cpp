@@ -618,6 +618,8 @@ TEST_F(MnemonicDispatchTest, NOLIST_NonDotDirective_RoutesToHndlNOLIST) {
   bool success = EdAsmNg::Asm::HndlMnem();
   EXPECT_TRUE(success);
 
+  EXPECT_EQ(EdAsmNg::Asm::GetLastDirectiveCalled(), std::string("HndlNOLIST"));
+
   // Verify no errors
   EXPECT_EQ(EdAsmNg::Asm::GetErrorCount(), 0);
 }
@@ -1836,7 +1838,10 @@ namespace EdAsmNg {
     void    SetLst6Cols(uint8_t value);
 
     // Direct handler call
+    void HndlLIST();
     void HndlLST();
+    void HndlNOLIST();
+    void DoPage();
   }  // namespace Asm
 }  // namespace EdAsmNg
 
@@ -4008,6 +4013,45 @@ TEST_F(Pass2Test, test_pass2_listing_line_source_copy_includes_char_at_0xFF_boun
   const std::string listing         = EdAsmNg::Asm::GetListingSink();
   const std::string expectedListing = "\n0800:EA                 " + longLine.substr(6) + "\n";
   EXPECT_EQ(listing, expectedListing);
+}
+
+TEST_F(Pass2Test, test_pass2_list_directive_sets_listing_flag) {
+  EdAsmNg::Asm::SetPassNbr(1);
+  EdAsmNg::Asm::SetListingF(0x00);
+
+  EdAsmNg::Asm::HndlLIST();
+
+  EXPECT_EQ(EdAsmNg::Asm::GetListingF(), 0x80u);
+}
+
+TEST_F(Pass2Test, test_pass2_nolist_directive_clears_listing_flag) {
+  EdAsmNg::Asm::SetPassNbr(1);
+  EdAsmNg::Asm::SetListingF(0xFF);
+
+  EdAsmNg::Asm::HndlNOLIST();
+
+  EXPECT_EQ(EdAsmNg::Asm::GetListingF(), 0x7Fu);
+}
+
+TEST_F(Pass2Test, test_pass2_page_directive_emits_form_feed_to_listing_sink) {
+  EdAsmNg::Asm::ResetListingSink();
+  EdAsmNg::Asm::SetPassNbr(1);
+  EdAsmNg::Asm::SetListingF(0xFF);
+
+  EdAsmNg::Asm::DoPage();
+
+  EXPECT_EQ(EdAsmNg::Asm::GetListingSink(), std::string("\014"));
+}
+
+TEST_F(Pass2Test, test_pass2_nolist_then_list_transitions_correctly) {
+  EdAsmNg::Asm::SetPassNbr(1);
+  EdAsmNg::Asm::SetListingF(0xFF);
+
+  EdAsmNg::Asm::HndlNOLIST();
+  EXPECT_EQ(EdAsmNg::Asm::GetListingF(), 0x7Fu);
+
+  EdAsmNg::Asm::HndlLIST();
+  EXPECT_EQ(EdAsmNg::Asm::GetListingF(), 0xBFu);
 }
 
 TEST_F(Pass2Test, test_pass2_experimental_ds_small_emits_zeros) {

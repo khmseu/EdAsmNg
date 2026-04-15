@@ -61,6 +61,7 @@ namespace EdAsmNg {
     void        HndlDW();
     void        HndlASC();
     void        HndlDCI();
+    void        HndlLIST();
     void        HndlLST();
     void        HndlNOLIST();
     void        DoPage();
