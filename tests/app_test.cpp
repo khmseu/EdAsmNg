@@ -3917,6 +3917,99 @@ TEST_F(Pass2Test, test_pass2_experimental_forward_jump_fixture_matches_expected_
   EXPECT_EQ(EdAsmNg::Asm::GetObjPC(), 0x0805);
 }
 
+TEST_F(Pass2Test, test_pass2_listing_line_nop_includes_address_bytes_and_source) {
+  const char* source =
+      "      ORG $0800\r"
+      "      NOP\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::DoPass1();
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+  EdAsmNg::Asm::SetListingF(0xFF);
+  EdAsmNg::Asm::ResetListingSink();
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  const std::string listing         = EdAsmNg::Asm::GetListingSink();
+  const std::string expectedListing = "\n0800:EA                 NOP\n";
+  EXPECT_EQ(listing, expectedListing);
+}
+
+TEST_F(Pass2Test, test_pass2_listing_line_multibyte_groups_bytes_and_source) {
+  const char* source =
+      "      ORG $0800\r"
+      "      STA $C000\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::DoPass1();
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+  EdAsmNg::Asm::SetListingF(0xFF);
+  EdAsmNg::Asm::ResetListingSink();
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  const std::string listing         = EdAsmNg::Asm::GetListingSink();
+  const std::string expectedListing = "\n0800:8D 00 C0           STA $C000\n";
+  EXPECT_EQ(listing, expectedListing);
+}
+
+TEST_F(Pass2Test, test_pass2_listing_line_jump_fixture_shape_includes_expected_address_and_bytes) {
+  const char* source =
+      "      ORG $0800\r"
+      "      JMP AFTER\r"
+      "      NOP\r"
+      "AFTER  RTS\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::DoPass1();
+
+  EdAsmNg::Asm::SetupMemorySource(source, strlen(source));
+  EdAsmNg::Asm::SetObjPC(0);
+  EdAsmNg::Asm::SetListingF(0xFF);
+  EdAsmNg::Asm::ResetListingSink();
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  const std::string listing = EdAsmNg::Asm::GetListingSink();
+  const std::string expectedListing =
+      "\n"
+      "0800:4C 04 08           JMP AFTER\n"
+      "0803:EA                 NOP\n"
+      "0804:60           AFTER  RTS\n";
+  EXPECT_EQ(listing, expectedListing);
+}
+
+TEST_F(Pass2Test, test_pass2_listing_line_source_copy_includes_char_at_0xFF_boundary) {
+  const std::string longLine = "      NOP ;" + std::string(244, 'A') + "Z";
+  const std::string source   = "      ORG $0800\r" + longLine + "\r";
+
+  EdAsmNg::Asm::SetupMemorySource(source.c_str(), source.size());
+  EdAsmNg::Asm::DoPass1();
+
+  EdAsmNg::Asm::SetupMemorySource(source.c_str(), source.size());
+  EdAsmNg::Asm::SetObjPC(0);
+  EdAsmNg::Asm::SetListingF(0xFF);
+  EdAsmNg::Asm::ResetListingSink();
+
+  EdAsmNg::Asm::SetUseExperimentalPass2(true);
+  EdAsmNg::Asm::DoPass2();
+  EdAsmNg::Asm::SetUseExperimentalPass2(false);
+
+  const std::string listing         = EdAsmNg::Asm::GetListingSink();
+  const std::string expectedListing = "\n0800:EA                 " + longLine.substr(6) + "\n";
+  EXPECT_EQ(listing, expectedListing);
+}
+
 TEST_F(Pass2Test, test_pass2_experimental_ds_small_emits_zeros) {
   const char* source =
       "      ORG $2000\r"

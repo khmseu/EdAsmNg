@@ -2735,12 +2735,54 @@ namespace {
     C = false;
   }
 
+  namespace {
+    void EmitListingSpaces(std::uint8_t count) {
+      for (std::uint8_t i = 0; i < count; ++i) {
+        PutC(' ');
+      }
+    }
+
+    void EmitListingHex16(std::uint16_t value) {
+      PrByte(static_cast<std::uint8_t>((value >> 8) & 0xFF));
+      PrByte(static_cast<std::uint8_t>(value & 0xFF));
+    }
+  }  // namespace
+
   void ListCode() {
-    // Listing output is still placeholder-driven in the current path.
+    EmitListingHex16(PC);
+    PutC(':');
+
+    std::uint8_t printedLen = Length;
+    if (printedLen > 4) {
+      printedLen = 4;
+    }
+
+    std::uint8_t codeChars = 0;
+    for (std::uint8_t i = 0; i < printedLen; ++i) {
+      if (i != 0) {
+        PutC(' ');
+        codeChars++;
+      }
+      PrByte(GMC[i]);
+      codeChars += 2;
+    }
+
+    // Keep source text in a deterministic column even for short object fields.
+    if (codeChars < 12) {
+      EmitListingSpaces(static_cast<std::uint8_t>(12 - codeChars));
+    }
+    PutC(' ');
   }
 
   void LstSrcLn() {
-    // Listing output is still placeholder-driven in the current path.
+    for (std::uint16_t idx = 0; idx <= 0x00FF; ++idx) {
+      std::uint8_t ch = g_test_src_memory[static_cast<std::uint16_t>(Src2P + idx)];
+      if (ch == CR) {
+        break;
+      }
+      PutC(ch);
+    }
+    PutCR();
   }
 
   void L81A3() {
