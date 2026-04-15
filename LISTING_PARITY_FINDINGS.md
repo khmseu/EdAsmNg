@@ -1,52 +1,61 @@
-## Listing Parity Expansion - Technical Findings
+# Listing Parity Expansion - Technical Findings
 
-### Current Achievement
+## Current Achievement
 
-- **7 of 7** available comparative fixtures achieve zero-diff parity for **both object and listing** output
-- **182 of 182** unit tests passing
-- Green fixtures: input.src, input2.src, input3.src, branch.src, equexpr.src, fwdjmp.src, simple_test.asm
+- **12 of 12** comparative fixtures achieve zero-diff parity for both object and listing output (`MATCH` + `LST MATCH`)
+- **186 of 186** unit tests passing
+- Current green fixtures:
+  - `input.src`
+  - `input2.src`
+  - `input3.src`
+  - `branch.src`
+  - `equexpr.src`
+  - `fwdjmp.src`
+  - `simple_test.asm`
+  - `dwdir.src`
+  - `dsdir.src`
+  - `dcidir.src`
+  - `jsrsubr.src`
+  - `absidx.src`
 
-### Phase History
+## Phase History
 
-#### Phase 1 (committed: 0af7c52): simple_test.asm object parity
+### Baseline Parity Stabilization
 
-- **Problem:** EDASM emits 46-byte object stream (includes stale GMC bytes for blank/label-only lines); EdAsmNg was emitting 31 raw code bytes
-- **Fix:** Added serialized-byte capture (`AppendSerializedByte`, `AppendSerializedGMC`, `NoteObjectWriteStart`); EDASM-parity blank-line GMC calls documented
-- **Result:** `MATCH simple_test.asm (46 bytes)` ✅
+- `0af7c52`: fixed object-stream parity capture for blank/label-only serialization behavior
+- `9bcf5c0`: normalized EDASM diagnostic/listing noise for stable listing comparison
 
-#### Phase 2 (committed: see plans/): simple_test.asm listing parity via normalizer
+### Corpus Expansion Plan Progress
 
-- **Problem:** EDASM listing for simple_test.asm contains extensive diagnostic chatter (INVALID IDENTIFIER ERROR, UNDEFINED OPCODE ERROR, ERROR SUMMARY) because EDASM misinterprets Unix-style `*` comment prefix; normalized line count diverged (41 EDASM vs 14 NG)
-- **Fix:** Extended `normalize_listing.py` to strip EDASM diagnostic/error lines, stale byte-only records, standalone line numbers, and END pseudo-lines; also removed volatile display address from code line output
-- **Result:** `LST MATCH  simple_test.asm` ✅
+- `6050fdf` (Phase 1): added parity-safe fixture authoring guide (`comparative-tests/FIXTURE_TEMPLATE.md`)
+- `321916e` (Phase 2): added directive fixtures (`DW`, `DS`, `DCI`) with listing parity
+- `e328369` (Phase 3): added minimal `HndlMnem()` support for `JSR abs`, `LDA abs/X`, `STA abs/Y`, plus unit tests and two fixtures (`jsrsubr.src`, `absidx.src`)
 
-### Addressing Modes Verified
+## Coverage Snapshot
 
-- ✅ **Immediate** (#$NN) - all fixtures
-- ✅ **Implied** - NOP, RTS, DEX etc.
-- ✅ **Absolute** ($NNNN) - STA $C000, JSR etc.
-- ✅ **Absolute,X** ($NNNN,X) - in several fixtures
-- ✅ **Branch relative** - BNE LOOP in branch.src / simple_test.asm
-- ✅ **Indirect** (JMP ($NNNN)) - fwdjmp.src
-- ✅ **Zero Page** ($NN) - DATA, MESSAGE in simple_test.asm
-- ✅ **ASC string data** - simple_test.asm MESSAGE field
-- ✅ **Multi-byte DFB** - simple_test.asm DATA section
+### Directives covered by comparative fixtures
 
-### Recommended Next Steps (Phase 3: Corpus Expansion)
+- `LST ON`, `ORG`, `END`
+- `DFB`, `ASC`, `DW`, `DS`, `DCI`
+- `EQU` expressions (via `equexpr.src`)
 
-1. Create a fixture template / guide (`comparative-tests/FIXTURE_TEMPLATE.md`) documenting how to add new test fixtures
-2. Add 3-5 new fixtures targeting:
-   - Zero page indexed addressing (ZP,X / ZP,Y)
-   - Indirect indexed addressing (($NN),Y / ($NN,X))
-   - Macro / REPEAT directives
-   - Conditional assembly (IF/ENDIF)
-3. Each new fixture must achieve both OBJ and listing parity against EDASM emulator output
+### Instruction/addressing coverage verified in comparative fixtures
 
-### Summary
+- **Implied**: `NOP`, `RTS`, etc.
+- **Immediate**: e.g. `LDA #$nn`
+- **Absolute**: e.g. `JMP $nnnn`, `JSR $nnnn`, `STA $nnnn`
+- **Absolute indexed**: `LDA $nnnn,X`, `STA $nnnn,Y`
+- **Branch relative**: branch fixture coverage
+- **Forward absolute jump**: `JMP label` coverage in `fwdjmp.src`
 
-Phase 1 successfully expanded from 3 to 6 green fixtures. Investigation into Phase 2 expansion exposed two previously-unknown bugs:
+## Deferred / Known Gaps
 
-- Object file format mismatch (simple_test.asm)
-- Zero page addressing mode parsing error
+- Zero-page indexed and indirect indexed addressing still need dedicated comparative fixtures
+- `DS` non-zero-count forms and richer `DCI` string forms can be listing-sensitive and need targeted parity work before broadening fixture complexity
+- Macro/repeat and conditional assembly parity remain out of scope for this expansion cycle
 
-These blocks prevent reaching 7/7 fixtures and expanding corpus further. Fixing these bugs is essential before proceeding with broader comparative test expansion.
+## Next Recommended Work
+
+1. Add focused fixtures for zero-page indexed and indirect indexed addressing modes
+2. Add parity-focused fixtures for non-trivial `DS`/`DCI` forms once listing formatting behavior is aligned
+3. Extend corpus only after each addition is confirmed with both object and listing parity
