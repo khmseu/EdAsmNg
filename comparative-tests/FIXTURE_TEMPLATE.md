@@ -58,12 +58,8 @@ Treat anything outside that set as new coverage work, not template-safe baseline
 Save a new fixture as either `.src` or `.asm` under `comparative-tests/inputs/`.
 
 ```asm
-python3 comparative-tests/compare.py comparative-tests/inputs/yourfixture.src
-
 START   LDA   #$01
         STA   $C000
-python3 comparative-tests/compare.py --no-build comparative-tests/inputs/yourfixture.src
-
         END
 ```
 
@@ -71,16 +67,16 @@ This is a good template because it is short, deterministic, and only uses featur
 
 ## Verification Commands
 
-Object parity only:
+Object + listing parity (default behavior):
 
 ```bash
 python3 comparative-tests/compare.py comparative-tests/inputs/yourfixture.src
 ```
 
-Object parity plus normalized listing comparison:
+Repeat without rebuilding if your binary is already up to date:
 
 ```bash
-python3 comparative-tests/compare.py --compare-listing comparative-tests/inputs/yourfixture.src
+python3 comparative-tests/compare.py --no-build comparative-tests/inputs/yourfixture.src
 ```
 
 Useful notes:
@@ -95,6 +91,6 @@ Useful notes:
 - Use `.src` or `.asm` and place it under `comparative-tests/inputs/`.
 - Keep the source short and limited to currently green feature areas unless you are intentionally expanding coverage.
 - Avoid leading `*` comment lines when you want clean parity without EDASM-only diagnostics.
-- Run object parity first.
-- Run object plus listing comparison second.
+- Run `compare.py` and confirm both `MATCH` and `LST MATCH` for the fixture.
+- Optionally rerun with `--no-build` when iterating quickly.
 - Only keep the fixture once both assemblers accept it and the outputs match modulo the normalizer's OS-specific cleanup.

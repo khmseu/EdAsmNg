@@ -1,0 +1,7 @@
+
+0806:             * BRANCH TEST - LDX immediate, DEX, BNE backward label
+0800:                      ORG   $0800
+0800:A2 05                 LDX   #$05
+0802:CA           LOOP     DEX
+0803:D0 FD                 BNE   LOOP
+0805:60                    RTS

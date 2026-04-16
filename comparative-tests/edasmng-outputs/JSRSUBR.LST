@@ -1,0 +1,6 @@
+
+0805:              LST ON
+0800:              ORG $800
+0800:EA           SUB NOP
+0801:60            RTS
+0802:20 00 08      JSR SUB

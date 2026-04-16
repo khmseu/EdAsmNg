@@ -1,0 +1,20 @@
+
+081F:             * SIMPLE TEST FILE FOR EDASM COMPARISON
+081F:             * Tests basic assembly operations
+081F:             
+0800:                     ORG   $0800
+0800:             
+0800:A9 00        START   LDA   #$00
+0802:8D 00 C0             STA   $C000
+0805:A2 10                LDX   #$10
+0807:CA           LOOP    DEX
+0808:D0 FD                BNE   LOOP
+080A:60                   RTS
+080B:             
+080B:01 02 03 04  DATA    DFB   $01,$02,$03,$04
+080F:05 06 07 08          DFB   $05,$06,$07,$08
+0813:             
+0813:48 45 4C 4C  MESSAGE ASC   "HELLO WORLD"
+081E:00                   DFB   $00
+081F:             
+081F:             END

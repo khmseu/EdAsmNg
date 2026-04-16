@@ -1,0 +1,17 @@
+  
+ 
+ 
+SOURCE   FILE #01 =>JSRSUBR.SRC
+ 
+0000:                1           LST   ON
+----- NEXT OBJECT FILE NAME IS /OUT/JSRSUBR.OBJ              
+0800:        0800    2           ORG   $800
+0800:EA              3 SUB       NOP
+0801:60              4           RTS
+0802:20 00 08        5           JSR   SUB
+ 0800 SUB           
+** SUCCESSFUL ASSEMBLY := NO ERRORS
+** ASSEMBLER CREATED ON 30-APR-85 22:46 
+** TOTAL LINES ASSEMBLED     5 
+** FREE SPACE PAGE COUNT   84 
+

@@ -32,6 +32,12 @@ RUN_EDASM = PRODOS_EMU / "tools" / "run_edasm_job.py"
 PRODOS_LOG = PRODOS_EMU / "prodos8emu_console_output.log"
 EDASMNG_BIN = REPO_ROOT / "build" / "src" / "EdAsmNg_app"
 INPUTS_DIR = REPO_ROOT / "comparative-tests" / "inputs"
+EDASM_OUTPUTS_DIR = REPO_ROOT / "comparative-tests" / "edasm-outputs"
+EDASMNG_OUTPUTS_DIR = REPO_ROOT / "comparative-tests" / "edasmng-outputs"
+EDASM_RUN_TIMEOUT_SEC = 600
+EDASM_MAX_ATTEMPTS = 2
+EDASMNG_RUN_TIMEOUT_SEC = 600
+EDASMNG_MAX_ATTEMPTS = 2
 
 def to_prodos_name(stem: str, max_stem_len: int = 11) -> str:
     """Sanitize a stem to a ProDOS-legal filename component: [A-Z][A-Z0-9.]{,14}.
@@ -182,7 +188,20 @@ def run_original_edasm(
     if debug:
         cmd.append("--debug")
 
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(PRODOS_EMU))  # nosec B603
+    try:
+        result = subprocess.run(  # nosec B603
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=str(PRODOS_EMU),
+            timeout=EDASM_RUN_TIMEOUT_SEC,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"  {YELLOW}EDASM TIMED OUT ({EDASM_RUN_TIMEOUT_SEC}s){RESET}")
+        print_prodos_logfile()
+        print_recursive_listing(work_dir)
+        return None
+
     if result.returncode != 0:
         print(f"  {YELLOW}EDASM FAILED (exit {result.returncode}){RESET}")
         if result.stdout.strip():
@@ -219,7 +238,19 @@ def run_edasmng(src_path: Path, out_dir: Path) -> Path | None:
         "--object", str(obj_path),
         "--listing", str(lst_path),
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)  # nosec B603
+    try:
+        result = subprocess.run(  # nosec B603
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=EDASMNG_RUN_TIMEOUT_SEC,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"  {YELLOW}EdAsmNg TIMED OUT ({EDASMNG_RUN_TIMEOUT_SEC}s){RESET}")
+        print_prodos_logfile()
+        print_recursive_listing(out_dir)
+        return None
+
     if result.returncode != 0:
         print(f"  {YELLOW}EdAsmNg FAILED (exit {result.returncode}){RESET}")
         if result.stderr.strip():
@@ -345,8 +376,18 @@ def main(argv: list[str] | None = None) -> int:
             ng_out = tmp_path / "ng"
             ng_out.mkdir()
 
-            # Run EdAsmNg
-            ng_obj = run_edasmng(src, ng_out)
+            # Run EdAsmNg with retry in case the process hangs/intermittently fails.
+            ng_obj = None
+            ng_out_used = None
+            for attempt in range(1, EDASMNG_MAX_ATTEMPTS + 1):
+                ng_out_attempt = tmp_path / f"ng_{attempt}"
+                ng_out_attempt.mkdir()
+                ng_obj = run_edasmng(src, ng_out_attempt)
+                if ng_obj is not None:
+                    ng_out_used = ng_out_attempt
+                    break
+                if attempt < EDASMNG_MAX_ATTEMPTS:
+                    print(f"  {YELLOW}Retrying EdAsmNg ({attempt + 1}/{EDASMNG_MAX_ATTEMPTS})...{RESET}")
 
             if args.skip_edasm:
                 if ng_obj:
@@ -357,14 +398,22 @@ def main(argv: list[str] | None = None) -> int:
                     failed += 1
                 continue
 
-            # Run original EDASM
-            edasm_work = tmp_path / "edasm_work"
-            edasm_obj = run_original_edasm(
-                src,
-                edasm_work,
-                args.max_instructions,
-                debug=args.debug,
-            )
+            # Run original EDASM with a retry because emulator runs can be flaky.
+            edasm_obj = None
+            edasm_work_used = None
+            for attempt in range(1, EDASM_MAX_ATTEMPTS + 1):
+                edasm_work = tmp_path / f"edasm_work_{attempt}"
+                edasm_obj = run_original_edasm(
+                    src,
+                    edasm_work,
+                    args.max_instructions,
+                    debug=args.debug,
+                )
+                if edasm_obj is not None:
+                    edasm_work_used = edasm_work
+                    break
+                if attempt < EDASM_MAX_ATTEMPTS:
+                    print(f"  {YELLOW}Retrying original EDASM ({attempt + 1}/{EDASM_MAX_ATTEMPTS})...{RESET}")
 
             if edasm_obj is None:
                 print(f"  {YELLOW}SKIPPED{RESET} (original EDASM did not produce output)")
@@ -376,6 +425,9 @@ def main(argv: list[str] | None = None) -> int:
                 failed += 1
                 continue
 
+            assert ng_out_used is not None
+            assert edasm_work_used is not None
+
             ok = compare(edasm_obj, ng_obj, src.name)
             if ok:
                 passed += 1
@@ -383,8 +435,8 @@ def main(argv: list[str] | None = None) -> int:
                 failed += 1
 
             prodos_stem = to_prodos_name(src.stem)
-            edasm_lst = edasm_work / "volumes" / "OUT" / f"{prodos_stem}.LST"
-            ng_lst = ng_out / f"{src.stem.upper()}.LST"
+            edasm_lst = edasm_work_used / "volumes" / "OUT" / f"{prodos_stem}.LST"
+            ng_lst = ng_out_used / f"{src.stem.upper()}.LST"
             lst_result = compare_listings(edasm_lst, ng_lst, src.name)
             if lst_result == 'match':
                 listing_passed += 1
@@ -392,6 +444,17 @@ def main(argv: list[str] | None = None) -> int:
                 listing_failed += 1
             else:
                 listing_skipped += 1
+
+            # Persist artifacts to the named output directories
+            stem_upper = src.stem.upper()
+            EDASM_OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+            EDASMNG_OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(edasm_obj), str(EDASM_OUTPUTS_DIR / f"{stem_upper}.OBJ"))
+            if edasm_lst.exists():
+                shutil.copy2(str(edasm_lst), str(EDASM_OUTPUTS_DIR / f"{stem_upper}.LST"))
+            shutil.copy2(str(ng_obj), str(EDASMNG_OUTPUTS_DIR / f"{stem_upper}.OBJ"))
+            if ng_lst.exists():
+                shutil.copy2(str(ng_lst), str(EDASMNG_OUTPUTS_DIR / f"{stem_upper}.LST"))
 
     print(f"\n{'='*60}")
     print(f"Results: {GREEN}{passed} passed{RESET}  {RED}{failed} failed{RESET}  {YELLOW}{skipped} skipped{RESET}")

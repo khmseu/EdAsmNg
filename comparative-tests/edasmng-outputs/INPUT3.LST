@@ -1,6 +1,9 @@
-EdAsmNg Listing (placeholder)
-Source: comparative-tests/inputs/input3.src
-PC: $810
-ObjPC: $810
 
-(Full listing generation not yet implemented)
+0810:              LST ON
+0800:              ORG $800
+0800:A9 00        START LDA #$00
+0802:8D 00 C0      STA $C000
+0805:60            RTS
+0806:01 02 03 04   DFB $01,$02,$03,$04
+080A:48 45 4C 4C   ASC "HELLO"
+080F:00            DFB $00
