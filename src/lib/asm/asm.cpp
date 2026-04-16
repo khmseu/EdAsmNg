@@ -2359,7 +2359,9 @@ namespace {
       if (!C) {
         // Compatibility mode: current HndlMnem emits object bytes directly.
         // Skip legacy codegen path to avoid duplicate emission.
-        if (ObjPC != pre_objpc) goto L807A;
+        // Directives (ZAB bit7 set) always need listing processing even when
+        // ObjPC was changed (e.g. ORG), so only skip for non-directives.
+        if (ObjPC != pre_objpc && (ZAB & 0x80) == 0) goto L807A;
         if (g_experimental_prepared_gmc) goto L806F;
         goto L7F7A;
       }
@@ -4196,6 +4198,8 @@ namespace {
     }
 
     if (mnemonic == "ORG") {
+      ZAB                   = 0x81;  // $81 = directive with ER field in listing
+      g_LastDirectiveCalled = "HndlORG";
       // Parse ORG directive - expects hex address like $8000
       NxtField();  // Skip to operand
 
@@ -4234,6 +4238,9 @@ namespace {
           PC                      = addr;
           ObjPC                   = addr;
           g_serialized_obj_active = true;
+          // Store address as expression result for ER field in listing
+          ValExpr    = static_cast<uint8_t>(addr & 0xFF);
+          ValExpr_hi = static_cast<uint8_t>((addr >> 8) & 0xFF);
         }
       }
 
@@ -4244,6 +4251,7 @@ namespace {
 
     if (mnemonic == "DS") {
       // DS (Define Storage) - reserves N bytes and fills with zeros in Pass 2
+      ZAB = 0x81;  // $81 = directive with ER field in listing (shows count)
       NxtField();  // Skip to operand
 
       // Parse count (decimal or hex)
@@ -4278,6 +4286,10 @@ namespace {
       }
 
       Length = count;
+
+      // Store count as expression result for ER field in listing
+      ValExpr    = static_cast<uint8_t>(count & 0xFF);
+      ValExpr_hi = static_cast<uint8_t>((count >> 8) & 0xFF);
 
       // Pass 2: Emit zeros and sync PC with ObjPC
       if (PassNbr == 1) {
@@ -4319,7 +4331,7 @@ namespace {
 
     // Handle directives with proper flag and routing
     if (mnemonic == ".EQU" || mnemonic == "EQU") {
-      ZAB                   = 0x80;  // Directive flag
+      ZAB                   = 0x81;  // $81 = directive with ER field in listing
       g_LastDirectiveCalled = "HndlEQU";
 
       // Dispatch-only tests call HndlMnem with a synthetic source buffer and
@@ -4382,7 +4394,7 @@ namespace {
     }
 
     if (mnemonic == ".ORG" || mnemonic == "ORG") {
-      ZAB                   = 0x80;
+      ZAB                   = 0x81;  // $81 = directive with ER field in listing
       g_LastDirectiveCalled = "HndlORG";
       // Call inline ORG handling for now
       NxtField();
@@ -4412,6 +4424,9 @@ namespace {
           PC                      = addr;
           ObjPC                   = addr;
           g_serialized_obj_active = true;
+          // Store address as expression result for ER field in listing
+          ValExpr    = static_cast<uint8_t>(addr & 0xFF);
+          ValExpr_hi = static_cast<uint8_t>((addr >> 8) & 0xFF);
         }
       }
       Length = 0;
@@ -4692,6 +4707,12 @@ namespace {
           Y++;
         }
         QueueExperimentalBytes(queuedAscii, static_cast<std::uint8_t>(len));
+        if (len == 0 && is_dci) {
+          // Empty DCI string: show current PC in ER field, matching EDASM behaviour
+          ZAB        = 0x81;
+          ValExpr    = static_cast<uint8_t>(PC & 0xFF);
+          ValExpr_hi = static_cast<uint8_t>((PC >> 8) & 0xFF);
+        }
       } else {
         std::uint16_t listingAddr         = ObjPC;
         std::uint8_t  displayedAscii[4]   = {0, 0, 0, 0};
@@ -4720,6 +4741,11 @@ namespace {
         if (g_use_experimental_pass2) {
           EmitExplicitListingLine(listingAddr, displayedAscii, displayedAsciiCount);
         }
+        // Long ASC/DCI directives have already emitted bytes and produced
+        // their listing line; skip the generic directive post-processing path
+        // to avoid re-listing and serializing stale GMC bytes.
+        ZAB    = 0x83;
+        Length = 0;
       }
       C = false;
       return;

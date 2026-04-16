@@ -2,7 +2,7 @@
 081F:                1 * SIMPLE TEST FILE FOR EDASM COMPARISON [WS]
 081F:                2 * Tests basic assembly operations
 081F:                3 ;
-0800:                4                                     ORG   $0800
+0800:        0800    4                                     ORG   $0800
 0800:                5 ;
 0800:A9 00           6 START                         LDA   #$00
 0802:8D 00 C0        7                                     STA   $C000

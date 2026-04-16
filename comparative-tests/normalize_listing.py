@@ -112,15 +112,13 @@ def _canonicalize_listing_line(line: str) -> str | None:
     if source_text_stripped.upper() == 'END':
         return None
 
-    first_token = source_text_stripped.split()[0].upper()
-    if first_token in DIRECTIVE_TOKENS and first_token not in {'ASC', 'ASCII', 'DCI', 'DFB', 'BYTE', 'DS', 'DW', 'WORD'}:
-        return source_text
-
     if byte_tokens:
         # Preserve listing whitespace exactly (excluding the leading display address).
         first_byte_span = token_spans[0]
         return rest[first_byte_span.start():]
-    return source_text
+    # For non-byte lines (ORG, EQU, etc.) return everything from the first token
+    # so the address/expression field emitted by EDASM is included in the comparison.
+    return rest[token_spans[idx].start():]
 
 
 def normalize_listing(text: str) -> str:
