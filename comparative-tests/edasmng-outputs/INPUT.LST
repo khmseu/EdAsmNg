@@ -1,6 +1,6 @@
 
-0803:              LST ON
-0800:              ORG $800
-0800:EA           START NOP
-0801:EA            NOP
-0802:60            RTS
+0803:                1  LST ON
+0800:                2  ORG $800
+0800:EA              3 START NOP
+0801:EA              4  NOP
+0802:60              5  RTS

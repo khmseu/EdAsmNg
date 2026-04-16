@@ -4059,7 +4059,7 @@ TEST_F(Pass2Test, test_pass2_listing_line_nop_includes_address_bytes_and_source)
   EdAsmNg::Asm::SetUseExperimentalPass2(false);
 
   const std::string listing         = EdAsmNg::Asm::GetListingSink();
-  const std::string expectedListing = "\n0800:EA                 NOP\n";
+  const std::string expectedListing = "\n0800:EA              2       NOP\n";
   EXPECT_EQ(listing, expectedListing);
 }
 
@@ -4081,7 +4081,7 @@ TEST_F(Pass2Test, test_pass2_listing_line_multibyte_groups_bytes_and_source) {
   EdAsmNg::Asm::SetUseExperimentalPass2(false);
 
   const std::string listing         = EdAsmNg::Asm::GetListingSink();
-  const std::string expectedListing = "\n0800:8D 00 C0           STA $C000\n";
+  const std::string expectedListing = "\n0800:8D 00 C0        2       STA $C000\n";
   EXPECT_EQ(listing, expectedListing);
 }
 
@@ -4107,9 +4107,9 @@ TEST_F(Pass2Test, test_pass2_listing_line_jump_fixture_shape_includes_expected_a
   const std::string listing = EdAsmNg::Asm::GetListingSink();
   const std::string expectedListing =
       "\n"
-      "0800:4C 04 08           JMP AFTER\n"
-      "0803:EA                 NOP\n"
-      "0804:60           AFTER  RTS\n";
+      "0800:4C 04 08        2       JMP AFTER\n"
+      "0803:EA              3       NOP\n"
+      "0804:60              4 AFTER  RTS\n";
   EXPECT_EQ(listing, expectedListing);
 }
 
@@ -4130,7 +4130,7 @@ TEST_F(Pass2Test, test_pass2_listing_line_source_copy_includes_char_at_0xFF_boun
   EdAsmNg::Asm::SetUseExperimentalPass2(false);
 
   const std::string listing         = EdAsmNg::Asm::GetListingSink();
-  const std::string expectedListing = "\n0800:EA                 " + longLine.substr(6) + "\n";
+  const std::string expectedListing = "\n0800:EA              2 " + longLine + "\n";
   EXPECT_EQ(listing, expectedListing);
 }
 
@@ -4156,8 +4156,8 @@ TEST_F(Pass2Test,
   const std::string listing = EdAsmNg::Asm::GetListingSink();
   const std::string expectedListing =
       "\n"
-      "0800:48 45 4C 4C        ASC \"HELLO\"\n"
-      "0805:00                 DFB $00\n";
+      "0800:48 45 4C 4C     2       ASC \"HELLO\"\n"
+      "0805:00              3       DFB $00\n";
   EXPECT_EQ(listing, expectedListing);
 }
 

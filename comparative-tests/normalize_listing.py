@@ -54,8 +54,6 @@ def _canonicalize_listing_line(line: str) -> str | None:
     if re.match(r'^\s*[0-9A-Fa-f]{4}\s+[A-Za-z_.$][A-Za-z0-9_.$]*\s*$', line):
         return None
 
-    line = re.sub(r'^([0-9A-Fa-f]{4}:[0-9A-Fa-f ]{12,20})\s+\d+\s+', r'\1 ', line)
-
     match = re.match(r'^([0-9A-Fa-f]{4}):(.*)$', line)
     if not match:
         return _collapse_spaces(line)
@@ -90,6 +88,19 @@ def _canonicalize_listing_line(line: str) -> str | None:
         source_start = mnemonic_index
         if mnemonic_index > 0 and not re.fullmatch(r'[0-9A-Fa-f]{3,4}', source_tokens[mnemonic_index - 1]):
             source_start = mnemonic_index - 1
+        # Keep EDASM decimal line numbers when present before label/mnemonic tokens.
+        if source_start > 0 and re.fullmatch(r'\d+', source_tokens[source_start - 1]):
+            source_start -= 1
+
+    # EDASM sometimes inserts a rendered expression/target address token
+    # immediately before the decimal line number; ignore that volatile token
+    # while preserving the line-number itself for parity checks.
+    if (
+        source_start + 1 < len(source_tokens)
+        and re.fullmatch(r'[0-9A-Fa-f]{3,4}', source_tokens[source_start])
+        and re.fullmatch(r'\d+', source_tokens[source_start + 1])
+    ):
+        source_start += 1
 
     source_text = _collapse_spaces(' '.join(source_tokens[source_start:]))
     if not source_text:

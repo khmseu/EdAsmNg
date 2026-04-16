@@ -2280,6 +2280,11 @@ namespace {
     PutCR();
     OpenSrc1();  // Re-open initial src file
 
+    BCDNbr[0] = 1;
+    BCDNbr[1] = 0;
+    BCDNbr[2] = 0;
+    TotLines  = 1;
+
     A = GenF;
     if (A != 0x80) {
       goto Pass2Lup;  // Write obj code into mem? No
@@ -2791,6 +2796,24 @@ namespace {
       PrByte(static_cast<std::uint8_t>((value >> 8) & 0xFF));
       PrByte(static_cast<std::uint8_t>(value & 0xFF));
     }
+
+    std::uint32_t GetListingLineNumber() {
+      return static_cast<std::uint32_t>(BCDNbr[0]) | (static_cast<std::uint32_t>(BCDNbr[1]) << 8) |
+             (static_cast<std::uint32_t>(BCDNbr[2]) << 16);
+    }
+
+    void EmitListingLineNumber(std::uint8_t codeChars) {
+      const std::string     lineNumber             = std::to_string(GetListingLineNumber());
+      constexpr std::size_t kCodeAndLineFieldWidth = 17;
+      const std::size_t     used = static_cast<std::size_t>(codeChars) + lineNumber.size();
+      if (used < kCodeAndLineFieldWidth) {
+        EmitListingSpaces(static_cast<std::uint8_t>(kCodeAndLineFieldWidth - used));
+      }
+      for (char ch : lineNumber) {
+        PutC(static_cast<std::uint8_t>(ch));
+      }
+      PutC(' ');
+    }
   }  // namespace
 
   void ListCode() {
@@ -2812,11 +2835,7 @@ namespace {
       codeChars += 2;
     }
 
-    // Keep source text in a deterministic column even for short object fields.
-    if (codeChars < 12) {
-      EmitListingSpaces(static_cast<std::uint8_t>(12 - codeChars));
-    }
-    PutC(' ');
+    EmitListingLineNumber(codeChars);
   }
 
   void LstSrcLn() {
@@ -2853,15 +2872,18 @@ namespace {
       codeChars += 2;
     }
 
-    if (codeChars < 12) {
-      EmitListingSpaces(static_cast<std::uint8_t>(12 - codeChars));
-    }
-    PutC(' ');
+    EmitListingLineNumber(codeChars);
     LstSrcLn();
   }
 
   void L81A3() {
-    // End-of-line/listing side effects are not wired yet for the experimental path.
+    TotLines++;
+
+    std::uint16_t lineNum =
+        static_cast<std::uint16_t>(BCDNbr[0]) | (static_cast<std::uint16_t>(BCDNbr[1]) << 8);
+    lineNum++;
+    BCDNbr[0] = static_cast<std::uint8_t>(lineNum & 0xFF);
+    BCDNbr[1] = static_cast<std::uint8_t>((lineNum >> 8) & 0xFF);
   }
 
   void GOpAdr() {

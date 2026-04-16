@@ -1,6 +1,6 @@
 
-0806:              LST ON
-0800:              ORG $800
-0800:A9 00        START LDA #$00
-0802:8D 00 C0      STA $C000
-0805:60            RTS
+0806:                1  LST ON
+0800:                2  ORG $800
+0800:A9 00           3 START LDA #$00
+0802:8D 00 C0        4  STA $C000
+0805:60              5  RTS
