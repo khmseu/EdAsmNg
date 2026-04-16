@@ -1,4 +1,4 @@
-* EQU EXPRESSION TEST - symbol defined via EQU used as operand
+* EQU EXPRESSION TEST - symbol defined via EQU used as operand [WS]
 BASE     EQU   $C000
          ORG   $0800
          LDA   #$01

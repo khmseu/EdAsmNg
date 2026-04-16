@@ -296,8 +296,13 @@ def compare(ref_path: Path, ng_path: Path, label: str) -> bool:
     return False
 
 
-def compare_listings(edasm_lst: Path | None, ng_lst: Path | None, label: str) -> str:
-    """Compare normalized listing files. Returns 'match', 'diff', or 'skip'."""
+def compare_listings(edasm_lst: Path | None, ng_lst: Path | None, label: str, ws_only: bool = False) -> str:
+    """Compare normalized listing files. Returns 'match', 'diff', or 'skip'.
+
+    If ws_only is True the comparison collapses all runs of whitespace before
+    checking equality, so purely cosmetic column-alignment differences are
+    ignored and reported as LST MATCH (WS).
+    """
     if edasm_lst is None or not edasm_lst.exists():
         print(f"  {YELLOW}LST SKIP{RESET}  {label} (EDASM listing not found)")
         return 'skip'
@@ -314,6 +319,15 @@ def compare_listings(edasm_lst: Path | None, ng_lst: Path | None, label: str) ->
     if edasm_norm == ng_norm:
         print(f"  {GREEN}LST MATCH{RESET}  {label}")
         return 'match'
+
+    if ws_only:
+        # Collapse whitespace in every line and re-compare
+        def _ws_collapse(text: str) -> str:
+            return '\n'.join(' '.join(line.split()) for line in text.splitlines()) + '\n'
+
+        if _ws_collapse(edasm_norm) == _ws_collapse(ng_norm):
+            print(f"  {GREEN}LST MATCH{RESET}  {label} {YELLOW}[WS]{RESET}")
+            return 'match'
 
     print(f"  {RED}LST DIFF{RESET}  {label}")
     edasm_lines = edasm_norm.splitlines()
@@ -437,7 +451,9 @@ def main(argv: list[str] | None = None) -> int:
             prodos_stem = to_prodos_name(src.stem)
             edasm_lst = edasm_work_used / "volumes" / "OUT" / f"{prodos_stem}.LST"
             ng_lst = ng_out_used / f"{src.stem.upper()}.LST"
-            lst_result = compare_listings(edasm_lst, ng_lst, src.name)
+            first_line = src.read_text(errors='replace').splitlines()[0] if src.exists() else ''
+            ws_only = '[WS]' in first_line
+            lst_result = compare_listings(edasm_lst, ng_lst, src.name, ws_only=ws_only)
             if lst_result == 'match':
                 listing_passed += 1
             elif lst_result == 'diff':

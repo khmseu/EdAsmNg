@@ -136,3 +136,4 @@ CMakeUserPresets.json
 .ccls-cache/
 *.pyc
 build/
+t/

@@ -15,55 +15,51 @@ DIRECTIVE_TOKENS = {
     'ASC', 'ASCII', 'DCI', 'DFB', 'BYTE', 'DS', 'DW', 'WORD', 'EQU', 'LIST', 'LST',
     'NOLIST', 'ORG', 'PAGE', 'REL', 'TITLE', 'SBTL'
 }
-
-
-def _collapse_spaces(text: str) -> str:
-    return re.sub(r'\s+', ' ', text.strip())
-
-
 def _canonicalize_listing_line(line: str) -> str | None:
-    line = line.replace('\f', '').rstrip()
-    if not line:
+    line = line.replace('\f', '')
+    if not line.strip():
         return None
+
+    stripped = line.strip()
 
     # Drop EDASM diagnostic chatter and summary blocks; these are tool-specific
     # and can be emitted even when object bytes are equivalent.
-    if re.match(r'^\*{5}\s+.+ERROR IN LINE\s+\d+', line):
+    if re.match(r'^\*{5}\s+.+ERROR IN LINE\s+\d+', stripped):
         return None
-    if re.match(r'^ERROR SUMMARY\s*$', line):
+    if re.match(r'^ERROR SUMMARY\s*$', stripped):
         return None
-    if re.match(r'^[A-Z ]+ERROR IN LINE\s+\d+\s+OF FILE', line):
+    if re.match(r'^[A-Z ]+ERROR IN LINE\s+\d+\s+OF FILE', stripped):
         return None
-    if re.match(r'^\**\s*\d+\s+ERRORS IN THIS ASSEMBLY\s*$', line):
+    if re.match(r'^\**\s*\d+\s+ERRORS IN THIS ASSEMBLY\s*$', stripped):
         return None
 
-    if re.match(r'\*\*\s*ASSEMBLER CREATED ON', line):
+    if re.match(r'\*\*\s*ASSEMBLER CREATED ON', stripped):
         return None
-    if re.match(r'\*\*\s*FREE SPACE PAGE COUNT', line):
+    if re.match(r'\*\*\s*FREE SPACE PAGE COUNT', stripped):
         return None
-    if re.match(r'\*\*\s*SUCCESSFUL ASSEMBLY', line):
+    if re.match(r'\*\*\s*SUCCESSFUL ASSEMBLY', stripped):
         return None
-    if re.match(r'\*\*\s*TOTAL LINES ASSEMBLED', line):
+    if re.match(r'\*\*\s*TOTAL LINES ASSEMBLED', stripped):
         return None
-    if re.match(r'-{3,}\s*NEXT OBJECT FILE NAME', line):
+    if re.match(r'-{3,}\s*NEXT OBJECT FILE NAME', stripped):
         return None
-    if re.match(r'SOURCE\s+FILE\s*#\d+\s*=>', line):
+    if re.match(r'SOURCE\s+FILE\s*#\d+\s*=>', stripped):
         return None
-    if re.match(r'\?[0-9A-Fa-f]{4}\b', line):
+    if re.match(r'\?[0-9A-Fa-f]{4}\b', stripped):
         return None
-    if re.match(r'^\s*[0-9A-Fa-f]{4}\s+[A-Za-z_.$][A-Za-z0-9_.$]*\s*$', line):
+    if re.match(r'^[0-9A-Fa-f]{4}\s+[A-Za-z_.$][A-Za-z0-9_.$]*\s*$', stripped):
         return None
 
     match = re.match(r'^([0-9A-Fa-f]{4}):(.*)$', line)
     if not match:
-        return _collapse_spaces(line)
+        return stripped
 
-    address = match.group(1).upper()
-    rest = match.group(2).strip()
-    if not rest:
+    rest = match.group(2)
+    if not rest.strip():
         return None
 
-    tokens = rest.split()
+    token_spans = list(re.finditer(r'\S+', rest))
+    tokens = [span.group(0) for span in token_spans]
     byte_tokens = []
     idx = 0
     while idx < len(tokens) and re.fullmatch(r'[0-9A-Fa-f]{2}', tokens[idx]):
@@ -102,39 +98,36 @@ def _canonicalize_listing_line(line: str) -> str | None:
     ):
         source_start += 1
 
-    source_text = _collapse_spaces(' '.join(source_tokens[source_start:]))
-    if not source_text:
+    abs_source_start = idx + source_start
+    if abs_source_start >= len(token_spans):
+        return None
+    source_text = rest[token_spans[abs_source_start].start():]
+    source_text_stripped = source_text.strip()
+    if not source_text_stripped:
         return None
 
     # Drop standalone line-number suffixes and END pseudo-lines with stale bytes.
-    if re.fullmatch(r'\d+', source_text):
+    if re.fullmatch(r'\d+', source_text_stripped):
         return None
-    if source_text.upper() == 'END':
+    if source_text_stripped.upper() == 'END':
         return None
 
-    first_token = source_text.split()[0].upper()
+    first_token = source_text_stripped.split()[0].upper()
     if first_token in DIRECTIVE_TOKENS and first_token not in {'ASC', 'ASCII', 'DCI', 'DFB', 'BYTE', 'DS', 'DW', 'WORD'}:
         return source_text
 
     if byte_tokens:
-        # Compare semantic listing content independent of shifted display address.
-        return f"{' '.join(byte_tokens)} {source_text}"
+        # Preserve listing whitespace exactly (excluding the leading display address).
+        first_byte_span = token_spans[0]
+        return rest[first_byte_span.start():]
     return source_text
 
 
 def normalize_listing(text: str) -> str:
     """Return a normalized listing suitable for comparison.
 
-    Removes:
-    - Leading blank lines and header noise (SOURCE FILE #01 =>...)
-    - Object file name lines (----- NEXT OBJECT FILE NAME...)
-    - Timestamp lines (** ASSEMBLER CREATED ON...)
-    - Free space lines (** FREE SPACE PAGE COUNT...)
-    - EDASM line-number column from code lines
-
-    Normalizes:
-    - Trailing whitespace on each line
-    - Trailing blank lines (removed)
+    Removes volatile EDASM-only metadata and diagnostics while preserving
+    whitespace in all retained listing content lines.
     """
     normalized = []
 

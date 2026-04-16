@@ -68,6 +68,7 @@ namespace {
   bool                      g_capture_serialized_obj    = false;
   bool                      g_serialized_obj_active     = false;
   bool                      g_object_write_start_valid  = false;
+  bool                      g_listing_compact_columns   = false;
   std::uint16_t             g_object_write_start_addr   = 0;
   std::vector<std::uint8_t> g_serialized_obj_bytes;
 
@@ -2271,12 +2272,13 @@ namespace {
   // This is compiled for incremental activation work but is not the default
   // execution path yet.
   void DoPass2_ExperimentalCore() {
-    PassNbr                 = 1;
-    g_serialized_obj_active = false;
-    A                       = '*';
-    RepChar                 = A;
-    A                       = -1;
-    ListingF                = A;
+    PassNbr                   = 1;
+    g_serialized_obj_active   = false;
+    g_listing_compact_columns = false;
+    A                         = '*';
+    RepChar                   = A;
+    A                         = -1;
+    ListingF                  = A;
     PutCR();
     OpenSrc1();  // Re-open initial src file
 
@@ -2814,6 +2816,155 @@ namespace {
       }
       PutC(' ');
     }
+
+    bool IsBranchOpcode(std::uint8_t opcode) {
+      switch (opcode) {
+        case 0x10:  // BPL
+        case 0x30:  // BMI
+        case 0x50:  // BVC
+        case 0x70:  // BVS
+        case 0x90:  // BCC
+        case 0xB0:  // BCS
+        case 0xD0:  // BNE
+        case 0xF0:  // BEQ
+        case 0x80:  // BRA (65C02)
+          return true;
+        default:
+          return false;
+      }
+    }
+
+    std::uint8_t EmitERFieldIfNeeded(std::uint8_t codeChars) {
+      bool          showER = (LstCodeF & 0x80) != 0;
+      std::uint16_t erValue =
+          static_cast<std::uint16_t>(ERfield) | (static_cast<std::uint16_t>(ERfield_hi) << 8);
+
+      // Experimental path can emit branch bytes without setting LstCodeF's ER flag;
+      // derive and print the branch target to mirror EDASM listing shape.
+      if (!showER && Length == 2 && IsBranchOpcode(GMC[0])) {
+        const std::int8_t displacement = static_cast<std::int8_t>(GMC[1]);
+        erValue                        = static_cast<std::uint16_t>(PC + 2 + displacement);
+        showER                         = true;
+      }
+
+      if (!showER) {
+        return codeChars;
+      }
+
+      if (codeChars == 0) {
+        EmitListingSpaces(8);
+        codeChars = 8;
+      } else if (codeChars < 8) {
+        EmitListingSpaces(static_cast<std::uint8_t>(8 - codeChars));
+        codeChars = 8;
+      } else {
+        EmitListingSpaces(3);
+        codeChars = static_cast<std::uint8_t>(codeChars + 3);
+      }
+      EmitListingHex16(erValue);
+      return static_cast<std::uint8_t>(codeChars + 4);
+    }
+
+    bool IsListingWs(char ch) {
+      return ch == ' ' || ch == '\t';
+    }
+
+    std::string FormatListingSource(const std::string& sourceLine) {
+      if (sourceLine.empty()) {
+        return sourceLine;
+      }
+
+      if (sourceLine[0] == '*' || sourceLine[0] == ';') {
+        return sourceLine;
+      }
+
+      std::size_t cursor   = 0;
+      const bool  hasLabel = !IsListingWs(sourceLine[0]);
+      std::string label;
+      if (hasLabel) {
+        while (cursor < sourceLine.size() && !IsListingWs(sourceLine[cursor])) {
+          label.push_back(sourceLine[cursor]);
+          cursor++;
+        }
+      }
+
+      while (cursor < sourceLine.size() && IsListingWs(sourceLine[cursor])) {
+        cursor++;
+      }
+
+      std::string mnemonic;
+      while (cursor < sourceLine.size() && !IsListingWs(sourceLine[cursor])) {
+        mnemonic.push_back(sourceLine[cursor]);
+        cursor++;
+      }
+
+      while (cursor < sourceLine.size() && IsListingWs(sourceLine[cursor])) {
+        cursor++;
+      }
+
+      std::string operand;
+      if (cursor < sourceLine.size()) {
+        operand = sourceLine.substr(cursor);
+      }
+
+      if (mnemonic.empty()) {
+        return sourceLine;
+      }
+
+      // EDASM uses two distinct source-field layouts in current fixtures:
+      // compact mode for files enabling LST/LIST and a wide default mode.
+      const bool  compactColumns     = g_listing_compact_columns;
+      std::size_t labelStartColumn   = 10;
+      std::size_t noLabelStartColumn = 10;
+      if (!compactColumns) {
+        const bool hasOperand = !operand.empty();
+        if (!hasLabel) {
+          noLabelStartColumn = 36;
+        } else if (!hasOperand) {
+          labelStartColumn = 32;
+        }
+      }
+
+      std::string mnemonicUpper = mnemonic;
+      for (char& ch : mnemonicUpper) {
+        ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+      }
+      const bool isAscDirective = mnemonicUpper == "ASC";
+      const bool isEquDirective = mnemonicUpper == "EQU";
+
+      if (!compactColumns && hasLabel && !operand.empty()) {
+        labelStartColumn = isEquDirective ? 32 : 30;
+      }
+
+      if (isAscDirective && hasLabel) {
+        std::string ascFormatted = label;
+        ascFormatted += "   ";
+        ascFormatted += mnemonic;
+        if (!operand.empty()) {
+          ascFormatted.append(18, ' ');
+          ascFormatted += operand;
+        }
+        return ascFormatted;
+      }
+
+      std::string formatted;
+      if (hasLabel) {
+        formatted += label;
+        const std::size_t current = formatted.size();
+        const std::size_t target  = labelStartColumn > current ? labelStartColumn : current + 1;
+        formatted.append(target - current, ' ');
+      } else {
+        formatted.assign(noLabelStartColumn, ' ');
+      }
+
+      formatted += mnemonic;
+      if (!operand.empty()) {
+        const std::size_t operandPad = mnemonic.size() < 6 ? 6 - mnemonic.size() : 1;
+        formatted.append(operandPad, ' ');
+        formatted += operand;
+      }
+      return formatted;
+    }
   }  // namespace
 
   void ListCode() {
@@ -2835,16 +2986,23 @@ namespace {
       codeChars += 2;
     }
 
+    codeChars = EmitERFieldIfNeeded(codeChars);
     EmitListingLineNumber(codeChars);
   }
 
   void LstSrcLn() {
+    std::string sourceLine;
     for (std::uint16_t idx = 0; idx <= 0x00FF; ++idx) {
       std::uint8_t ch = g_test_src_memory[static_cast<std::uint16_t>(Src2P + idx)];
       if (ch == CR) {
         break;
       }
-      PutC(ch);
+      sourceLine.push_back(static_cast<char>(ch));
+    }
+
+    const std::string formatted = FormatListingSource(sourceLine);
+    for (char ch : formatted) {
+      PutC(static_cast<std::uint8_t>(ch));
     }
     PutCR();
   }
@@ -2872,6 +3030,7 @@ namespace {
       codeChars += 2;
     }
 
+    codeChars = EmitERFieldIfNeeded(codeChars);
     EmitListingLineNumber(codeChars);
     LstSrcLn();
   }
@@ -4261,10 +4420,11 @@ namespace {
     }
 
     if (mnemonic == ".LIST" || mnemonic == "LIST") {
-      ZAB                   = 0x80;
-      g_LastDirectiveCalled = "HndlLIST";
-      Length                = 0;
-      C                     = false;
+      ZAB                       = 0x80;
+      g_LastDirectiveCalled     = "HndlLIST";
+      g_listing_compact_columns = true;
+      Length                    = 0;
+      C                         = false;
       if (g_test_src_buffer == nullptr) {
         HndlLIST();
       }
@@ -4272,10 +4432,11 @@ namespace {
     }
 
     if (mnemonic == "LST") {
-      ZAB                   = 0x80;
-      g_LastDirectiveCalled = "HndlLST";
-      Length                = 0;
-      C                     = false;
+      ZAB                       = 0x80;
+      g_LastDirectiveCalled     = "HndlLST";
+      g_listing_compact_columns = true;
+      Length                    = 0;
+      C                         = false;
       if (g_test_src_buffer == nullptr) {
         HndlLST();
       }
@@ -7025,8 +7186,9 @@ namespace {
   }
 
   void HndlLIST() {
-    g_LastDirectiveCalled = "HndlLIST";
-    ListingF              = static_cast<std::uint8_t>((ListingF >> 1) | 0x80);
+    g_LastDirectiveCalled     = "HndlLIST";
+    ListingF                  = static_cast<std::uint8_t>((ListingF >> 1) | 0x80);
+    g_listing_compact_columns = true;
     DrtvDone();
   }
 
@@ -7061,7 +7223,8 @@ namespace {
       }
 
       if (A == 'N') {
-        ListingF = static_cast<std::uint8_t>((ListingF >> 1) | 0x80);
+        ListingF                  = static_cast<std::uint8_t>((ListingF >> 1) | 0x80);
+        g_listing_compact_columns = true;
       } else if (A == 'F') {
         ListingF = static_cast<std::uint8_t>(ListingF >> 1);
       } else {

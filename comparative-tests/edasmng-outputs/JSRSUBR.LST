@@ -1,6 +1,6 @@
 
-0805:                1  LST ON
-0800:                2  ORG $800
-0800:EA              3 SUB NOP
-0801:60              4  RTS
-0802:20 00 08        5  JSR SUB
+0805:                1           LST   ON
+0800:                2           ORG   $800
+0800:EA              3 SUB       NOP
+0801:60              4           RTS
+0802:20 00 08        5           JSR   SUB

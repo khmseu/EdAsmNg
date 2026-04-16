@@ -1,4 +1,4 @@
-* FORWARD JUMP TEST - JMP to label defined later
+* FORWARD JUMP TEST - JMP to label defined later [WS]
          ORG   $0800
          JMP   AFTER
          NOP
