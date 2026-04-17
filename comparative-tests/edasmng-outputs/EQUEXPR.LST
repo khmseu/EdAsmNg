@@ -1,6 +1,6 @@
-
+  
 SOURCE   FILE #01 =>EQUEXPR.SRC
-
+ 
 0000:                1 * EQU EXPRESSION TEST - symbol defined via EQU used as operand [WS]
 0000:        C000    2 BASE                            EQU   $C000
 ----- NEXT OBJECT FILE NAME IS /OUT/EQUEXPR.OBJ              

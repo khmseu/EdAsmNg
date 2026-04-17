@@ -601,6 +601,14 @@ namespace {
   }
 
   void PutCR() {
+    // EDASM listing prefix begins with a blank line containing two spaces.
+    // Subsequent blank lines are rendered as a single-space line.
+    if (g_listing_sink.empty()) {
+      PutC(' ');
+      PutC(' ');
+    } else if (g_listing_sink.back() == '\n') {
+      PutC(' ');
+    }
     PutC('\n');
   }
 

@@ -1,6 +1,6 @@
-
+  
 SOURCE   FILE #01 =>BRANCH.SRC
-
+ 
 0000:                1 * BRANCH TEST - LDX immediate, DEX, BNE backward label [WS]
 ----- NEXT OBJECT FILE NAME IS /OUT/BRANCH.OBJ               
 0800:        0800    2                                     ORG   $0800

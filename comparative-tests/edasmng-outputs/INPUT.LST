@@ -1,6 +1,6 @@
-
+  
 SOURCE   FILE #01 =>INPUT.SRC
-
+ 
 0000:                1           LST   ON
 ----- NEXT OBJECT FILE NAME IS /OUT/INPUT.OBJ                
 0800:        0800    2           ORG   $800

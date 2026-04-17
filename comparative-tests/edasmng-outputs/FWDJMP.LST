@@ -1,6 +1,6 @@
-
+  
 SOURCE   FILE #01 =>FWDJMP.SRC
-
+ 
 0000:                1 * FORWARD JUMP TEST - JMP to label defined later [WS]
 ----- NEXT OBJECT FILE NAME IS /OUT/FWDJMP.OBJ               
 0800:        0800    2                                     ORG   $0800
