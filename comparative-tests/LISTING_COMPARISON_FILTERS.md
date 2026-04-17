@@ -28,8 +28,8 @@ This note summarizes what normalize_listing.py removes/transforms before EDASM v
 ## Normalized (Not Fully Removed)
 
 - Whitespace is collapsed to single spaces only for files marked with `[WS]` on the first source line (handled by compare.py).
-- For lines with object bytes, comparison uses byte sequence + normalized source text (display address is ignored).
-- For non-byte listing lines, comparison keeps everything from the first token after the display-address field so ER/expression values and line numbers are compared.
+- For lines with object bytes, comparison uses display address + byte sequence + normalized source text.
+- For non-byte listing lines, comparison keeps display address plus everything from the first token after the display-address field so ER/expression values and line numbers are compared.
 
 ## Directive Behavior
 

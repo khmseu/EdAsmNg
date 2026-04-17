@@ -54,6 +54,7 @@ def _canonicalize_listing_line(line: str) -> str | None:
     if not match:
         return stripped
 
+    display_addr = match.group(1).upper()
     rest = match.group(2)
     if not rest.strip():
         return None
@@ -113,12 +114,13 @@ def _canonicalize_listing_line(line: str) -> str | None:
         return None
 
     if byte_tokens:
-        # Preserve listing whitespace exactly (excluding the leading display address).
+        # Preserve listing whitespace exactly and keep the display address prefix.
         first_byte_span = token_spans[0]
-        return rest[first_byte_span.start():]
+        return f"{display_addr}:{rest[first_byte_span.start():]}"
     # For non-byte lines (ORG, EQU, etc.) return everything from the first token
-    # so the address/expression field emitted by EDASM is included in the comparison.
-    return rest[token_spans[idx].start():]
+    # so the address/expression field emitted by EDASM is included in the comparison,
+    # along with the display address prefix.
+    return f"{display_addr}:{rest[token_spans[idx].start():]}"
 
 
 def normalize_listing(text: str) -> str:

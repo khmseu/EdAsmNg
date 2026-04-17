@@ -2279,6 +2279,10 @@ namespace {
     RepChar                   = A;
     A                         = -1;
     ListingF                  = A;
+    // EDASM lists pre-ORG/non-code lines from a zero display address during
+    // pass 2. Reset PC here to avoid carrying pass-1 terminal address into
+    // listing-only records like leading comments/LST ON lines.
+    PC = 0;
     PutCR();
     OpenSrc1();  // Re-open initial src file
 
