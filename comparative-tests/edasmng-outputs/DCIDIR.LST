@@ -6,3 +6,7 @@ SOURCE   FILE #01 =>DCIDIR.SRC
 0800:        0800    2           ORG   $800
 0800:        0800    3           DCI   ""
 0800:AA              4           DFB   $AA
+** SUCCESSFUL ASSEMBLY := NO ERRORS
+** ASSEMBLER CREATED ON 17-APR-26 23:56 
+** TOTAL LINES ASSEMBLED     4 
+** FREE SPACE PAGE COUNT  161 

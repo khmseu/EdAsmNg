@@ -7,3 +7,7 @@ SOURCE   FILE #01 =>FWDJMP.SRC
 0800:4C 04 08        3                                     JMP   AFTER
 0803:EA              4                                     NOP
 0804:60              5 AFTER                           RTS
+** SUCCESSFUL ASSEMBLY := NO ERRORS
+** ASSEMBLER CREATED ON 17-APR-26 23:56 
+** TOTAL LINES ASSEMBLED     5 
+** FREE SPACE PAGE COUNT  160 

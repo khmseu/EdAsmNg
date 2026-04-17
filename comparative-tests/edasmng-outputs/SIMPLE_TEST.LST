@@ -1,4 +1,4 @@
- 
+  
 SOURCE   FILE #01 =>SIMPLE_TEST.ASM
  
 0000:                1 * SIMPLE TEST FILE FOR EDASM COMPARISON [WS]
@@ -21,3 +21,7 @@ SOURCE   FILE #01 =>SIMPLE_TEST.ASM
 081E:00             17                                     DFB   $00
 081F:               18 ;
 081F:               19 ; END
+** SUCCESSFUL ASSEMBLY := NO ERRORS
+** ASSEMBLER CREATED ON 17-APR-26 23:56 
+** TOTAL LINES ASSEMBLED    19 
+** FREE SPACE PAGE COUNT  160 

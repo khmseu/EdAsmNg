@@ -10,13 +10,29 @@ from __future__ import annotations
 import re
 import sys
 
-
 DIRECTIVE_TOKENS = {
-    'ASC', 'ASCII', 'DCI', 'DFB', 'BYTE', 'DS', 'DW', 'WORD', 'EQU', 'LIST', 'LST',
-    'NOLIST', 'ORG', 'PAGE', 'REL', 'TITLE', 'SBTL'
+    "ASC",
+    "ASCII",
+    "DCI",
+    "DFB",
+    "BYTE",
+    "DS",
+    "DW",
+    "WORD",
+    "EQU",
+    "LIST",
+    "LST",
+    "NOLIST",
+    "ORG",
+    "PAGE",
+    "REL",
+    "TITLE",
+    "SBTL",
 }
+
+
 def _canonicalize_listing_line(line: str) -> str | None:
-    line = line.replace('\f', '')
+    line = line.replace("\f", "")
     if not line.strip():
         return None
 
@@ -24,48 +40,46 @@ def _canonicalize_listing_line(line: str) -> str | None:
 
     # Drop EDASM diagnostic chatter and summary blocks; these are tool-specific
     # and can be emitted even when object bytes are equivalent.
-    if re.match(r'^\*{5}\s+.+ERROR IN LINE\s+\d+', stripped):
+    if re.match(r"^\*{5}\s+.+ERROR IN LINE\s+\d+", stripped):
         return None
-    if re.match(r'^ERROR SUMMARY\s*$', stripped):
+    if re.match(r"^ERROR SUMMARY\s*$", stripped):
         return None
-    if re.match(r'^[A-Z ]+ERROR IN LINE\s+\d+\s+OF FILE', stripped):
+    if re.match(r"^[A-Z ]+ERROR IN LINE\s+\d+\s+OF FILE", stripped):
         return None
-    if re.match(r'^\**\s*\d+\s+ERRORS IN THIS ASSEMBLY\s*$', stripped):
+    if re.match(r"^\**\s*\d+\s+ERRORS IN THIS ASSEMBLY\s*$", stripped):
         return None
 
-    if re.match(r'\*\*\s*ASSEMBLER CREATED ON', stripped):
-        return None
-    if re.match(r'\*\*\s*FREE SPACE PAGE COUNT', stripped):
-        return None
-    if re.match(r'\*\*\s*SUCCESSFUL ASSEMBLY', stripped):
-        return None
-    if re.match(r'\*\*\s*TOTAL LINES ASSEMBLED', stripped):
-        return None
+    # Keep summary lines in comparison, but normalize volatile values.
+    if re.match(r"^\*\*\s+ASSEMBLER\s+CREATED\s+ON\s+", stripped, flags=re.IGNORECASE):
+        return "** ASSEMBLER CREATED ON <DATE>"
+    if re.match(
+        r"^\*\*\s+FREE\s+SPACE\s+PAGE\s+COUNT\s+", stripped, flags=re.IGNORECASE
+    ):
+        return "** FREE SPACE PAGE COUNT <N>"
+
     # Keep source/object banner lines in comparison, but normalize only the
     # volatile filename/path segment to keep diffs focused while still checking
     # line presence and structure.
-    if re.match(r'-{3,}\s*NEXT OBJECT FILE NAME', stripped):
+    if re.match(r"-{3,}\s*NEXT OBJECT FILE NAME", stripped):
         normalized = re.sub(
-            r'(-{3,}\s*NEXT OBJECT FILE NAME\s+IS\s+).+',
-            r'\1<FILE>',
+            r"(-{3,}\s*NEXT OBJECT FILE NAME\s+IS\s+).+",
+            r"\1<FILE>",
             stripped,
             flags=re.IGNORECASE,
         )
         return normalized
-    if re.match(r'SOURCE\s+FILE\s*#\d+\s*=>', stripped):
+    if re.match(r"SOURCE\s+FILE\s*#\d+\s*=>", stripped):
         normalized = re.sub(
-            r'(SOURCE\s+FILE\s*#\d+\s*=>)\s*.+',
-            r'\1<FILE>',
+            r"(SOURCE\s+FILE\s*#\d+\s*=>)\s*.+",
+            r"\1<FILE>",
             stripped,
             flags=re.IGNORECASE,
         )
         return normalized
-    if re.match(r'\?[0-9A-Fa-f]{4}\b', stripped):
-        return None
-    if re.match(r'^[0-9A-Fa-f]{4}\s+[A-Za-z_.$][A-Za-z0-9_.$]*\s*$', stripped):
-        return None
+    # Symbol-table dump lines are retained. In EDASM dumps these records carry
+    # an indicator character before the hexadecimal address.
 
-    match = re.match(r'^([0-9A-Fa-f]{4}):(.*)$', line)
+    match = re.match(r"^([0-9A-Fa-f]{4}):(.*)$", line)
     if not match:
         return stripped
 
@@ -74,11 +88,11 @@ def _canonicalize_listing_line(line: str) -> str | None:
     if not rest.strip():
         return None
 
-    token_spans = list(re.finditer(r'\S+', rest))
+    token_spans = list(re.finditer(r"\S+", rest))
     tokens = [span.group(0) for span in token_spans]
     byte_tokens = []
     idx = 0
-    while idx < len(tokens) and re.fullmatch(r'[0-9A-Fa-f]{2}', tokens[idx]):
+    while idx < len(tokens) and re.fullmatch(r"[0-9A-Fa-f]{2}", tokens[idx]):
         byte_tokens.append(tokens[idx].upper())
         idx += 1
 
@@ -91,17 +105,19 @@ def _canonicalize_listing_line(line: str) -> str | None:
     mnemonic_index = None
     for token_index, token in enumerate(source_tokens):
         token_upper = token.upper()
-        if token_upper in DIRECTIVE_TOKENS or re.fullmatch(r'[A-Z]{3}', token_upper):
+        if token_upper in DIRECTIVE_TOKENS or re.fullmatch(r"[A-Z]{3}", token_upper):
             mnemonic_index = token_index
             break
 
     source_start = 0
     if mnemonic_index is not None:
         source_start = mnemonic_index
-        if mnemonic_index > 0 and not re.fullmatch(r'[0-9A-Fa-f]{3,4}', source_tokens[mnemonic_index - 1]):
+        if mnemonic_index > 0 and not re.fullmatch(
+            r"[0-9A-Fa-f]{3,4}", source_tokens[mnemonic_index - 1]
+        ):
             source_start = mnemonic_index - 1
         # Keep EDASM decimal line numbers when present before label/mnemonic tokens.
-        if source_start > 0 and re.fullmatch(r'\d+', source_tokens[source_start - 1]):
+        if source_start > 0 and re.fullmatch(r"\d+", source_tokens[source_start - 1]):
             source_start -= 1
 
     # EDASM sometimes inserts a rendered expression/target address token
@@ -109,23 +125,23 @@ def _canonicalize_listing_line(line: str) -> str | None:
     # while preserving the line-number itself for parity checks.
     if (
         source_start + 1 < len(source_tokens)
-        and re.fullmatch(r'[0-9A-Fa-f]{3,4}', source_tokens[source_start])
-        and re.fullmatch(r'\d+', source_tokens[source_start + 1])
+        and re.fullmatch(r"[0-9A-Fa-f]{3,4}", source_tokens[source_start])
+        and re.fullmatch(r"\d+", source_tokens[source_start + 1])
     ):
         source_start += 1
 
     abs_source_start = idx + source_start
     if abs_source_start >= len(token_spans):
         return None
-    source_text = rest[token_spans[abs_source_start].start():]
+    source_text = rest[token_spans[abs_source_start].start() :]
     source_text_stripped = source_text.strip()
     if not source_text_stripped:
         return None
 
     # Drop standalone line-number suffixes and END pseudo-lines with stale bytes.
-    if re.fullmatch(r'\d+', source_text_stripped):
+    if re.fullmatch(r"\d+", source_text_stripped):
         return None
-    if source_text_stripped.upper() == 'END':
+    if source_text_stripped.upper() == "END":
         return None
 
     if byte_tokens:
@@ -159,7 +175,7 @@ def normalize_listing(text: str) -> str:
     while normalized and not normalized[-1]:
         normalized.pop()
 
-    return '\n'.join(normalized) + '\n' if normalized else ''
+    return "\n".join(normalized) + "\n" if normalized else ""
 
 
 def main() -> int:
@@ -167,12 +183,12 @@ def main() -> int:
         print("Usage: normalize_listing.py <listing_file>", file=sys.stderr)
         return 1
 
-    with open(sys.argv[1], 'r', errors='replace') as f:
+    with open(sys.argv[1], "r", errors="replace") as f:
         text = f.read()
 
-    print(normalize_listing(text), end='')
+    print(normalize_listing(text), end="")
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

@@ -1110,6 +1110,7 @@ namespace AsmInternal {
     if (!C) goto L8F22;  // BCC L8F22 - alphabetic, continue
 
     // Check for delimiter or end
+    if (A == 0x00) goto L8F37;   // End-of-record marker in memory mode
     if (A == SPACE) goto L8F37;  // Done
     if (A == CR) goto L8F37;     // Done
     Y++;                         // INY

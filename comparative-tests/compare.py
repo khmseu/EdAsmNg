@@ -39,6 +39,7 @@ EDASM_MAX_ATTEMPTS = 2
 EDASMNG_RUN_TIMEOUT_SEC = 600
 EDASMNG_MAX_ATTEMPTS = 2
 
+
 def to_prodos_name(stem: str, max_stem_len: int = 11) -> str:
     """Sanitize a stem to a ProDOS-legal filename component: [A-Z][A-Z0-9.]{,14}.
 
@@ -47,14 +48,14 @@ def to_prodos_name(stem: str, max_stem_len: int = 11) -> str:
     """
     upper = stem.upper()
     # Replace any character not in [A-Z0-9.] with '.'
-    sanitized = re.sub(r'[^A-Z0-9.]', '.', upper)
+    sanitized = re.sub(r"[^A-Z0-9.]", ".", upper)
     # Collapse runs of dots into one
-    sanitized = re.sub(r'\.{2,}', '.', sanitized)
+    sanitized = re.sub(r"\.{2,}", ".", sanitized)
     # Strip leading/trailing dots (first character must be A-Z)
-    sanitized = sanitized.strip('.')
+    sanitized = sanitized.strip(".")
     # Ensure the result starts with a letter
     if not sanitized or not sanitized[0].isalpha():
-        sanitized = 'X' + sanitized
+        sanitized = "X" + sanitized
     return sanitized[:max_stem_len]
 
 
@@ -108,7 +109,9 @@ def print_prodos_logfile(indent: str = "  ") -> None:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     p.add_argument(
         "inputs",
         nargs="*",
@@ -171,7 +174,7 @@ def run_original_edasm(
 
     # The source file must also have a ProDOS-legal name on the EDASM volume.
     # Create a renamed copy so run_edasm_job imports it under the sanitized name.
-    src_ext = src_path.suffix.lstrip('.').upper() or 'ASM'
+    src_ext = src_path.suffix.lstrip(".").upper() or "ASM"
     prodos_src_name = f"{prodos_stem}.{src_ext}"
     src_copy = work_dir.parent / prodos_src_name
     shutil.copy2(str(src_path), str(src_copy))
@@ -179,11 +182,16 @@ def run_original_edasm(
     cmd = [
         sys.executable,
         str(RUN_EDASM),
-        "--input", str(src_copy),
-        "--listing", lst_name,
-        "--output", obj_name,
-        "--work-dir", str(work_dir),
-        "--max-instructions", str(max_instructions),
+        "--input",
+        str(src_copy),
+        "--listing",
+        lst_name,
+        "--output",
+        obj_name,
+        "--work-dir",
+        str(work_dir),
+        "--max-instructions",
+        str(max_instructions),
     ]
     if debug:
         cmd.append("--debug")
@@ -221,7 +229,7 @@ def run_original_edasm(
         else:
             print(f"  {YELLOW}EDASM ran but OBJ not found at {obj_path}{RESET}")
             print_prodos_logfile()
-            print_recursive_listing(work_dir )
+            print_recursive_listing(work_dir)
             return None
     return obj_path
 
@@ -235,8 +243,10 @@ def run_edasmng(src_path: Path, out_dir: Path) -> Path | None:
     cmd = [
         str(EDASMNG_BIN),
         str(src_path),
-        "--object", str(obj_path),
-        "--listing", str(lst_path),
+        "--object",
+        str(obj_path),
+        "--listing",
+        str(lst_path),
     ]
     try:
         result = subprocess.run(  # nosec B603
@@ -269,7 +279,7 @@ def run_edasmng(src_path: Path, out_dir: Path) -> Path | None:
 def hexdump(data: bytes, indent: str = "    ") -> str:
     lines = []
     for i in range(0, len(data), 16):
-        chunk = data[i:i + 16]
+        chunk = data[i : i + 16]
         hex_part = " ".join(f"{b:02X}" for b in chunk)
         lines.append(f"{indent}{i:04X}: {hex_part}")
     return "\n".join(lines)
@@ -287,7 +297,7 @@ def compare(ref_path: Path, ng_path: Path, label: str) -> bool:
     print(f"    EdAsmNg   ({len(ng)} bytes):")
     print(hexdump(ng))
     # Show first differing byte
-    for i, (a, b) in enumerate(zip(ref, ng)):
+    for i, (a, b) in enumerate(zip(ref, ng, strict=False)):
         if a != b:
             print(f"    First difference at offset {i}: ref={a:02X} ng={b:02X}")
             break
@@ -296,7 +306,9 @@ def compare(ref_path: Path, ng_path: Path, label: str) -> bool:
     return False
 
 
-def compare_listings(edasm_lst: Path | None, ng_lst: Path | None, label: str, ws_only: bool = False) -> str:
+def compare_listings(
+    edasm_lst: Path | None, ng_lst: Path | None, label: str, ws_only: bool = False
+) -> str:
     """Compare normalized listing files. Returns 'match', 'diff', or 'skip'.
 
     If ws_only is True the comparison collapses all runs of whitespace before
@@ -305,29 +317,31 @@ def compare_listings(edasm_lst: Path | None, ng_lst: Path | None, label: str, ws
     """
     if edasm_lst is None or not edasm_lst.exists():
         print(f"  {YELLOW}LST SKIP{RESET}  {label} (EDASM listing not found)")
-        return 'skip'
+        return "skip"
     if ng_lst is None or not ng_lst.exists():
         print(f"  {YELLOW}LST SKIP{RESET}  {label} (EdAsmNg listing not found)")
-        return 'skip'
+        return "skip"
 
-    edasm_text = edasm_lst.read_text(errors='replace')
-    ng_text = ng_lst.read_text(errors='replace')
+    edasm_text = edasm_lst.read_text(errors="replace")
+    ng_text = ng_lst.read_text(errors="replace")
 
     edasm_norm = normalize_listing(edasm_text)
     ng_norm = normalize_listing(ng_text)
 
     if edasm_norm == ng_norm:
         print(f"  {GREEN}LST MATCH{RESET}  {label}")
-        return 'match'
+        return "match"
 
     if ws_only:
         # Collapse whitespace in every line and re-compare
         def _ws_collapse(text: str) -> str:
-            return '\n'.join(' '.join(line.split()) for line in text.splitlines()) + '\n'
+            return (
+                "\n".join(" ".join(line.split()) for line in text.splitlines()) + "\n"
+            )
 
         if _ws_collapse(edasm_norm) == _ws_collapse(ng_norm):
             print(f"  {GREEN}LST MATCH{RESET}  {label} {YELLOW}[WS]{RESET}")
-            return 'match'
+            return "match"
 
     print(f"  {RED}LST DIFF{RESET}  {label}")
 
@@ -335,7 +349,7 @@ def compare_listings(edasm_lst: Path | None, ng_lst: Path | None, label: str, ws
     ng_lines = ng_norm.splitlines()
     max_show = 10
     shown = 0
-    for i, (el, nl) in enumerate(zip(edasm_lines, ng_lines)):
+    for i, (el, nl) in enumerate(zip(edasm_lines, ng_lines, strict=False)):
         if el != nl:
             print(f"    Line {i + 1} differs:")
             print(f"      EDASM:   {el!r}")
@@ -346,14 +360,16 @@ def compare_listings(edasm_lst: Path | None, ng_lst: Path | None, label: str, ws
                 break
     if len(edasm_lines) != len(ng_lines):
         print(f"    Line count: EDASM={len(edasm_lines)} EdAsmNg={len(ng_lines)}")
-    return 'diff'
+    return "diff"
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
     if args.compare_listing:
-        print(f"{YELLOW}Note:{RESET} --compare-listing is deprecated; listing comparison is always enabled.")
+        print(
+            f"{YELLOW}Note:{RESET} --compare-listing is deprecated; listing comparison is always enabled."
+        )
 
     if not EDASMNG_BIN.exists() and not args.no_build:
         print(f"{YELLOW}EdAsmNg binary not found, will build.{RESET}")
@@ -362,7 +378,10 @@ def main(argv: list[str] | None = None) -> int:
         if not build_edasmng():
             return 1
     elif not EDASMNG_BIN.exists():
-        print(f"{RED}Error: EdAsmNg binary not found at {EDASMNG_BIN}{RESET}", file=sys.stderr)
+        print(
+            f"{RED}Error: EdAsmNg binary not found at {EDASMNG_BIN}{RESET}",
+            file=sys.stderr,
+        )
         return 1
 
     # Gather input files
@@ -402,7 +421,9 @@ def main(argv: list[str] | None = None) -> int:
                     ng_out_used = ng_out_attempt
                     break
                 if attempt < EDASMNG_MAX_ATTEMPTS:
-                    print(f"  {YELLOW}Retrying EdAsmNg ({attempt + 1}/{EDASMNG_MAX_ATTEMPTS})...{RESET}")
+                    print(
+                        f"  {YELLOW}Retrying EdAsmNg ({attempt + 1}/{EDASMNG_MAX_ATTEMPTS})...{RESET}"
+                    )
 
             if args.skip_edasm:
                 if ng_obj:
@@ -428,10 +449,14 @@ def main(argv: list[str] | None = None) -> int:
                     edasm_work_used = edasm_work
                     break
                 if attempt < EDASM_MAX_ATTEMPTS:
-                    print(f"  {YELLOW}Retrying original EDASM ({attempt + 1}/{EDASM_MAX_ATTEMPTS})...{RESET}")
+                    print(
+                        f"  {YELLOW}Retrying original EDASM ({attempt + 1}/{EDASM_MAX_ATTEMPTS})...{RESET}"
+                    )
 
             if edasm_obj is None:
-                print(f"  {YELLOW}SKIPPED{RESET} (original EDASM did not produce output)")
+                print(
+                    f"  {YELLOW}SKIPPED{RESET} (original EDASM did not produce output)"
+                )
                 skipped += 1
                 continue
 
@@ -452,12 +477,14 @@ def main(argv: list[str] | None = None) -> int:
             prodos_stem = to_prodos_name(src.stem)
             edasm_lst = edasm_work_used / "volumes" / "OUT" / f"{prodos_stem}.LST"
             ng_lst = ng_out_used / f"{src.stem.upper()}.LST"
-            first_line = src.read_text(errors='replace').splitlines()[0] if src.exists() else ''
-            ws_only = '[WS]' in first_line
+            first_line = (
+                src.read_text(errors="replace").splitlines()[0] if src.exists() else ""
+            )
+            ws_only = "[WS]" in first_line
             lst_result = compare_listings(edasm_lst, ng_lst, src.name, ws_only=ws_only)
-            if lst_result == 'match':
+            if lst_result == "match":
                 listing_passed += 1
-            elif lst_result == 'diff':
+            elif lst_result == "diff":
                 listing_failed += 1
             else:
                 listing_skipped += 1
@@ -468,14 +495,22 @@ def main(argv: list[str] | None = None) -> int:
             EDASMNG_OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
             shutil.copy2(str(edasm_obj), str(EDASM_OUTPUTS_DIR / f"{stem_upper}.OBJ"))
             if edasm_lst.exists():
-                shutil.copy2(str(edasm_lst), str(EDASM_OUTPUTS_DIR / f"{stem_upper}.LST"))
+                shutil.copy2(
+                    str(edasm_lst), str(EDASM_OUTPUTS_DIR / f"{stem_upper}.LST")
+                )
             shutil.copy2(str(ng_obj), str(EDASMNG_OUTPUTS_DIR / f"{stem_upper}.OBJ"))
             if ng_lst.exists():
-                shutil.copy2(str(ng_lst), str(EDASMNG_OUTPUTS_DIR / f"{stem_upper}.LST"))
+                shutil.copy2(
+                    str(ng_lst), str(EDASMNG_OUTPUTS_DIR / f"{stem_upper}.LST")
+                )
 
     print(f"\n{'='*60}")
-    print(f"Results: {GREEN}{passed} passed{RESET}  {RED}{failed} failed{RESET}  {YELLOW}{skipped} skipped{RESET}")
-    print(f"Listing: {GREEN}{listing_passed} matched{RESET}  {RED}{listing_failed} differed{RESET}  {YELLOW}{listing_skipped} skipped{RESET}")
+    print(
+        f"Results: {GREEN}{passed} passed{RESET}  {RED}{failed} failed{RESET}  {YELLOW}{skipped} skipped{RESET}"
+    )
+    print(
+        f"Listing: {GREEN}{listing_passed} matched{RESET}  {RED}{listing_failed} differed{RESET}  {YELLOW}{listing_skipped} skipped{RESET}"
+    )
     return 0 if failed == 0 else 1
 
 

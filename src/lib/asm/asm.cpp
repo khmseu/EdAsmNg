@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -1105,7 +1106,7 @@ namespace {
   // (Y) preserved
   // NB:Fall thru to the PrtErrMsg code
   void DoAlert() {
-    // TODO: Implement DoAlert - Print alert with asterisks and bell
+    // TODO: interactive alert path (console bell/prompt) is not yet wired.
   }
 
   // ($7A6B) PrtErrMsg - Print Error or Warnings
@@ -1118,7 +1119,67 @@ namespace {
   //
   // Range for index $00-$48
   void PrtErrMsg() {
-    // TODO: Implement PrtErrMsg
+    const std::uint8_t token      = X;
+    const bool         isWarning  = (token & 0x01) != 0;
+    const std::size_t  tableIndex = static_cast<std::size_t>((token & 0x7E) >> 1);
+
+    static const char* kErrMsgByIndex[] = {
+        "UNDEFINED IDENTIFIER",          // 00
+        "DUPLICATE IDENTIFIER",          // 02
+        "UNDEFINED OPCODE",              // 04
+        "OVERFLOW",                      // 06
+        "RELATIVE EXPRSN OPERATOR",      // 08
+        "EXPRESSION SYNTAX",             // 0A
+        "EQUATE SYNTAX",                 // 0C
+        "INVALID IDENTIFIER",            // 0E
+        "DSECT/DEND",                    // 10
+        "SYMBOL/RLD TABLE FULL",         // 12
+        "ASSEMBLER PARAMETER",           // 14
+        "INCLUDE/CHN NESTING",           // 16
+        "MACRO NESTING",                 // 18
+        "MACRO ARGUMENT",                // 1A
+        "ADDRESS MODE",                  // 1C
+        "RESERVED IDENTIFIER",           // 1E
+        "MACRO FILE NOT FOUND",          // 20
+        nullptr,                         // 22 (unused)
+        "DIRECTIVE OPERAND",             // 24
+        "BRANCH RANGE",                  // 26
+        "BYTE OVERFLOW",                 // 28
+        "INDIRECT SYNTAX",               // 2A
+        "INDEXING SYNTAX",               // 2C
+        "INDIRECT REQUIRES ZPAGE",       // 2E
+        "INVALID AFTER 1ST IDENTIFIER",  // 30
+        "SW16 REGISTER",                 // 32
+        "INVALID DELIMITER",             // 34
+        "OBJ BUFFER OVERFLOW",           // 36
+        "OBJ BUFFER CONFLICT",           // 38
+        "INVALID FROM INCLUDE",          // 3A
+        "BUFFER SIZE",                   // 3C
+        ">255 EXTRNS/ENTRYS",            // 3E
+        "DUPLICATE EXT/ENT",             // 40
+        "SWEET16 OPCODE",                // 42
+        "EXTRN USED AS ZXTRN",           // 44
+        "ORG MUST BE > $100",            // 46
+        "6502X ADRS MODE/OPCODE",        // 48
+    };
+
+    std::string msgText = "UNKNOWN";
+    if (tableIndex < (sizeof(kErrMsgByIndex) / sizeof(kErrMsgByIndex[0])) &&
+        kErrMsgByIndex[tableIndex] != nullptr) {
+      msgText = kErrMsgByIndex[tableIndex];
+    }
+
+    auto bcdByteToDec = [](std::uint8_t bcd) -> std::uint32_t {
+      return static_cast<std::uint32_t>(bcd & 0x0F) +
+             10U * static_cast<std::uint32_t>((bcd >> 4) & 0x0F);
+    };
+
+    const std::uint32_t lineNumber = bcdByteToDec(BCDNbr[1]) * 100U + bcdByteToDec(BCDNbr[0]);
+
+    std::ostringstream line;
+    line << "***** " << (isWarning ? "WARNING" : "ERROR") << " IN LINE " << std::setw(4)
+         << std::setfill('0') << lineNumber << ": " << msgText;
+    EmitListingTextLine(line.str());
   }
 
   // SaveErrInfo - Save info for first 8/16 errors encountered
@@ -1500,13 +1561,11 @@ namespace {
     if (isWarning) {
       IncrementBCD16(NbrWarns);
       if ((LstWarns & 0x80) == 0) return;  // Warnings suppressed
-      // TODO: DoAlert, doPause stubs
     } else {
       // Always count errors and save info (up to buffer limit)
       IncrementBCD16(NbrErrs);
       SaveErrInfo(errorToken);
       ErrorF = 0x80;
-      // TODO: DoAlert, doPause stubs
     }
   }
 
@@ -2336,7 +2395,7 @@ namespace {
     BCDNbr[0] = 1;
     BCDNbr[1] = 0;
     BCDNbr[2] = 0;
-    TotLines  = 1;
+    TotLines  = 0;
 
     A = GenF;
     if (A != 0x80) {
@@ -7289,27 +7348,46 @@ namespace {
       RegAsmEW(X);
     };
 
-    SkipSpcs();
-    ChrGot();
-    if (C) {
+    auto currentChar = []() -> char { return static_cast<char>(SrcP_at(Y)); };
+
+    auto advance = [&]() {
+      if (currentChar() != 0 && currentChar() != CR) {
+        ++Y;
+      }
+    };
+
+    auto skipSpacesLocal = [&]() {
+      while (currentChar() == SPACE || currentChar() == '\t') {
+        advance();
+      }
+    };
+
+    auto upperChar = [&]() -> char {
+      return static_cast<char>(std::toupper(static_cast<unsigned char>(currentChar())));
+    };
+
+    skipSpacesLocal();
+    if (currentChar() == 0 || currentChar() == CR) {
       registerDirectiveOperandError();
       DrtvDone();
       return;
     }
 
-    if (A == 'O') {
-      ChrGet();
-      if (C) {
+    if (upperChar() == 'O') {
+      advance();
+      if (currentChar() == 0 || currentChar() == CR) {
         registerDirectiveOperandError();
         DrtvDone();
         return;
       }
 
-      if (A == 'N') {
+      if (upperChar() == 'N') {
         ListingF                  = static_cast<std::uint8_t>((ListingF >> 1) | 0x80);
         g_listing_compact_columns = true;
-      } else if (A == 'F') {
+        advance();
+      } else if (upperChar() == 'F') {
         ListingF = static_cast<std::uint8_t>(ListingF >> 1);
+        advance();
       } else {
         registerDirectiveOperandError();
         DrtvDone();
@@ -7319,30 +7397,29 @@ namespace {
       while (true) {
         bool enable = true;
 
-        ChrGot();
-        if (A == '+') {
-          ChrGet();
-          if (C) {
+        if (currentChar() == '+') {
+          advance();
+          if (currentChar() == 0 || currentChar() == CR) {
             registerDirectiveOperandError();
             DrtvDone();
             return;
           }
-        } else if (A == '-') {
+        } else if (currentChar() == '-') {
           enable = false;
-          ChrGet();
-          if (C) {
+          advance();
+          if (currentChar() == 0 || currentChar() == CR) {
             registerDirectiveOperandError();
             DrtvDone();
             return;
           }
-        } else if (C) {
+        } else if (currentChar() == 0 || currentChar() == CR) {
           registerDirectiveOperandError();
           DrtvDone();
           return;
         }
 
         std::size_t optionIndex = 0;
-        while (optionIndex < optionCount && A != options[optionIndex]) {
+        while (optionIndex < optionCount && upperChar() != options[optionIndex]) {
           ++optionIndex;
         }
         if (optionIndex == optionCount) {
@@ -7354,18 +7431,15 @@ namespace {
         *flags[optionIndex] =
             static_cast<std::uint8_t>((*flags[optionIndex] >> 1) | (enable ? 0x80 : 0x00));
 
-        while (true) {
-          ChrGet();
-          if (C) {
-            break;
-          }
-        }
+        advance();
+        skipSpacesLocal();
 
-        if (A == ',') {
-          Y++;
+        if (currentChar() == ',') {
+          advance();
+          skipSpacesLocal();
           continue;
         }
-        if (A == SPACE || A == CR) {
+        if (currentChar() == 0 || currentChar() == CR) {
           DrtvDone();
           return;
         }
@@ -7376,19 +7450,9 @@ namespace {
       }
     }
 
-    while (true) {
-      ChrGet();
-      if (C) {
-        break;
-      }
-    }
-
-    if (A != SPACE && A != CR) {
-      if (A == ',') {
-        Y++;
-      } else {
-        registerDirectiveOperandError();
-      }
+    skipSpacesLocal();
+    if (currentChar() != 0 && currentChar() != CR) {
+      registerDirectiveOperandError();
     }
 
     DrtvDone();
@@ -9161,7 +9225,120 @@ namespace EdAsmNg {
 
     std::string BuildListingOutput(const char* sourceName) {
       (void)sourceName;
-      return g_listing_sink;
+
+      auto decodeBcd16 = [](std::uint16_t bcd) -> std::uint32_t {
+        const std::uint32_t ones      = bcd & 0x000F;
+        const std::uint32_t tens      = (bcd >> 4) & 0x000F;
+        const std::uint32_t hundreds  = (bcd >> 8) & 0x000F;
+        const std::uint32_t thousands = (bcd >> 12) & 0x000F;
+        return ones + (10 * tens) + (100 * hundreds) + (1000 * thousands);
+      };
+
+      auto formatAssemblyTimestamp = []() -> std::string {
+        // Use compile-time date/time to mirror "assembler created" semantics.
+        // __DATE__ is "Mmm dd yyyy" and __TIME__ is "hh:mm:ss".
+        const std::string buildDate = __DATE__;
+        const std::string buildTime = __TIME__;
+
+        std::string month = buildDate.substr(0, 3);
+        for (char& ch : month) {
+          ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+        }
+
+        const int day    = std::stoi(buildDate.substr(4, 2));
+        const int year2  = std::stoi(buildDate.substr(9, 4)) % 100;
+        const int hour   = std::stoi(buildTime.substr(0, 2));
+        const int minute = std::stoi(buildTime.substr(3, 2));
+
+        std::ostringstream oss;
+        oss << std::setfill('0') << std::setw(2) << day << '-' << month << '-' << std::setw(2)
+            << year2 << ' ' << std::setw(2) << hour << ':' << std::setw(2) << minute;
+        return oss.str();
+      };
+
+      const std::uint32_t internalErrCount = decodeBcd16(NbrErrs);
+      const std::uint32_t lineCount        = TotLines;
+      const std::uint32_t freeSpacePages =
+          (MemTop > EndSymT) ? static_cast<std::uint32_t>((MemTop - EndSymT) / 256U) : 0U;
+
+      auto tokenMessage = [](std::uint8_t token) -> const char* {
+        static const char* kErrMsgByIndex[] = {
+            "UNDEFINED IDENTIFIER",          // 00
+            "DUPLICATE IDENTIFIER",          // 02
+            "UNDEFINED OPCODE",              // 04
+            "OVERFLOW",                      // 06
+            "RELATIVE EXPRSN OPERATOR",      // 08
+            "EXPRESSION SYNTAX",             // 0A
+            "EQUATE SYNTAX",                 // 0C
+            "INVALID IDENTIFIER",            // 0E
+            "DSECT/DEND",                    // 10
+            "SYMBOL/RLD TABLE FULL",         // 12
+            "ASSEMBLER PARAMETER",           // 14
+            "INCLUDE/CHN NESTING",           // 16
+            "MACRO NESTING",                 // 18
+            "MACRO ARGUMENT",                // 1A
+            "ADDRESS MODE",                  // 1C
+            "RESERVED IDENTIFIER",           // 1E
+            "MACRO FILE NOT FOUND",          // 20
+            nullptr,                         // 22 (unused)
+            "DIRECTIVE OPERAND",             // 24
+            "BRANCH RANGE",                  // 26
+            "BYTE OVERFLOW",                 // 28
+            "INDIRECT SYNTAX",               // 2A
+            "INDEXING SYNTAX",               // 2C
+            "INDIRECT REQUIRES ZPAGE",       // 2E
+            "INVALID AFTER 1ST IDENTIFIER",  // 30
+            "SW16 REGISTER",                 // 32
+            "INVALID DELIMITER",             // 34
+            "OBJ BUFFER OVERFLOW",           // 36
+            "OBJ BUFFER CONFLICT",           // 38
+            "INVALID FROM INCLUDE",          // 3A
+            "BUFFER SIZE",                   // 3C
+            ">255 EXTRNS/ENTRYS",            // 3E
+            "DUPLICATE EXT/ENT",             // 40
+            "SWEET16 OPCODE",                // 42
+            "EXTRN USED AS ZXTRN",           // 44
+            "ORG MUST BE > $100",            // 46
+            "6502X ADRS MODE/OPCODE",        // 48
+        };
+        const std::size_t tableIndex = static_cast<std::size_t>((token & 0x7E) >> 1);
+        if (tableIndex < (sizeof(kErrMsgByIndex) / sizeof(kErrMsgByIndex[0])) &&
+            kErrMsgByIndex[tableIndex] != nullptr) {
+          return kErrMsgByIndex[tableIndex];
+        }
+        return "UNKNOWN";
+      };
+
+      auto bcdByteToDec = [](std::uint8_t bcd) -> std::uint32_t {
+        return static_cast<std::uint32_t>(bcd & 0x0F) +
+               10U * static_cast<std::uint32_t>((bcd >> 4) & 0x0F);
+      };
+
+      std::ostringstream out;
+      out << g_listing_sink;
+
+      const std::uint8_t maxErrors = (VidSlot == 0) ? 8 : 16;
+      const std::uint8_t errSlots  = static_cast<std::uint8_t>(ErrNbr4 / 4);
+      const std::uint8_t emitCount = (errSlots > maxErrors) ? maxErrors : errSlots;
+      for (std::uint8_t i = 0; i < emitCount; ++i) {
+        const std::uint8_t  off   = static_cast<std::uint8_t>(i * 4);
+        const std::uint8_t  token = ErrInfoT[off + 1] & 0x7E;
+        const std::uint32_t lineNumber =
+            bcdByteToDec(ErrInfoT[off + 2]) * 100U + bcdByteToDec(ErrInfoT[off + 3]);
+        out << "***** ERROR IN LINE " << std::setw(4) << std::setfill('0') << lineNumber << ": "
+            << tokenMessage(token) << "\n";
+      }
+
+      out << "** SUCCESSFUL ASSEMBLY := ";
+      if (internalErrCount == 0) {
+        out << "NO ERRORS\n";
+      } else {
+        out << internalErrCount << " ERRORS\n";
+      }
+      out << "** ASSEMBLER CREATED ON " << formatAssemblyTimestamp() << " \n";
+      out << "** TOTAL LINES ASSEMBLED" << std::setw(6) << lineCount << " \n";
+      out << "** FREE SPACE PAGE COUNT" << std::setw(5) << freeSpacePages << " \n";
+      return out.str();
     }
 
     uint16_t GetSymNodeP() {
