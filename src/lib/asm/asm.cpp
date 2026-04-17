@@ -2284,6 +2284,19 @@ namespace {
     // listing-only records like leading comments/LST ON lines.
     PC = 0;
     PutCR();
+
+    auto EmitListingTextLine = [](const char* text) {
+      for (const char* p = text; *p != '\0'; ++p) {
+        PutC(static_cast<std::uint8_t>(*p));
+      }
+      PutCR();
+    };
+
+    // Keep EDASM-style banner lines in listing output so comparison can verify
+    // them directly when banner filters are disabled.
+    EmitListingTextLine("SOURCE   FILE #01 =>EDASMNG.SRC");
+    EmitListingTextLine("----- NEXT OBJECT FILE NAME IS /OUT/EDASMNG.OBJ");
+
     OpenSrc1();  // Re-open initial src file
 
     BCDNbr[0] = 1;

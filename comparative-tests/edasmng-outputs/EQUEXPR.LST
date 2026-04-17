@@ -1,4 +1,6 @@
 
+SOURCE   FILE #01 =>EDASMNG.SRC
+----- NEXT OBJECT FILE NAME IS /OUT/EDASMNG.OBJ
 0000:                1 * EQU EXPRESSION TEST - symbol defined via EQU used as operand [WS]
 0000:        C000    2 BASE                            EQU   $C000
 0800:        0800    3                                     ORG   $0800

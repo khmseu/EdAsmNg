@@ -1,4 +1,6 @@
 
+SOURCE   FILE #01 =>EDASMNG.SRC
+----- NEXT OBJECT FILE NAME IS /OUT/EDASMNG.OBJ
 0000:                1           LST   ON
 0800:        0800    2           ORG   $800
 0800:        0000    3           DS    0

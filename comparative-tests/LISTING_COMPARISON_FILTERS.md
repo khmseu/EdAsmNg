@@ -15,9 +15,6 @@ This note summarizes what normalize_listing.py removes/transforms before EDASM v
   - \*\* FREE SPACE PAGE COUNT ...
   - \*\* SUCCESSFUL ASSEMBLY ...
   - \*\* TOTAL LINES ASSEMBLED ...
-- Object file banner/header noise:
-  - ----- NEXT OBJECT FILE NAME ...
-  - SOURCE FILE #N => ...
 - Symbol-table style records:
   - ?XXXX lines (hex address records)
   - standalone symbol lines shaped like: XXXX SYMBOL
@@ -30,6 +27,7 @@ This note summarizes what normalize_listing.py removes/transforms before EDASM v
 - Whitespace is collapsed to single spaces only for files marked with `[WS]` on the first source line (handled by compare.py).
 - For lines with object bytes, comparison uses display address + byte sequence + normalized source text.
 - For non-byte listing lines, comparison keeps display address plus everything from the first token after the display-address field so ER/expression values and line numbers are compared.
+- `SOURCE FILE #...` and `NEXT OBJECT FILE NAME ...` lines are retained and compared. The filename/path segment is minimally canonicalized to `<FILE>`.
 
 ## Directive Behavior
 

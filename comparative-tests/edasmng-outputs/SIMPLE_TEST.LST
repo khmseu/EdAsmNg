@@ -1,4 +1,6 @@
 
+SOURCE   FILE #01 =>EDASMNG.SRC
+----- NEXT OBJECT FILE NAME IS /OUT/EDASMNG.OBJ
 0000:                1 * SIMPLE TEST FILE FOR EDASM COMPARISON [WS]
 0000:                2 * Tests basic assembly operations
 0000:                3 ;

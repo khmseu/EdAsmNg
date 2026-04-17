@@ -41,10 +41,25 @@ def _canonicalize_listing_line(line: str) -> str | None:
         return None
     if re.match(r'\*\*\s*TOTAL LINES ASSEMBLED', stripped):
         return None
+    # Keep source/object banner lines in comparison, but normalize only the
+    # volatile filename/path segment to keep diffs focused while still checking
+    # line presence and structure.
     if re.match(r'-{3,}\s*NEXT OBJECT FILE NAME', stripped):
-        return None
+        normalized = re.sub(
+            r'(-{3,}\s*NEXT OBJECT FILE NAME\s+IS\s+).+',
+            r'\1<FILE>',
+            stripped,
+            flags=re.IGNORECASE,
+        )
+        return normalized
     if re.match(r'SOURCE\s+FILE\s*#\d+\s*=>', stripped):
-        return None
+        normalized = re.sub(
+            r'(SOURCE\s+FILE\s*#\d+\s*=>)\s*.+',
+            r'\1<FILE>',
+            stripped,
+            flags=re.IGNORECASE,
+        )
+        return normalized
     if re.match(r'\?[0-9A-Fa-f]{4}\b', stripped):
         return None
     if re.match(r'^[0-9A-Fa-f]{4}\s+[A-Za-z_.$][A-Za-z0-9_.$]*\s*$', stripped):
