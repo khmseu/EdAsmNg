@@ -20,6 +20,7 @@ namespace EdAsmNg {
     void           SetupSourceLine(const char* line);
     void           SetupOperandField(const char* operand);
     void           SetupMemorySource(const char* sourceText, size_t length);
+    void           SetListingBannerPaths(const char* sourcePath, const char* objectPath);
     void           RewindSource();
     std::uintptr_t GetMnemP();
     void           SetupMnemP(std::uint8_t* mnemEntry, std::uint8_t y_offset);

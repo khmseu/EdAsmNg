@@ -1,6 +1,7 @@
 
-SOURCE   FILE #01 =>EDASMNG.SRC
------ NEXT OBJECT FILE NAME IS /OUT/EDASMNG.OBJ
+SOURCE   FILE #01 =>DWDIR.SRC
+
 0000:                1           LST   ON
+----- NEXT OBJECT FILE NAME IS /OUT/DWDIR.OBJ                
 0800:        0800    2           ORG   $800
 0800:34 12           3           DW    $1234

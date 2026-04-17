@@ -29,6 +29,7 @@
 #include <cctype>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -56,20 +57,23 @@ namespace {
   // These simulate the 6502 processor registers and flags
   // used throughout the translated assembly code
   //=================================================
-  std::uint8_t              A                           = 0;      // Accumulator
-  std::uint8_t              X                           = 0;      // X index register
-  std::uint8_t              Y                           = 0;      // Y index register
-  bool                      C                           = false;  // Carry flag
-  bool                      Z                           = false;  // Zero flag
-  bool                      N                           = false;  // Negative flag
-  bool                      V                           = false;  // Overflow flag
-  bool                      g_use_experimental_pass2    = true;
-  bool                      g_experimental_prepared_gmc = false;
-  bool                      g_capture_serialized_obj    = false;
-  bool                      g_serialized_obj_active     = false;
-  bool                      g_object_write_start_valid  = false;
-  bool                      g_listing_compact_columns   = false;
-  std::uint16_t             g_object_write_start_addr   = 0;
+  std::uint8_t              A                                 = 0;      // Accumulator
+  std::uint8_t              X                                 = 0;      // X index register
+  std::uint8_t              Y                                 = 0;      // Y index register
+  bool                      C                                 = false;  // Carry flag
+  bool                      Z                                 = false;  // Zero flag
+  bool                      N                                 = false;  // Negative flag
+  bool                      V                                 = false;  // Overflow flag
+  bool                      g_use_experimental_pass2          = true;
+  bool                      g_experimental_prepared_gmc       = false;
+  bool                      g_capture_serialized_obj          = false;
+  bool                      g_serialized_obj_active           = false;
+  bool                      g_object_write_start_valid        = false;
+  bool                      g_emit_next_object_banner_pending = false;
+  std::string               g_listing_source_banner_name      = "EDASMNG.SRC";
+  std::string               g_listing_object_banner_path      = "/OUT/EDASMNG.OBJ";
+  bool                      g_listing_compact_columns         = false;
+  std::uint16_t             g_object_write_start_addr         = 0;
   std::vector<std::uint8_t> g_serialized_obj_bytes;
 
   //=================================================
@@ -598,6 +602,34 @@ namespace {
 
   void PutCR() {
     PutC('\n');
+  }
+
+  std::string UppercasePathLeaf(const std::string& path, const char* defaultLeaf) {
+    std::string leaf;
+    if (!path.empty()) {
+      leaf = std::filesystem::path(path).filename().string();
+    }
+    if (leaf.empty()) {
+      leaf = defaultLeaf;
+    }
+    for (char& ch : leaf) {
+      ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    }
+    return leaf;
+  }
+
+  void EmitListingTextLine(const std::string& text) {
+    for (char ch : text) {
+      PutC(static_cast<std::uint8_t>(ch));
+    }
+    PutCR();
+  }
+
+  std::string PadRightToWidth(std::string text, std::size_t width) {
+    if (text.size() < width) {
+      text.append(width - text.size(), ' ');
+    }
+    return text;
   }
 
   void PrtFF() {
@@ -2285,17 +2317,11 @@ namespace {
     PC = 0;
     PutCR();
 
-    auto EmitListingTextLine = [](const char* text) {
-      for (const char* p = text; *p != '\0'; ++p) {
-        PutC(static_cast<std::uint8_t>(*p));
-      }
-      PutCR();
-    };
-
-    // Keep EDASM-style banner lines in listing output so comparison can verify
-    // them directly when banner filters are disabled.
-    EmitListingTextLine("SOURCE   FILE #01 =>EDASMNG.SRC");
-    EmitListingTextLine("----- NEXT OBJECT FILE NAME IS /OUT/EDASMNG.OBJ");
+    // EDASM ordering: SOURCE FILE banner appears first, then first listed line,
+    // then NEXT OBJECT FILE NAME banner.
+    EmitListingTextLine("SOURCE   FILE #01 =>" + g_listing_source_banner_name);
+    PutCR();
+    g_emit_next_object_banner_pending = true;
 
     OpenSrc1();  // Re-open initial src file
 
@@ -2609,8 +2635,14 @@ namespace {
   void PrtAsmLn() {
     RVLsting();
     if (C) return;  // No (BCS doRTS6)
-    ListCode();     // Print generated code
-    LstSrcLn();     // Print src stmt
+    if (g_emit_next_object_banner_pending && PC != 0) {
+      const std::string nextObjLine =
+          PadRightToWidth("----- NEXT OBJECT FILE NAME IS " + g_listing_object_banner_path, 61);
+      EmitListingTextLine(nextObjLine);
+      g_emit_next_object_banner_pending = false;
+    }
+    ListCode();  // Print generated code
+    LstSrcLn();  // Print src stmt
   }
 
   // StorGMC - Store generated machine code
@@ -8693,6 +8725,23 @@ namespace EdAsmNg {
       ::SetupMemorySource(sourceText, length);
     }
 
+    void SetListingBannerPaths(const char* sourcePath, const char* objectPath) {
+      const std::string sourceInput = sourcePath ? sourcePath : "";
+      const std::string objectInput = objectPath ? objectPath : "";
+
+      std::string sourceLeaf = UppercasePathLeaf(sourceInput, "EDASMNG.SRC");
+      if (sourceLeaf.find('.') == std::string::npos) {
+        sourceLeaf += ".SRC";
+      }
+      g_listing_source_banner_name = sourceLeaf;
+
+      std::string objectLeaf = UppercasePathLeaf(objectInput, "EDASMNG.OBJ");
+      if (objectLeaf.find('.') == std::string::npos) {
+        objectLeaf += ".OBJ";
+      }
+      g_listing_object_banner_path = "/OUT/" + objectLeaf;
+    }
+
     // Rewind source to beginning for second pass
     void RewindSource() {
       SrcP = g_test_src_base;
@@ -8991,8 +9040,11 @@ namespace EdAsmNg {
       g_object_write_start_addr  = 0;
       ErrorF                     = 0;
       GenF = 0x80;  // Initialize for code generation (will be shifted to 0x00 in Pass 2)
-      g_use_experimental_pass2    = true;
-      g_experimental_prepared_gmc = false;
+      g_use_experimental_pass2          = true;
+      g_experimental_prepared_gmc       = false;
+      g_emit_next_object_banner_pending = false;
+      g_listing_source_banner_name      = "EDASMNG.SRC";
+      g_listing_object_banner_path      = "/OUT/EDASMNG.OBJ";
 
       // Initialize HighMem to a reasonable default (64KB - no limit)
       HighMem = 0xFFFF;

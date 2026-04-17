@@ -1,9 +1,10 @@
 
-SOURCE   FILE #01 =>EDASMNG.SRC
------ NEXT OBJECT FILE NAME IS /OUT/EDASMNG.OBJ
+SOURCE   FILE #01 =>SIMPLE_TEST.ASM
+
 0000:                1 * SIMPLE TEST FILE FOR EDASM COMPARISON [WS]
 0000:                2 * Tests basic assembly operations
 0000:                3 ;
+----- NEXT OBJECT FILE NAME IS /OUT/SIMPLE_TEST.OBJ          
 0800:        0800    4                                     ORG   $0800
 0800:                5 ;
 0800:A9 00           6 START                         LDA   #$00

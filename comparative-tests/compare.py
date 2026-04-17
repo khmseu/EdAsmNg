@@ -316,60 +316,23 @@ def compare_listings(edasm_lst: Path | None, ng_lst: Path | None, label: str, ws
     edasm_norm = normalize_listing(edasm_text)
     ng_norm = normalize_listing(ng_text)
 
-    def _split_banner_and_core(text: str) -> tuple[list[str], list[str]]:
-        banner = []
-        core = []
-        for line in text.splitlines():
-            upper = line.upper()
-            if (
-                re.match(r'^SOURCE\s+FILE\s*#', upper)
-                or re.match(r'^-+\s+NEXT\s+OBJECT\s+FILE\s+NAME\s+IS\s+', upper)
-            ):
-                banner.append(line)
-            else:
-                core.append(line)
-        return banner, core
-
-    def _join_lines(lines: list[str]) -> str:
-        return '\n'.join(lines) + ('\n' if lines else '')
-
-    edasm_banner, edasm_core = _split_banner_and_core(edasm_norm)
-    ng_banner, ng_core = _split_banner_and_core(ng_norm)
-
     if edasm_norm == ng_norm:
         print(f"  {GREEN}LST MATCH{RESET}  {label}")
         return 'match'
-
-    core_equal = _join_lines(edasm_core) == _join_lines(ng_core)
-    banner_equal = edasm_banner == ng_banner
 
     if ws_only:
         # Collapse whitespace in every line and re-compare
         def _ws_collapse(text: str) -> str:
             return '\n'.join(' '.join(line.split()) for line in text.splitlines()) + '\n'
 
-        core_equal = _ws_collapse(_join_lines(edasm_core)) == _ws_collapse(_join_lines(ng_core))
-        banner_equal = _ws_collapse(_join_lines(edasm_banner)) == _ws_collapse(_join_lines(ng_banner))
-
-        if core_equal and banner_equal:
+        if _ws_collapse(edasm_norm) == _ws_collapse(ng_norm):
             print(f"  {GREEN}LST MATCH{RESET}  {label} {YELLOW}[WS]{RESET}")
             return 'match'
 
-    # If both banner/header content and core listing content match, treat as a
-    # listing match even when the interleaving order differs.
-    if core_equal and banner_equal:
-        print(f"  {GREEN}LST MATCH{RESET}  {label}")
-        return 'match'
-
     print(f"  {RED}LST DIFF{RESET}  {label}")
 
-    if not banner_equal:
-        print("    Banner/header lines differ:")
-        print(f"      EDASM:   {edasm_banner!r}")
-        print(f"      EdAsmNg: {ng_banner!r}")
-
-    edasm_lines = edasm_core
-    ng_lines = ng_core
+    edasm_lines = edasm_norm.splitlines()
+    ng_lines = ng_norm.splitlines()
     max_show = 10
     shown = 0
     for i, (el, nl) in enumerate(zip(edasm_lines, ng_lines)):

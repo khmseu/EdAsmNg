@@ -1,7 +1,8 @@
 
-SOURCE   FILE #01 =>EDASMNG.SRC
------ NEXT OBJECT FILE NAME IS /OUT/EDASMNG.OBJ
+SOURCE   FILE #01 =>INPUT3.SRC
+
 0000:                1           LST   ON
+----- NEXT OBJECT FILE NAME IS /OUT/INPUT3.OBJ               
 0800:        0800    2           ORG   $800
 0800:A9 00           3 START     LDA   #$00
 0802:8D 00 C0        4           STA   $C000

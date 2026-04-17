@@ -78,6 +78,7 @@ int main(int argc, char* argv[]) {
     EdAsmNg::Asm::ClearTestObjMemory();
     EdAsmNg::Asm::EnableSerializedObjectCapture(true);
     EdAsmNg::Asm::ClearSerializedObjectBytes();
+    EdAsmNg::Asm::SetListingBannerPaths(input_file.c_str(), object_file.c_str());
     if (!listing_file.empty()) {
       EdAsmNg::Asm::SetListingF(0xFF);
     }
