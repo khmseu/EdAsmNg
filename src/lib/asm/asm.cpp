@@ -2009,7 +2009,7 @@ namespace {
   void NxtField() {
   NxtField_start:
     A = SrcP_at(Y);
-    if (A != SPACE) goto L823D;  // (BNE)
+    if (A != SPACE && A != '\t') goto L823D;  // (BNE)
     Y++;
     if (Y != 0) goto NxtField_start;  // (BNE) - loop until non-space or Y wraps
 
@@ -2872,6 +2872,7 @@ namespace {
     AdvPC();
 
   L807A:
+    C = false;  // Do not treat arithmetic carry from AdvPC as keyboard abort.
     PollKbd();
     if (C) goto L8088;  // BCS
     NextRec();
