@@ -137,3 +137,4 @@ CMakeUserPresets.json
 *.pyc
 build/
 t/
+.._*
