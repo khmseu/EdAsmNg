@@ -816,11 +816,12 @@ namespace {
 
     auto parse_term = [&](uint16_t& val, bool& is_reloc, bool allow_prefix) -> bool {
       skip_spaces();
-      uint8_t ch      = SrcP_at(Y);
-      bool    use_low = false, use_high = false;
+      uint8_t ch = SrcP_at(Y);
+      // EDASM uses < = hi-byte (MSB), > = lo-byte (LSB) — opposite of common convention
+      bool use_low = false, use_high = false;
       if (allow_prefix && (ch == '<' || ch == '>')) {
-        use_low  = (ch == '<');
-        use_high = (ch == '>');
+        use_high = (ch == '<');
+        use_low  = (ch == '>');
         Y++;
         skip_spaces();
         ch = SrcP_at(Y);
@@ -875,6 +876,23 @@ namespace {
 
       if (parse_number(parsed)) {
         val = parsed;
+        if (use_low)
+          val = val & 0x00FF;
+        else if (use_high)
+          val = (val >> 8) & 0x00FF;
+        finish_tokens();
+        return true;
+      }
+
+      if (ch == '*') {
+        Y++;
+        val      = PC;
+        is_reloc = true;
+        if (use_low) {
+          val = val & 0x00FF;
+        } else if (use_high) {
+          val = (val >> 8) & 0x00FF;
+        }
         finish_tokens();
         return true;
       }
@@ -2208,7 +2226,7 @@ namespace {
 
   void GAdrMod() {
     Y = 0;  // Position at start of operand
-    while (SrcP_at(Y) == SPACE) {
+    while (SrcP_at(Y) == SPACE || SrcP_at(Y) == '\t') {
       Y++;
       if (Y == 0) break;
     }
@@ -4359,12 +4377,32 @@ namespace {
       C = false;
     };
 
+    auto detect_index_suffix = [&](std::uint8_t operand_pos, bool& has_x, bool& has_y) {
+      has_x             = false;
+      has_y             = false;
+      std::uint8_t scan = operand_pos;
+      while (true) {
+        std::uint8_t ch = SrcP_at(scan);
+        if (ch == CR || ch == 0 || ch == ';') {
+          break;
+        }
+        if (ch == ',') {
+          std::uint8_t reg = SrcP_at(static_cast<std::uint8_t>(scan + 1));
+          has_x            = (reg == 'X' || reg == 'x');
+          has_y            = (reg == 'Y' || reg == 'y');
+          break;
+        }
+        scan++;
+      }
+    };
+
     auto emit_immediate_absolute = [&](std::uint8_t immediate_opcode, std::uint8_t absolute_opcode,
                                        std::uint8_t absolute_x_opcode,
                                        std::uint8_t absolute_y_opcode,
                                        std::uint8_t accumulator_opcode = 0xFF) {
       ZAB = 0x7F;
       NxtField();
+      std::uint8_t operand_pos   = Y;
       std::uint8_t operand_start = SrcP_at(Y);
       bool         is_immediate  = (operand_start == '#');
       bool         is_accumulator =
@@ -4414,16 +4452,16 @@ namespace {
         return;
       }
 
+      bool has_x = false;
+      bool has_y = false;
+      detect_index_suffix(operand_pos, has_x, has_y);
+
       EvalExpr();
       std::uint16_t abs_addr = static_cast<std::uint16_t>(ValExpr | (ValExpr_hi << 8));
       std::uint8_t  opcode   = absolute_opcode;
-      if (SrcP_at(Y) == ',' && absolute_x_opcode != 0xFF &&
-          (SrcP_at(static_cast<std::uint8_t>(Y + 1)) == 'X' ||
-           SrcP_at(static_cast<std::uint8_t>(Y + 1)) == 'x')) {
+      if (has_x && absolute_x_opcode != 0xFF) {
         opcode = absolute_x_opcode;
-      } else if (SrcP_at(Y) == ',' && absolute_y_opcode != 0xFF &&
-                 (SrcP_at(static_cast<std::uint8_t>(Y + 1)) == 'Y' ||
-                  SrcP_at(static_cast<std::uint8_t>(Y + 1)) == 'y')) {
+      } else if (has_y && absolute_y_opcode != 0xFF) {
         opcode = absolute_y_opcode;
       }
 
@@ -4450,6 +4488,7 @@ namespace {
                                std::uint8_t absy_opcode) {
       ZAB = 0x7F;
       NxtField();
+      std::uint8_t operand_pos = Y;
 
       bool is_immediate = (SrcP_at(Y) == '#') && immediate_opcode != 0xFF;
       if (is_immediate) {
@@ -4483,11 +4522,78 @@ namespace {
         return;
       }
 
+      bool has_x = false;
+      bool has_y = false;
+      detect_index_suffix(operand_pos, has_x, has_y);
+
+      if (PassNbr == 0) {
+        // Pass 1 sizing probe: evaluate the expression when possible, but do
+        // not retain temporary unresolved-symbol errors from this probe.
+        std::uint8_t byte_count = 3;
+        uint8_t      ch         = SrcP_at(Y);
+        if (ch == '$') {
+          std::uint8_t idx    = static_cast<std::uint8_t>(Y + 1);
+          int          digits = 0;
+          while (true) {
+            uint8_t d = SrcP_at(idx);
+            if ((d >= '0' && d <= '9') || (d >= 'A' && d <= 'F') || (d >= 'a' && d <= 'f')) {
+              digits++;
+              idx++;
+            } else {
+              break;
+            }
+          }
+          bool obvious_zp = digits > 0 && digits <= 2;
+          if (obvious_zp && ((has_x && zpx_opcode != 0xFF) || (has_y && zpy_opcode != 0xFF) ||
+                             (!has_x && !has_y && zp_opcode != 0xFF))) {
+            byte_count = 2;
+          }
+        } else {
+          std::uint8_t  saved_y      = Y;
+          std::uint16_t saved_errs   = NbrErrs;
+          std::uint8_t  saved_errn4  = ErrNbr4;
+          std::uint8_t  saved_errorf = ErrorF;
+          std::uint8_t  saved_errinfo[sizeof(ErrInfoT)];
+          std::memcpy(saved_errinfo, ErrInfoT, sizeof(ErrInfoT));
+
+          EvalExpr();
+          bool eval_ok = !C;
+
+          NbrErrs = saved_errs;
+          ErrNbr4 = saved_errn4;
+          ErrorF  = saved_errorf;
+          std::memcpy(ErrInfoT, saved_errinfo, sizeof(ErrInfoT));
+          Y = saved_y;
+          C = false;
+
+          if (eval_ok) {
+            bool use_zp = (ValExpr_hi == 0 && RelExprF == 0);
+            if (has_x) {
+              if (use_zp && zpx_opcode != 0xFF) byte_count = 2;
+            } else if (has_y) {
+              if (use_zp && zpy_opcode != 0xFF) byte_count = 2;
+            } else {
+              if (use_zp && zp_opcode != 0xFF) byte_count = 2;
+            }
+          } else {
+            // Forward-ref fallback for pass 1: when unresolved, prefer zero-page
+            // encoding whenever this mnemonic/addressing mode supports it.
+            if (has_x) {
+              if (zpx_opcode != 0xFF) byte_count = 2;
+            } else if (has_y) {
+              if (zpy_opcode != 0xFF) byte_count = 2;
+            } else {
+              if (zp_opcode != 0xFF) byte_count = 2;
+            }
+          }
+        }
+        Length = byte_count;
+        PC += byte_count;
+        C = false;
+        return;
+      }
+
       EvalExpr();
-      bool has_x = SrcP_at(Y) == ',' && (SrcP_at(static_cast<std::uint8_t>(Y + 1)) == 'X' ||
-                                         SrcP_at(static_cast<std::uint8_t>(Y + 1)) == 'x');
-      bool has_y = SrcP_at(Y) == ',' && (SrcP_at(static_cast<std::uint8_t>(Y + 1)) == 'Y' ||
-                                         SrcP_at(static_cast<std::uint8_t>(Y + 1)) == 'y');
 
       std::uint16_t value      = static_cast<std::uint16_t>(ValExpr | (ValExpr_hi << 8));
       bool          use_zp     = (ValExpr_hi == 0 && RelExprF == 0);
@@ -4558,6 +4664,93 @@ namespace {
       C = false;
     };
 
+    auto parse_register_operand = [&]() -> int {
+      NxtField();
+      if (SrcP_at(Y) != 'R' && SrcP_at(Y) != 'r') {
+        return -1;
+      }
+      Y++;
+      if (SrcP_at(Y) < '0' || SrcP_at(Y) > '9') {
+        return -1;
+      }
+      int reg = SrcP_at(Y) - '0';
+      Y++;
+      if (SrcP_at(Y) >= '0' && SrcP_at(Y) <= '9') {
+        reg = (reg * 10) + (SrcP_at(Y) - '0');
+        Y++;
+      }
+      if (reg < 0 || reg > 15) {
+        return -1;
+      }
+      return reg;
+    };
+
+    auto emit_register_opcode = [&](std::uint8_t opcode_base) {
+      ZAB     = 0x7F;
+      int reg = parse_register_operand();
+      if (reg < 0) {
+        X = 0x04;
+        RegAsmEW(X);
+        C = true;
+        return;
+      }
+
+      Length = 1;
+      if (PassNbr == 0) {
+        PC += 1;
+        C = false;
+        return;
+      }
+
+      std::uint8_t opcode = static_cast<std::uint8_t>(opcode_base | reg);
+      if (g_use_experimental_pass2) {
+        const std::uint8_t bytes[] = {opcode};
+        QueueExperimentalBytes(bytes, 1);
+      } else {
+        A = opcode;
+        StorByt();
+        PC = ObjPC;
+      }
+      C = false;
+    };
+
+    auto emit_set_register = [&]() {
+      ZAB     = 0x7F;
+      int reg = parse_register_operand();
+      if (reg < 0 || SrcP_at(Y) != ',') {
+        X = 0x04;
+        RegAsmEW(X);
+        C = true;
+        return;
+      }
+
+      Length = 3;
+      if (PassNbr == 0) {
+        PC += 3;
+        C = false;
+        return;
+      }
+
+      Y++;
+      EvalExpr();
+      std::uint16_t value  = static_cast<std::uint16_t>(ValExpr | (ValExpr_hi << 8));
+      std::uint8_t  opcode = static_cast<std::uint8_t>(0x10 | reg);
+      if (g_use_experimental_pass2) {
+        const std::uint8_t bytes[] = {opcode, static_cast<std::uint8_t>(value & 0xFF),
+                                      static_cast<std::uint8_t>((value >> 8) & 0xFF)};
+        QueueExperimentalBytes(bytes, 3);
+      } else {
+        A = opcode;
+        StorByt();
+        A = static_cast<std::uint8_t>(value & 0xFF);
+        StorByt();
+        A = static_cast<std::uint8_t>((value >> 8) & 0xFF);
+        StorByt();
+        PC = ObjPC;
+      }
+      C = false;
+    };
+
     if (mnemonic == "INX") {
       emit_single_byte(0xE8);
       return;
@@ -4609,59 +4802,37 @@ namespace {
     }
 
     if (mnemonic == "LDX") {
-      emit_immediate_absolute(0xA2, 0xAE, 0xFF, 0xBE);
+      emit_imm_zp_abs(0xA2, 0xA6, 0xFF, 0xB6, 0xAE, 0xFF, 0xBE);
       return;
     }
 
     if (mnemonic == "LDY") {
-      emit_immediate_absolute(0xA0, 0xAC, 0xBC, 0xFF);
+      emit_imm_zp_abs(0xA0, 0xA4, 0xB4, 0xFF, 0xAC, 0xBC, 0xFF);
       return;
     }
 
     if (mnemonic == "EOR") {
-      emit_immediate_absolute(0x49, 0x4D, 0x5D, 0x59);
+      emit_imm_zp_abs(0x49, 0x45, 0x55, 0xFF, 0x4D, 0x5D, 0x59);
       return;
     }
 
     if (mnemonic == "ORA") {
-      emit_immediate_absolute(0x09, 0x0D, 0x1D, 0x19);
+      emit_imm_zp_abs(0x09, 0x05, 0x15, 0xFF, 0x0D, 0x1D, 0x19);
       return;
     }
 
     if (mnemonic == "CMP") {
-      emit_immediate_absolute(0xC9, 0xCD, 0xDD, 0xD9);
+      emit_imm_zp_abs(0xC9, 0xC5, 0xD5, 0xFF, 0xCD, 0xDD, 0xD9);
       return;
     }
 
     if (mnemonic == "CPX") {
-      emit_immediate_absolute(0xE0, 0xEC, 0xFF, 0xFF);
+      emit_imm_zp_abs(0xE0, 0xE4, 0xFF, 0xFF, 0xEC, 0xFF, 0xFF);
       return;
     }
 
     if (mnemonic == "STX") {
-      ZAB    = 0x7F;
-      Length = 3;
-      if (PassNbr == 0) {
-        PC += 3;
-      } else {
-        NxtField();
-        EvalExpr();
-        std::uint16_t abs_addr = static_cast<std::uint16_t>(ValExpr | (ValExpr_hi << 8));
-        if (g_use_experimental_pass2) {
-          const std::uint8_t bytes[] = {0x8E, static_cast<std::uint8_t>(abs_addr & 0xFF),
-                                        static_cast<std::uint8_t>((abs_addr >> 8) & 0xFF)};
-          QueueExperimentalBytes(bytes, 3);
-        } else {
-          A = 0x8E;
-          StorByt();
-          A = static_cast<std::uint8_t>(abs_addr & 0xFF);
-          StorByt();
-          A = static_cast<std::uint8_t>((abs_addr >> 8) & 0xFF);
-          StorByt();
-          PC = ObjPC;
-        }
-      }
-      C = false;
+      emit_imm_zp_abs(0xFF, 0x86, 0xFF, 0x96, 0x8E, 0xFF, 0xFF);
       return;
     }
 
@@ -4813,17 +4984,17 @@ namespace {
     }
 
     if (mnemonic == "LDA") {
-      emit_immediate_absolute(0xA9, 0xAD, 0xBD, 0xB9);
+      emit_imm_zp_abs(0xA9, 0xA5, 0xB5, 0xFF, 0xAD, 0xBD, 0xB9);
       return;
     }
 
     if (mnemonic == "ADC") {
-      emit_immediate_absolute(0x69, 0x6D, 0x7D, 0x79);
+      emit_imm_zp_abs(0x69, 0x65, 0x75, 0xFF, 0x6D, 0x7D, 0x79);
       return;
     }
 
     if (mnemonic == "AND") {
-      emit_immediate_absolute(0x29, 0x2D, 0x3D, 0x39);
+      emit_imm_zp_abs(0x29, 0x25, 0x35, 0xFF, 0x2D, 0x3D, 0x39);
       return;
     }
 
@@ -4833,34 +5004,7 @@ namespace {
     }
 
     if (mnemonic == "STA") {
-      MnemP  = nullptr;
-      ZAB    = 0x7F;
-      Length = 3;
-      if (PassNbr == 0) {
-        PC += 3;
-      } else {
-        NxtField();
-        EvalExpr();
-        uint16_t abs_addr = static_cast<uint16_t>(ValExpr | (ValExpr_hi << 8));
-        // Detect ,Y suffix for STA abs,Y (0x99) vs STA abs (0x8D)
-        bool    has_y  = (SrcP_at(Y) == ',' && (SrcP_at(static_cast<uint8_t>(Y + 1)) == 'Y' ||
-                                            SrcP_at(static_cast<uint8_t>(Y + 1)) == 'y'));
-        uint8_t opcode = has_y ? 0x99 : 0x8D;
-        if (g_use_experimental_pass2) {
-          const std::uint8_t bytes[] = {opcode, static_cast<std::uint8_t>(abs_addr & 0xFF),
-                                        static_cast<std::uint8_t>((abs_addr >> 8) & 0xFF)};
-          QueueExperimentalBytes(bytes, 3);
-        } else {
-          A = opcode;
-          StorByt();
-          A = static_cast<uint8_t>(abs_addr & 0xFF);
-          StorByt();
-          A = static_cast<uint8_t>((abs_addr >> 8) & 0xFF);
-          StorByt();
-          PC = ObjPC;
-        }
-      }
-      C = false;
+      emit_imm_zp_abs(0xFF, 0x85, 0x95, 0xFF, 0x8D, 0x9D, 0x99);
       return;
     }
 
@@ -4935,6 +5079,41 @@ namespace {
         }
       }
       C = false;
+      return;
+    }
+
+    if (mnemonic == "STY") {
+      emit_imm_zp_abs(0xFF, 0x84, 0x94, 0xFF, 0x8C, 0xFF, 0xFF);
+      return;
+    }
+
+    if (mnemonic == "DCR") {
+      emit_register_opcode(0xF0);
+      return;
+    }
+
+    if (mnemonic == "STI") {
+      emit_register_opcode(0x50);
+      return;
+    }
+
+    if (mnemonic == "LD") {
+      emit_register_opcode(0x20);
+      return;
+    }
+
+    if (mnemonic == "ST") {
+      emit_register_opcode(0x30);
+      return;
+    }
+
+    if (mnemonic == "SET") {
+      emit_set_register();
+      return;
+    }
+
+    if (mnemonic == "RTN") {
+      emit_single_byte(0x00);
       return;
     }
 
