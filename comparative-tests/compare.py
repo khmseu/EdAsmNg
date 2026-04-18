@@ -36,6 +36,7 @@ EDASM_OUTPUTS_DIR = REPO_ROOT / "comparative-tests" / "edasm-outputs"
 EDASMNG_OUTPUTS_DIR = REPO_ROOT / "comparative-tests" / "edasmng-outputs"
 EDASM_RUN_TIMEOUT_SEC = 600
 EDASMNG_RUN_TIMEOUT_SEC = 600
+EI_EDASM_MAX_INSTRUCTIONS = 20_000_000
 
 
 def to_prodos_name(stem: str, max_stem_len: int = 11) -> str:
@@ -200,6 +201,10 @@ def run_original_edasm(
     debug: bool = False,
 ) -> Path | None:
     """Run source through original EDASM emulator. Returns path to OBJ file or None on failure."""
+    effective_max_instructions = max_instructions
+    if _is_ei_driver_source(src_path):
+        effective_max_instructions = max(max_instructions, EI_EDASM_MAX_INSTRUCTIONS)
+
     prodos_stem = to_prodos_name(src_path.stem)
     obj_name = f"{prodos_stem}.OBJ"
     lst_name = f"{prodos_stem}.LST"
@@ -230,7 +235,7 @@ def run_original_edasm(
         "--work-dir",
         str(work_dir),
         "--max-instructions",
-        str(max_instructions),
+        str(effective_max_instructions),
     ]
     for extra_input in extra_inputs:
         cmd.extend(["--input", extra_input])

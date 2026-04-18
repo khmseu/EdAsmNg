@@ -65,9 +65,14 @@ int main(int argc, char* argv[]) {
     // Read source file
     std::string source = read_file(input_file);
 
-    // Replace Unix LF with CR (ProDOS text format expected by assembler)
+    // Replace Unix LF with CR (ProDOS text format expected by assembler).
+    // Ensure the source always ends with CR so line scanners can terminate
+    // even when the input file has no trailing newline.
     for (char& c : source) {
       if (c == '\n') c = '\r';
+    }
+    if (!source.empty() && source.back() != '\r') {
+      source.push_back('\r');
     }
 
     // Initialize assembler

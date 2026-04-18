@@ -2235,6 +2235,17 @@ namespace {
   void NextRec() {
     Y = 0;
   L824D:
+    // Guard memory-source scans: if a malformed final line has no CR
+    // terminator, stop at TxtEnd instead of wrapping Y forever.
+    if (DskSrcF == 0) {
+      std::uint16_t cur_addr = static_cast<std::uint16_t>(SrcP + Y);
+      if (cur_addr >= TxtEnd) {
+        SrcP = TxtEnd;
+        Y    = 0;
+        return;
+      }
+    }
+
     A = SrcP_at(Y);
     Y++;                      // NB: skip past char
     if (A != CR) goto L824D;  // b4 comparision (BNE)
