@@ -485,9 +485,9 @@ WrSwapRN    DB     $B0
 ClsSwapP    DB     $01
 ClsSwapRN   DB     $C2
 ;=================================================
-            STR    '               (c) COPYRIGHT 1983 BY'
-            STR    '               JOHN O. ARKLEY'
-            STR    '               ALL RIGHTS RESERVED'
+            STR    ' (c) COPYRIGHT 1983 BY'
+            STR    ' JOHN O. ARKLEY'
+            STR    ' ALL RIGHTS RESERVED'
 ;DS \,$EA
             DS     $2400-*,$EA
 L2400       EQU    *
