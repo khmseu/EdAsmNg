@@ -1,8 +1,8 @@
-Name          : EQUATES.S
-End of file   :      391
-This file was generated using the DiskBrowser utility with minimal editing.
-It is meant for viewing purposes only.
-
+* Name          : EQUATES.S
+* End of file   :      391
+* This file was generated using the DiskBrowser utility with minimal editing.
+* It is meant for viewing purposes only.
+* 
 ;=================================================
 ; zero page usage by EdAsm Interpreter
 ; Since SW16 is used, the first 32 zero page

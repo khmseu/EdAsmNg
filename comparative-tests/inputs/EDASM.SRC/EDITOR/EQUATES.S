@@ -1,8 +1,8 @@
-Name          : EQUATES.S
-End of file   :      448
-This file was generated using the DiskBrowser utility with minimal editing.
-It is meant for viewing purposes only.
-
+* Name          : EQUATES.S
+* End of file   :      448
+* This file was generated using the DiskBrowser utility with minimal editing.
+* It is meant for viewing purposes only.
+* 
 ;=================================================
 ; Zero page usage
 ;
