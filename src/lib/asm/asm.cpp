@@ -1314,6 +1314,11 @@ namespace {
       SrcP = g_test_src_base;
       // Also rewind large source if active
       if (!g_large_src.empty()) {
+        // Keep only the original driver source; each pass rebuilds include
+        // expansions from scratch.
+        if (g_large_src.size() > g_large_src_base_end) {
+          g_large_src.resize(g_large_src_base_end);
+        }
         g_large_src_pos = g_large_src_base_pos;
         g_large_src_end = g_large_src_base_end;
         g_include_stack.clear();
@@ -4266,6 +4271,215 @@ namespace {
     // calls to NxtField() will correctly skip to the operand field.
     Y = startY + static_cast<uint8_t>(mnemonic.length());
 
+    auto emit_single_byte = [&](std::uint8_t opcode) {
+      Length = 1;
+      if (PassNbr == 1) {
+        if (g_use_experimental_pass2) {
+          const std::uint8_t bytes[] = {opcode};
+          QueueExperimentalBytes(bytes, 1);
+        } else {
+          A = opcode;
+          StorByt();
+          PC = ObjPC;
+        }
+      } else {
+        PC += 1;
+      }
+      C = false;
+    };
+
+    auto emit_immediate_absolute = [&](std::uint8_t immediate_opcode, std::uint8_t absolute_opcode,
+                                       std::uint8_t absolute_x_opcode,
+                                       std::uint8_t absolute_y_opcode,
+                                       std::uint8_t accumulator_opcode = 0xFF) {
+      ZAB = 0x7F;
+      NxtField();
+      std::uint8_t operand_start = SrcP_at(Y);
+      bool         is_immediate  = (operand_start == '#');
+      bool         is_accumulator =
+          (operand_start == CR || operand_start == ';') && accumulator_opcode != 0xFF;
+      Length = is_accumulator ? 1 : (is_immediate ? 2 : 3);
+
+      if (PassNbr == 0) {
+        PC += Length;
+        C = false;
+        return;
+      }
+
+      if (is_accumulator) {
+        if (g_use_experimental_pass2) {
+          const std::uint8_t bytes[] = {accumulator_opcode};
+          QueueExperimentalBytes(bytes, 1);
+        } else {
+          A = accumulator_opcode;
+          StorByt();
+          PC = ObjPC;
+        }
+        C = false;
+        return;
+      }
+
+      if (is_immediate) {
+        Y++;
+        std::uint8_t operand_byte = 0x00;
+        if (SrcP_at(Y) == '\'') {
+          operand_byte = SrcP_at(static_cast<std::uint8_t>(Y + 1));
+        } else {
+          EvalExpr();
+          operand_byte = ValExpr;
+        }
+
+        if (g_use_experimental_pass2) {
+          const std::uint8_t bytes[] = {immediate_opcode, operand_byte};
+          QueueExperimentalBytes(bytes, 2);
+        } else {
+          A = immediate_opcode;
+          StorByt();
+          A = operand_byte;
+          StorByt();
+          PC = ObjPC;
+        }
+        C = false;
+        return;
+      }
+
+      EvalExpr();
+      std::uint16_t abs_addr = static_cast<std::uint16_t>(ValExpr | (ValExpr_hi << 8));
+      std::uint8_t  opcode   = absolute_opcode;
+      if (SrcP_at(Y) == ',' && absolute_x_opcode != 0xFF &&
+          (SrcP_at(static_cast<std::uint8_t>(Y + 1)) == 'X' ||
+           SrcP_at(static_cast<std::uint8_t>(Y + 1)) == 'x')) {
+        opcode = absolute_x_opcode;
+      } else if (SrcP_at(Y) == ',' && absolute_y_opcode != 0xFF &&
+                 (SrcP_at(static_cast<std::uint8_t>(Y + 1)) == 'Y' ||
+                  SrcP_at(static_cast<std::uint8_t>(Y + 1)) == 'y')) {
+        opcode = absolute_y_opcode;
+      }
+
+      if (g_use_experimental_pass2) {
+        const std::uint8_t bytes[] = {opcode, static_cast<std::uint8_t>(abs_addr & 0xFF),
+                                      static_cast<std::uint8_t>((abs_addr >> 8) & 0xFF)};
+        QueueExperimentalBytes(bytes, 3);
+      } else {
+        A = opcode;
+        StorByt();
+        A = static_cast<std::uint8_t>(abs_addr & 0xFF);
+        StorByt();
+        A = static_cast<std::uint8_t>((abs_addr >> 8) & 0xFF);
+        StorByt();
+        PC = ObjPC;
+      }
+
+      C = false;
+    };
+
+    if (mnemonic == "INX") {
+      emit_single_byte(0xE8);
+      return;
+    }
+
+    if (mnemonic == "DEX") {
+      emit_single_byte(0xCA);
+      return;
+    }
+
+    if (mnemonic == "DEY") {
+      emit_single_byte(0x88);
+      return;
+    }
+
+    if (mnemonic == "CLC") {
+      emit_single_byte(0x18);
+      return;
+    }
+
+    if (mnemonic == "TAY") {
+      emit_single_byte(0xA8);
+      return;
+    }
+
+    if (mnemonic == "TXA") {
+      emit_single_byte(0x8A);
+      return;
+    }
+
+    if (mnemonic == "PHP") {
+      emit_single_byte(0x08);
+      return;
+    }
+
+    if (mnemonic == "PLP") {
+      emit_single_byte(0x28);
+      return;
+    }
+
+    if (mnemonic == "LSR") {
+      emit_single_byte(0x4A);
+      return;
+    }
+
+    if (mnemonic == "ROL") {
+      emit_single_byte(0x2A);
+      return;
+    }
+
+    if (mnemonic == "LDX") {
+      emit_immediate_absolute(0xA2, 0xAE, 0xFF, 0xBE);
+      return;
+    }
+
+    if (mnemonic == "LDY") {
+      emit_immediate_absolute(0xA0, 0xAC, 0xBC, 0xFF);
+      return;
+    }
+
+    if (mnemonic == "EOR") {
+      emit_immediate_absolute(0x49, 0x4D, 0x5D, 0x59);
+      return;
+    }
+
+    if (mnemonic == "ORA") {
+      emit_immediate_absolute(0x09, 0x0D, 0x1D, 0x19);
+      return;
+    }
+
+    if (mnemonic == "CMP") {
+      emit_immediate_absolute(0xC9, 0xCD, 0xDD, 0xD9);
+      return;
+    }
+
+    if (mnemonic == "CPX") {
+      emit_immediate_absolute(0xE0, 0xEC, 0xFF, 0xFF);
+      return;
+    }
+
+    if (mnemonic == "STX") {
+      ZAB    = 0x7F;
+      Length = 3;
+      if (PassNbr == 0) {
+        PC += 3;
+      } else {
+        NxtField();
+        EvalExpr();
+        std::uint16_t abs_addr = static_cast<std::uint16_t>(ValExpr | (ValExpr_hi << 8));
+        if (g_use_experimental_pass2) {
+          const std::uint8_t bytes[] = {0x8E, static_cast<std::uint8_t>(abs_addr & 0xFF),
+                                        static_cast<std::uint8_t>((abs_addr >> 8) & 0xFF)};
+          QueueExperimentalBytes(bytes, 3);
+        } else {
+          A = 0x8E;
+          StorByt();
+          A = static_cast<std::uint8_t>(abs_addr & 0xFF);
+          StorByt();
+          A = static_cast<std::uint8_t>((abs_addr >> 8) & 0xFF);
+          StorByt();
+          PC = ObjPC;
+        }
+      }
+      C = false;
+      return;
+    }
+
     // Handle recognized mnemonics/directives for Phase 8.4-8.5
     if (mnemonic == "NOP") {
       Length = 1;
@@ -4313,82 +4527,23 @@ namespace {
       return;
     }
 
-    if (mnemonic == "LDA" || mnemonic == "ADC" || mnemonic == "AND" || mnemonic == "ASL") {
-      // Set a dummy MnemP for tests
-      MnemP = nullptr;
-      ZAB   = 0x7F;  // Not a directive
+    if (mnemonic == "LDA") {
+      emit_immediate_absolute(0xA9, 0xAD, 0xBD, 0xB9);
+      return;
+    }
 
-      // Peek at operand to determine addressing mode in both passes
-      NxtField();  // Skip to operand
-      bool is_immediate = (SrcP_at(Y) == '#');
-      Length            = is_immediate ? 2 : 3;
+    if (mnemonic == "ADC") {
+      emit_immediate_absolute(0x69, 0x6D, 0x7D, 0x79);
+      return;
+    }
 
-      if (PassNbr == 0) {
-        PC += Length;
-      } else {
-        if (is_immediate) {
-          Y++;  // Skip '#'
-          uint8_t operand_byte = 0x00;
-          // Parse hex value ($hh)
-          if (SrcP_at(Y) == '$') {
-            Y++;  // Skip '$'
-            // Parse 1 or 2 hex digits
-            uint8_t digit1 = SrcP_at(Y);
-            if (digit1 >= '0' && digit1 <= '9') {
-              operand_byte = digit1 - '0';
-            } else if (digit1 >= 'A' && digit1 <= 'F') {
-              operand_byte = digit1 - 'A' + 10;
-            } else if (digit1 >= 'a' && digit1 <= 'f') {
-              operand_byte = digit1 - 'a' + 10;
-            }
-            Y++;
-            uint8_t digit2 = SrcP_at(Y);
-            if ((digit2 >= '0' && digit2 <= '9') || (digit2 >= 'A' && digit2 <= 'F') ||
-                (digit2 >= 'a' && digit2 <= 'f')) {
-              operand_byte <<= 4;
-              if (digit2 >= '0' && digit2 <= '9') {
-                operand_byte |= digit2 - '0';
-              } else if (digit2 >= 'A' && digit2 <= 'F') {
-                operand_byte |= digit2 - 'A' + 10;
-              } else if (digit2 >= 'a' && digit2 <= 'f') {
-                operand_byte |= digit2 - 'a' + 10;
-              }
-            }
-          }
-          if (g_use_experimental_pass2) {
-            const std::uint8_t bytes[] = {0xA9, operand_byte};
-            QueueExperimentalBytes(bytes, 2);
-          } else {
-            A = 0xA9;  // LDA immediate opcode
-            StorByt();
-            A = operand_byte;
-            StorByt();
-            PC = ObjPC;
-          }
-        } else {
-          // Absolute or abs,X addressing
-          EvalExpr();
-          uint16_t abs_addr = static_cast<uint16_t>(ValExpr | (ValExpr_hi << 8));
-          // Detect ,X suffix: LDA abs,X (0xBD) vs LDA abs (0xAD)
-          bool    has_x  = (SrcP_at(Y) == ',' && (SrcP_at(static_cast<uint8_t>(Y + 1)) == 'X' ||
-                                              SrcP_at(static_cast<uint8_t>(Y + 1)) == 'x'));
-          uint8_t opcode = has_x ? 0xBD : 0xAD;
-          if (g_use_experimental_pass2) {
-            const std::uint8_t bytes[] = {opcode, static_cast<std::uint8_t>(abs_addr & 0xFF),
-                                          static_cast<std::uint8_t>((abs_addr >> 8) & 0xFF)};
-            QueueExperimentalBytes(bytes, 3);
-          } else {
-            A = opcode;
-            StorByt();
-            A = static_cast<uint8_t>(abs_addr & 0xFF);
-            StorByt();
-            A = static_cast<uint8_t>((abs_addr >> 8) & 0xFF);
-            StorByt();
-            PC = ObjPC;
-          }
-        }
-      }
-      C = false;
+    if (mnemonic == "AND") {
+      emit_immediate_absolute(0x29, 0x2D, 0x3D, 0x39);
+      return;
+    }
+
+    if (mnemonic == "ASL") {
+      emit_immediate_absolute(0xFF, 0x0E, 0x1E, 0xFF, 0x0A);
       return;
     }
 
@@ -4498,7 +4653,55 @@ namespace {
       return;
     }
 
-    if (mnemonic == "BCC" || mnemonic == "BCS" || mnemonic == "BEQ" || mnemonic == "BNE") {
+    if (mnemonic == "DB") {
+      ZAB    = 0x7F;
+      Length = 1;
+      NxtField();
+      if (PassNbr == 0) {
+        PC += 1;
+      } else {
+        EvalExpr();
+        std::uint8_t byte_value = ValExpr;
+        if (g_use_experimental_pass2) {
+          const std::uint8_t bytes[] = {byte_value};
+          QueueExperimentalBytes(bytes, 1);
+        } else {
+          A = byte_value;
+          StorByt();
+          PC = ObjPC;
+        }
+      }
+      C = false;
+      return;
+    }
+
+    if (mnemonic == "DW") {
+      ZAB    = 0x7F;
+      Length = 2;
+      NxtField();
+      if (PassNbr == 0) {
+        PC += 2;
+      } else {
+        EvalExpr();
+        std::uint16_t word_value = static_cast<std::uint16_t>(ValExpr | (ValExpr_hi << 8));
+        if (g_use_experimental_pass2) {
+          const std::uint8_t bytes[] = {static_cast<std::uint8_t>(word_value & 0xFF),
+                                        static_cast<std::uint8_t>((word_value >> 8) & 0xFF)};
+          QueueExperimentalBytes(bytes, 2);
+        } else {
+          A = static_cast<std::uint8_t>(word_value & 0xFF);
+          StorByt();
+          A = static_cast<std::uint8_t>((word_value >> 8) & 0xFF);
+          StorByt();
+          PC = ObjPC;
+        }
+      }
+      C = false;
+      return;
+    }
+
+    if (mnemonic == "BCC" || mnemonic == "BCS" || mnemonic == "BEQ" || mnemonic == "BNE" ||
+        mnemonic == "BPL") {
       ZAB    = 0x7F;
       Length = 2;
       if (PassNbr == 0) {
@@ -4509,6 +4712,7 @@ namespace {
         if (mnemonic == "BCS") opcode = 0xB0;
         if (mnemonic == "BEQ") opcode = 0xF0;
         if (mnemonic == "BNE") opcode = 0xD0;
+        if (mnemonic == "BPL") opcode = 0x10;
         uint16_t branchPC = ObjPC;
         NxtField();
         EvalExpr();
