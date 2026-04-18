@@ -75,6 +75,7 @@ namespace {
   std::string               g_listing_source_banner_name      = "EDASMNG.SRC";
   std::string               g_listing_object_banner_path      = "/OUT/EDASMNG.OBJ";
   bool                      g_listing_compact_columns         = false;
+  bool                      g_msb_string_mode                 = false;
   std::uint16_t             g_object_write_start_addr         = 0;
   std::vector<std::uint8_t> g_serialized_obj_bytes;
 
@@ -187,6 +188,7 @@ namespace {
 
   // Extern array declarations (defined later in file)
   extern const std::uint8_t CharMap1[];
+  extern const std::uint8_t CharMap2[];
   extern const std::uint8_t AModTbl[];
 
   //=================================================
@@ -796,7 +798,8 @@ namespace {
       Y = start_y;
       while (true) {
         uint8_t ch = SrcP_at(Y);
-        if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')) {
+        if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') ||
+            ch == '.' || ch == '_') {
           Y++;
         } else {
           break;
@@ -1386,9 +1389,10 @@ namespace {
   // Original: ASM1.S lines ~330-450
   void DoPass1() {
     // Initialize Pass 1 state
-    RelCodeF = 0;
-    SymNbr   = 0;  // # of ENTRY/EXTRN
-    PassNbr  = 0;  // Pass 1
+    RelCodeF          = 0;
+    g_msb_string_mode = false;
+    SymNbr            = 0;  // # of ENTRY/EXTRN
+    PassNbr           = 0;  // Pass 1
     // A = BINtype / ftypeT[0] = A  - TODO: implement when BINtype/ftypeT are defined
     OpenSrc1();  // Open/rewind source file (handles both memory and file modes)
 
@@ -1449,7 +1453,39 @@ namespace {
     if (!C) {  // Symbol found (C=0)
       // Check if already defined
       if ((int8_t)A >= 0) {  // Bit 7 clear means defined
-        X = 0x02;            // Duplicate identifier error
+        // EDASM allows repeated EQU/.EQU symbol definitions used by EI sources.
+        // Detect that case here and allow normal mnemonic handling to update it.
+        auto is_equ_line = [&]() -> bool {
+          uint8_t idx = 0;
+          while (true) {
+            uint8_t ch = SrcP_at(idx);
+            if (ch == CR || ch == 0 || ch == ' ' || ch == '\t' || ch == ':') break;
+            idx++;
+            if (idx == 0) break;
+          }
+
+          if (SrcP_at(idx) == ':') idx++;
+          while (SrcP_at(idx) == ' ' || SrcP_at(idx) == '\t') {
+            idx++;
+            if (idx == 0) break;
+          }
+
+          std::string mnem;
+          while (true) {
+            uint8_t ch = SrcP_at(idx);
+            if (ch == CR || ch == 0 || ch == ' ' || ch == '\t' || ch == ',') break;
+            mnem.push_back(static_cast<char>(::toupper(ch)));
+            idx++;
+            if (idx == 0 || mnem.size() > 8) break;
+          }
+          return mnem == "EQU" || mnem == ".EQU";
+        };
+
+        if (is_equ_line()) {
+          goto SkipLabel;
+        }
+
+        X = 0x02;  // Duplicate identifier error
         RegAsmEW();
         A      = 0x00;
         LabelF = A;  // Flag no label field
@@ -1903,18 +1939,51 @@ namespace {
     std::abort();  // BRK - source file must be std ASCII
 
   L8227:
-    A             = CharMap1[char_y];  // LDA CharMap1,Y (was CharMap2) - Get the bit flags
-    uint8_t flags = A;                 // PHA - Save for later use
-    A             = char_y;            // TYA - Get back char
-    Y             = ZPSaveY;           // LDY ZPSaveY - restore Y
-    // PLP - Pop into Status reg
-    N = (flags & 0x80) != 0;
-    V = (flags & 0x40) != 0;
-    Z = (flags & 0x02) != 0;
-    C = (flags & 0x01) != 0;
-    if (N) {      // BPL doRet3 - If (A)=$61-$7A (a-z)
-      A &= 0xDF;  // AND #$DF - convert to upper case
+    Y = ZPSaveY;  // LDY ZPSaveY - restore Y
+
+    // Identifier scanner semantics: alphanumeric plus '.' and '_' are part
+    // of a symbol token; all other characters terminate the token (C=1).
+    if (char_y >= 'a' && char_y <= 'z') {
+      A = static_cast<std::uint8_t>(char_y & 0xDF);  // upper case
+      C = false;
+      Z = false;
+      V = (A <= 'F');
+      N = false;
+      return;
     }
+
+    if (char_y >= 'A' && char_y <= 'Z') {
+      A = char_y;
+      C = false;
+      Z = false;
+      V = (A <= 'F');
+      N = false;
+      return;
+    }
+
+    if (char_y >= '0' && char_y <= '9') {
+      A = char_y;
+      C = false;
+      Z = true;
+      V = true;
+      N = false;
+      return;
+    }
+
+    if (char_y == '.' || char_y == '_') {
+      A = char_y;
+      C = false;
+      Z = false;
+      V = false;
+      N = false;
+      return;
+    }
+
+    A = char_y;
+    C = true;
+    Z = false;
+    V = false;
+    N = false;
   }
 
   //=================================================
@@ -2564,6 +2633,7 @@ namespace {
     PassNbr                   = 1;
     g_serialized_obj_active   = false;
     g_listing_compact_columns = false;
+    g_msb_string_mode         = false;
     A                         = '*';
     RepChar                   = A;
     A                         = -1;
@@ -4374,6 +4444,120 @@ namespace {
       C = false;
     };
 
+    auto emit_imm_zp_abs = [&](std::uint8_t immediate_opcode, std::uint8_t zp_opcode,
+                               std::uint8_t zpx_opcode, std::uint8_t zpy_opcode,
+                               std::uint8_t absolute_opcode, std::uint8_t absx_opcode,
+                               std::uint8_t absy_opcode) {
+      ZAB = 0x7F;
+      NxtField();
+
+      bool is_immediate = (SrcP_at(Y) == '#') && immediate_opcode != 0xFF;
+      if (is_immediate) {
+        Length = 2;
+        if (PassNbr == 0) {
+          PC += 2;
+          C = false;
+          return;
+        }
+
+        Y++;
+        std::uint8_t operand_byte = 0x00;
+        if (SrcP_at(Y) == '\'') {
+          operand_byte = SrcP_at(static_cast<std::uint8_t>(Y + 1));
+        } else {
+          EvalExpr();
+          operand_byte = ValExpr;
+        }
+
+        if (g_use_experimental_pass2) {
+          const std::uint8_t bytes[] = {immediate_opcode, operand_byte};
+          QueueExperimentalBytes(bytes, 2);
+        } else {
+          A = immediate_opcode;
+          StorByt();
+          A = operand_byte;
+          StorByt();
+          PC = ObjPC;
+        }
+        C = false;
+        return;
+      }
+
+      EvalExpr();
+      bool has_x = SrcP_at(Y) == ',' && (SrcP_at(static_cast<std::uint8_t>(Y + 1)) == 'X' ||
+                                         SrcP_at(static_cast<std::uint8_t>(Y + 1)) == 'x');
+      bool has_y = SrcP_at(Y) == ',' && (SrcP_at(static_cast<std::uint8_t>(Y + 1)) == 'Y' ||
+                                         SrcP_at(static_cast<std::uint8_t>(Y + 1)) == 'y');
+
+      std::uint16_t value      = static_cast<std::uint16_t>(ValExpr | (ValExpr_hi << 8));
+      bool          use_zp     = (ValExpr_hi == 0 && RelExprF == 0);
+      std::uint8_t  opcode     = 0xFF;
+      std::uint8_t  byte_count = 0;
+
+      if (has_x) {
+        if (use_zp && zpx_opcode != 0xFF) {
+          opcode     = zpx_opcode;
+          byte_count = 2;
+        } else if (absx_opcode != 0xFF) {
+          opcode     = absx_opcode;
+          byte_count = 3;
+        }
+      } else if (has_y) {
+        if (use_zp && zpy_opcode != 0xFF) {
+          opcode     = zpy_opcode;
+          byte_count = 2;
+        } else if (absy_opcode != 0xFF) {
+          opcode     = absy_opcode;
+          byte_count = 3;
+        }
+      } else {
+        if (use_zp && zp_opcode != 0xFF) {
+          opcode     = zp_opcode;
+          byte_count = 2;
+        } else if (absolute_opcode != 0xFF) {
+          opcode     = absolute_opcode;
+          byte_count = 3;
+        }
+      }
+
+      if (opcode == 0xFF || byte_count == 0) {
+        X = 0x04;
+        RegAsmEW(X);
+        C = true;
+        return;
+      }
+
+      Length = byte_count;
+      if (PassNbr == 0) {
+        PC += byte_count;
+        C = false;
+        return;
+      }
+
+      if (g_use_experimental_pass2) {
+        if (byte_count == 2) {
+          const std::uint8_t bytes[] = {opcode, static_cast<std::uint8_t>(value & 0xFF)};
+          QueueExperimentalBytes(bytes, 2);
+        } else {
+          const std::uint8_t bytes[] = {opcode, static_cast<std::uint8_t>(value & 0xFF),
+                                        static_cast<std::uint8_t>((value >> 8) & 0xFF)};
+          QueueExperimentalBytes(bytes, 3);
+        }
+      } else {
+        A = opcode;
+        StorByt();
+        A = static_cast<std::uint8_t>(value & 0xFF);
+        StorByt();
+        if (byte_count == 3) {
+          A = static_cast<std::uint8_t>((value >> 8) & 0xFF);
+          StorByt();
+        }
+        PC = ObjPC;
+      }
+
+      C = false;
+    };
+
     if (mnemonic == "INX") {
       emit_single_byte(0xE8);
       return;
@@ -4478,6 +4662,106 @@ namespace {
         }
       }
       C = false;
+      return;
+    }
+
+    if (mnemonic == "SYS") {
+      ZAB    = 0x80;
+      Length = 0;
+      C      = false;
+      return;
+    }
+
+    if (mnemonic == "MSB") {
+      ZAB    = 0x80;
+      Length = 0;
+      NxtField();
+      std::string mode;
+      while (true) {
+        uint8_t ch = SrcP_at(Y);
+        if (ch == CR || ch == 0 || ch == ' ' || ch == '\t' || ch == ',') break;
+        mode.push_back(static_cast<char>(::toupper(ch)));
+        Y++;
+      }
+      if (mode == "ON") {
+        g_msb_string_mode = true;
+      } else if (mode == "OFF") {
+        g_msb_string_mode = false;
+      }
+      C = false;
+      return;
+    }
+
+    if (mnemonic == "STR") {
+      ZAB = 0x80;
+      while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
+      uint8_t quote = SrcP_at(Y);
+      if (quote != '\'' && quote != '"') {
+        C = true;
+        return;
+      }
+      Y++;
+      uint8_t start = Y;
+      uint8_t len   = 0;
+      while (true) {
+        uint8_t ch = SrcP_at(Y);
+        if (ch == CR || ch == 0 || ch == quote) break;
+        len++;
+        Y++;
+      }
+
+      Length = static_cast<uint8_t>(len + 1);
+      if (PassNbr == 0) {
+        PC += Length;
+      } else {
+        if (g_use_experimental_pass2) {
+          std::vector<std::uint8_t> bytes;
+          bytes.reserve(static_cast<std::size_t>(len) + 1);
+          bytes.push_back(len);
+          Y = start;
+          for (uint8_t i = 0; i < len; ++i) {
+            bytes.push_back(SrcP_at(Y));
+            Y++;
+          }
+          QueueExperimentalBytes(bytes.data(), static_cast<std::uint8_t>(bytes.size()));
+        } else {
+          A = len;
+          StorByt();
+          Y = start;
+          for (uint8_t i = 0; i < len; ++i) {
+            A = SrcP_at(Y);
+            StorByt();
+            Y++;
+          }
+          PC = ObjPC;
+        }
+      }
+      C = false;
+      return;
+    }
+
+    if (mnemonic == "DEC") {
+      emit_imm_zp_abs(0xFF, 0xC6, 0xD6, 0xFF, 0xCE, 0xDE, 0xFF);
+      return;
+    }
+
+    if (mnemonic == "INC") {
+      emit_imm_zp_abs(0xFF, 0xE6, 0xF6, 0xFF, 0xEE, 0xFE, 0xFF);
+      return;
+    }
+
+    if (mnemonic == "CPY") {
+      emit_imm_zp_abs(0xC0, 0xC4, 0xFF, 0xFF, 0xCC, 0xFF, 0xFF);
+      return;
+    }
+
+    if (mnemonic == "SBC") {
+      emit_imm_zp_abs(0xE9, 0xE5, 0xF5, 0xFF, 0xED, 0xFD, 0xF9);
+      return;
+    }
+
+    if (mnemonic == "BIT") {
+      emit_imm_zp_abs(0xFF, 0x24, 0xFF, 0xFF, 0x2C, 0xFF, 0xFF);
       return;
     }
 
@@ -4879,6 +5163,14 @@ namespace {
         return;
       }
 
+      // EQU/.EQU updates symbols during pass 1 only. In pass 2/3 this should
+      // be a no-op line and must not trigger operand re-parse errors.
+      if (PassNbr != 0) {
+        Length = 0;
+        C      = false;
+        return;
+      }
+
       // Evaluate the operand and store in symbol table
       NxtField();  // Skip to operand field
 
@@ -4897,13 +5189,21 @@ namespace {
         return;
       }
 
-      // Check for valid end-of-operand
+      // Check for valid end-of-operand. EDASM allows trailing comments
+      // after EQU operands (e.g. "EQU * ;ENTRY").
       A = NxtToken;
       if (A != 0) {
-        X = 0x24;  // Directive operand error
-        RegAsmEW(X);
-        Length = 0;
-        return;
+        uint8_t tail = SrcP_at(Y);
+        while (tail == ' ' || tail == '\t') {
+          Y++;
+          tail = SrcP_at(Y);
+        }
+        if (tail != ';' && tail != CR && tail != 0) {
+          X = 0x24;  // Directive operand error
+          RegAsmEW(X);
+          Length = 0;
+          return;
+        }
       }
 
       // Pass 1: update the symbol table entry with the evaluated value
@@ -5267,6 +5567,9 @@ namespace {
         std::uint8_t queuedAscii[4] = {0, 0, 0, 0};
         for (uint16_t i = 0; i < len; i++) {
           uint8_t out = SrcP_at(Y);
+          if (!is_dci && g_msb_string_mode) {
+            out |= 0x80;
+          }
           if (is_dci && i < (len - 1)) {
             out |= 0x80;
           }
@@ -5287,6 +5590,9 @@ namespace {
         std::uint8_t  chunkIndex          = 0;
         for (uint16_t i = 0; i < len; i++) {
           uint8_t out = SrcP_at(Y);
+          if (!is_dci && g_msb_string_mode) {
+            out |= 0x80;
+          }
           if (is_dci && i < (len - 1)) {
             out |= 0x80;
           }
@@ -5436,10 +5742,16 @@ namespace {
 
     if (mnemonic == "EQU") {
       // Inline EQU handling for Pass 1 (avoid external HndlEQU linkage issue)
+      if (PassNbr != 0) {
+        Length = 0;
+        C      = false;
+        return;
+      }
+
       // Y is already positioned after mnemonic, skip any spaces
       while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
 
-      // Evaluate operand expression (force Pass2 semantics inside)
+      // Evaluate operand expression
       EvalOprnd();
       if (C) {
         X = 0x24;
@@ -5448,10 +5760,17 @@ namespace {
         return;
       }
       if (NxtToken != 0) {
-        X = 0x24;
-        RegAsmEW(X);
-        C = true;
-        return;
+        uint8_t tail = SrcP_at(Y);
+        while (tail == ' ' || tail == '\t') {
+          Y++;
+          tail = SrcP_at(Y);
+        }
+        if (tail != ';' && tail != CR && tail != 0) {
+          X = 0x24;
+          RegAsmEW(X);
+          C = true;
+          return;
+        }
       }
 
       // Pass 1: write value into symbol table entry for the label

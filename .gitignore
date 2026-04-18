@@ -135,6 +135,7 @@ CMakeUserPresets.json
 .._*
 .cache/
 .ccls-cache/
+*.log
 *.pyc
 build/
 gdb_commands.txt
