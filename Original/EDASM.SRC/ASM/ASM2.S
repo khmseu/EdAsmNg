@@ -5,68 +5,24 @@ It is meant for viewing purposes only.
 
             ORG    $7800
             REP    50
-;=================================================
-; ASM/ASM2.S - Assembler Module Part 2: Main Entry & Control
+; EdAsm Interpreter will transfer control here
 ;
-; This is the second part of the EDASM.ASM assembler module.
-; It contains the main assembler entry point and control logic.
+Assembler   EQU    *               ;ENTRY
+ColdStrt    JMP    ExecAsm
 ;
-; MEMORY LOCATION:
-; This code resides at $7800 and remains in main memory (not
-; relocated to Language Card).
+; Patch the addr @ this offset with $60 (RTS)
+; if user wants to use the letters A,X,Y as labels
 ;
-; MODULE ENTRY:
-; The EdAsm Interpreter (EI) transfers control here to begin
-; assembly. This file contains:
-; - Assembly initialization (ExecAsm)
-; - Pass 1 and Pass 2 control logic
-; - Directive handlers (ORG, EQU, MAC, END, etc.)
-; - Expression evaluation
-; - Error handling
+            DW     IsAXY           ;Points to subrtn checking A,X,Y as labels
 ;
-; SPECIAL NOTE: A,X,Y as Labels
-; There's a patchable location that can be set to RTS ($60)
-; if the user wants to allow A, X, and Y to be used as label
-; names (normally these are reserved for register names in
-; addressing modes like "STA A,X").
+DateStr     ASC    '30-APR-85      22:46'
 ;
-; ASSEMBLY DATE:
-; This binary was assembled on 30-APR-85 at 22:46
+ResetEnt    JSR    GoMon           ;Comes here when Apple RESET key is pressed
 ;
-; EXTERNAL LABEL REFERENCES (X-labels):
-; This module calls routines in other modules. Labels starting
-; with 'X' are external references that correspond to local
-; labels in other modules:
-;   Xnnnn in ASM2 → Lnnnn in EI/EDITOR modules
-;=================================================
-;
-; Main Assembler Entry Points
-;
-Assembler   EQU    *               ;Primary assembler entry point
-ColdStrt    JMP    ExecAsm         ;Jump to assembler initialization
-;
-; A,X,Y Label Patch Location
-; Patch the address at this offset with $60 (RTS) if user
-; wants to use the letters A, X, Y as labels
-;
-            DW     IsAXY           ;Pointer to subroutine checking A,X,Y as labels
-;
-; Assembly Build Information
-;
-DateStr     ASC    '30-APR-85      22:46'    ;Assembly date and time
-;
-; Reset Handler
-; When Apple RESET key is pressed, control comes here
-;
-ResetEnt    JSR    GoMon           ;Return to monitor
-;
-; Assembler Initialization
-; This is the main entry point called by the EI module
-;
-ExecAsm     JSR    SaveZP          ;Save zero page ($60-$F1) to temporary storage
+ExecAsm     JSR    SaveZP
             TSX
-            STX    EIStack         ;Save EdAsm Interpreter's hardware stack pointer
-            SEI                    ;Disable hardware interrupts (critical sections ahead)
+            STX    EIStack         ;Save EdAsm Interpreter's H/W stack
+            SEI                    ;Disable H/W interrupts
             JSR    SetupVec
             JSR    InitASM
             JSR    DoPass1

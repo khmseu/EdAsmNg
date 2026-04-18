@@ -5,77 +5,29 @@ It is meant for viewing purposes only.
 
             ORG    $0800
             MSB    ON
-;=================================================
-; BUGBYTER/BB1.S - BugByter Debugger Part 1: Initialization & Relocation
+; BB (ProDOS version) was assembled @ $0800
+; but may be run from any location starting
+; from $0800 as long as there is enough memory
 ;
-; BugByter (BB) is a powerful 6502 debugger/monitor for the
-; Apple II with ProDOS. It provides:
-; - Real-time code tracing with variable speed
-; - Breakpoints and single-stepping
-; - Register display and modification
-; - Memory examine/change
-; - Disassembly
-; - Cycle counting
-; - ProDOS integration
+BBSTART     EQU    *
+            SEC
+            BCS    SkipSWA
 ;
-; MEMORY ORGANIZATION:
-; BB is assembled at $0800 but is position-independent and can
-; run from any location $0800-$95FF as long as sufficient
-; contiguous memory is available.
+XUNDSW      DB     $80             ;Allow BB to call ProDOS
+Btn0SW      DB     $00             ;Use Paddle button 0 for trace/suspend (ON=$80)
+PDL0SW      DB     $80             ;Use Paddle 0 for trace rate
+KBDPOLL     DB     $00             ;Tr/SS keyboard polling (msb on=OFF)
+SNDSW       DB     $80             ;$80-ON
+CYCLEC      DW     $0000           ;Cycle Counter
+BARTC       DW     $FFFF           ;Beginning & Ending Addresses
+EARTC       DW     $FFFF           ; of Real Time Code
 ;
-; The code relocates itself at startup by:
-; 1. Calculating load address offset from return address
-; 2. Patching all absolute addresses with the offset
-; 3. Modifying the load address to be a JMP to main entry point
-;
-; CONFIGURATION SWITCHES (at start):
-; These can be modified before execution or at runtime:
-;   XUNDSW  : Allow BB to call ProDOS ($80=yes, $00=no)
-;   Btn0SW  : Use paddle button 0 for trace/suspend ($80=yes)
-;   PDL0SW  : Use paddle 0 for trace rate ($80=yes)
-;   KBDPOLL : Trace/SS keyboard polling ($80=off, $00=on)
-;   SNDSW   : Sound on/off ($80=on, $00=off)
-;   CYCLEC  : Cycle counter (2 bytes)
-;   BARTC   : Beginning address of real-time code (2 bytes)
-;   EARTC   : Ending address of real-time code (2 bytes)
-;
-; INPUT BUFFER:
-; IBuff at $080E-$088D provides 128 bytes for command input
-;
-; EXTERNAL REFERENCES:
-; BB uses Monitor ROM routines and ProDOS MLI for system services.
-;=================================================
-;
-; BugByter Entry Point and Configuration
-;
-BBSTART     EQU    *               ;Start of BugByter code
-            SEC                    ;Set carry flag
-            BCS    SkipSWA         ;Always branch (skip switch area)
-;
-; Configuration Switches
-; These bytes can be modified to configure BB behavior
-;
-XUNDSW      DB     $80             ;Allow BB to call ProDOS ($80=yes)
-Btn0SW      DB     $00             ;Use Paddle button 0 for trace/suspend ($80=yes)
-PDL0SW      DB     $80             ;Use Paddle 0 for trace rate ($80=yes)
-KBDPOLL     DB     $00             ;Trace/SS keyboard polling (MSB on=$FF means OFF)
-SNDSW       DB     $80             ;Sound on/off ($80=ON, $00=OFF)
-CYCLEC      DW     $0000           ;Cycle counter (16-bit)
-BARTC       DW     $FFFF           ;Beginning Address of Real Time Code
-EARTC       DW     $FFFF           ;Ending Address of Real Time Code
-;
-; Input Buffer Area
-;
-IBuff       EQU    *               ;Input buffer ($080E-$088D, 128 bytes)
-;
-; Relocation Code
-; Determines load address and relocates all absolute addresses
-;
-SkipSWA     LDA    #iRTS           ;RTS instruction opcode ($60)
-            STA    Z2F             ;Store at zero page location
-            JSR    Z2F             ;Call it (RTS returns immediately)
-RetHere     EQU    *               ;Return point (address on stack is load addr + offset)
-            TSX                    ;Transfer stack pointer to X
+IBuff       EQU    *               ;$080E-$088D (128 chars)
+SkipSWA     LDA    #iRTS
+            STA    Z2F
+            JSR    Z2F
+RetHere     EQU    *
+            TSX
             LDY    STACK,X         ;Hi
             DEX
             LDA    STACK,X

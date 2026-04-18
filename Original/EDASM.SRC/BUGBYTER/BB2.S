@@ -4,75 +4,30 @@ This file was generated using the DiskBrowser utility with minimal editing.
 It is meant for viewing purposes only.
 
 ;=================================================
-; BUGBYTER/BB2.S - BugByter Debugger Part 2: Command Execution
+; Execute BI commands
 ;
-; This is the second part of the BugByter debugger module.
-; It contains the command execution interface and screen
-; management routines.
-;
-; COMMAND INTERFACE:
-; This file handles the transition between BugByter's debugging
-; environment and ProDOS command execution. When executing BI
-; (ProDOS BASIC.SYSTEM) commands, it:
-; 1. Saves BugByter's zero page state
-; 2. Restores text mode and full screen
-; 3. Executes the command
-; 4. Returns control to BugByter
-;
-; SCREEN MANAGEMENT:
-; Sets up proper text window boundaries:
-; - Full 40-column width
-; - 24-line height
-; - Cursor at line 23
-; - Text page 1 active
-; - Text mode enabled
-;
-; ZERO PAGE SWAPPING:
-; BugByter maintains its own zero page state separate from
-; ProDOS and other programs. The SwapZP routine exchanges
-; between BugByter's and the system's zero page contents.
-;
-; EXACT BINARY IMAGE:
-; This file uses direct opcodes (DB $8D,$24,00 instead of
-; STA CH) to ensure the assembled code exactly matches the
-; original binary. This is important for preservation and
-; validation purposes.
-;
-; EXTERNAL REFERENCES:
-; - Monitor ROM routines for screen I/O
-; - ProDOS DOSCMD for command execution
-;=================================================
-;
-; Execute ProDOS BI Commands
-; Switches to ProDOS environment and executes commands
-;
-DOTCMD      JSR    SwapZP          ;Swap BugByter's zero page with system's
-            BIT    TXTSET          ;Enable text mode (read to activate soft switch)
-            BIT    TXTPAGE1        ;Display text page 1
-            LDA    #$00            ;Set to full text screen (40x24)
-;
-; The following stores use direct opcodes to ensure exact binary match
-; with original. Each is equivalent to a STA instruction:
-;   DB $8D,$24,$00 = STA $0024 (STA CH)
-;
-; STA CH                        ;Set cursor horizontal position to 0
-            DB     $8D,$24,00      ;This ensures the assembled copy
-; STA WNDLFT                    ;Set window left edge to 0
-            DB     $8D,$20,00      ; is an exact binary image of
-; STA WNDTOP                    ;Set window top edge to 0
-            DB     $8D,$22,00      ; the original program
-            LDA    #40             ;Window width = 40 characters
-; STA WNDWDTH                   ;Set window width
+DOTCMD      JSR    SwapZP
+            BIT    TXTSET
+            BIT    TXTPAGE1
+            LDA    #$00            ;Set to full text screen
+; STA CH
+            DB     $8D,$24,00      ;This should ensure
+; STA WNDLFT
+            DB     $8D,$20,00      ; the assembled copy
+; STA WNDTOP
+            DB     $8D,$22,00      ; is an exact image of
+            LDA    #40
+; STA WNDWDTH ; the original program
             DB     $8D,$21,00
-            LDA    #24             ;Window bottom = 24 lines
-; STA WNDBTM                    ;Set window bottom edge
+            LDA    #24
+; STA WNDBTM
             DB     $8D,$23,00
-            LDA    #23             ;Cursor vertical position = line 23
-; STA CV                        ;Set cursor vertical position
+            LDA    #23
+; STA CV
             DB     $8D,$25,00
 ;
-            LDA    #>SLIN23        ;High byte of screen line 23 base address
-; STA BASL                      ;Set base address low
+            LDA    #>SLIN23
+; STA BASL
             DB     $8D,$28,00
             LDA    #<SLIN23
 ; STA BASH
