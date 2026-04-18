@@ -1,4 +1,5 @@
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -84,6 +85,8 @@ int main(int argc, char* argv[]) {
     EdAsmNg::Asm::EnableSerializedObjectCapture(true);
     EdAsmNg::Asm::ClearSerializedObjectBytes();
     EdAsmNg::Asm::SetListingBannerPaths(input_file.c_str(), object_file.c_str());
+    EdAsmNg::Asm::SetIncludeSearchPath(
+        std::filesystem::path(input_file).parent_path().string().c_str());
     if (!listing_file.empty()) {
       EdAsmNg::Asm::SetListingF(0xFF);
     }

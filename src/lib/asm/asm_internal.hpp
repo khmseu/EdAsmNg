@@ -233,6 +233,7 @@ namespace AsmInternal {
   void HndlNOLIST();    // NOLIST directive handler
   void DoPage();        // PAGE directive handler
   void HndlSBTL();      // SBTL/.TITLE directive handler
+  void HndlINCLUDE();   // .INCLUDE/INCLUDE directive handler
 
   // Additional expression and error handling functions
   void SkipSpcs();   // Skip whitespace characters

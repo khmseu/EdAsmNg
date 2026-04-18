@@ -28,6 +28,7 @@
 
 #include <cctype>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <iomanip>
@@ -82,6 +83,7 @@ namespace {
   //=================================================
   void ChrGot();
   void ChrGot2();
+  void HndlINCLUDE();
   void GAdrMod();
   void GOpAdr();
   void CalcDisp();
@@ -141,6 +143,7 @@ namespace {
   void GSrcLin();
   void ReadMore();
   void SetupMemorySource(const char* sourceText, size_t length);
+  void GSrcLin_large();  // Large source buffer include-aware version
   void DoPass2_ExperimentalCore();
   void PrtAsmLn();
   void ListCode();
@@ -279,6 +282,45 @@ namespace {
   std::uint8_t g_test_obj_memory[65536];
   bool         g_test_obj_memory_enabled = false;
 
+  // Large source buffer for include file support (no 64KB limit)
+  // When non-empty, used instead of g_test_src_memory for source access
+  std::vector<std::uint8_t> g_large_src;
+  std::uint32_t             g_large_src_pos      = 0;  // Current read position
+  std::uint32_t             g_large_src_end      = 0;  // End of current file
+  std::uint32_t             g_large_src_base_pos = 0;  // Start of main file
+  std::uint32_t             g_large_src_base_end = 0;  // End of main file
+  std::uint32_t             g_large_src2p        = 0;  // Src2P equivalent for listing
+
+  // Include file stack
+  struct IncludeEntry {
+    std::uint32_t saved_pos;      // resume position in parent
+    std::uint32_t saved_end;      // TxtEnd of parent
+    std::uint8_t  saved_bcdnbr0;  // saved BCDNbr[0]
+    std::uint8_t  saved_bcdnbr1;  // saved BCDNbr[1]
+    std::uint8_t  saved_bcdnbr2;  // saved BCDNbr[2]
+  };
+
+  std::vector<IncludeEntry>              g_include_stack;
+  std::vector<std::vector<std::uint8_t>> g_include_bufs;  // keep include data alive
+
+  // Pending include (activated by GSrcLin after NextRec past .INCLUDE line)
+  bool                      g_pending_include = false;
+  std::vector<std::uint8_t> g_pending_include_data;
+  std::string               g_pending_include_name;
+
+  // Include file banner list (for listing header)
+  struct IncludeFileBanner {
+    int         file_number;
+    std::string filename;
+  };
+
+  std::vector<IncludeFileBanner> g_include_file_banners;
+  int                            g_next_include_file_number = 2;
+  bool                           g_include_banners_emitted  = false;
+
+  // Include search path (directory of the main source file)
+  std::string g_include_search_path;
+
   // Helper to access source line as array (simulates 6502 indirect indexed mode)
   // When SrcP contains an address, SrcP_byte(index) accesses memory at that address
   // For testing, if g_test_src_buffer is set, it uses that instead
@@ -286,13 +328,18 @@ namespace {
     if (g_test_src_buffer != nullptr) {
       return g_test_src_buffer[index];
     }
+    // Large source mode (include file support)
+    if (!g_large_src.empty()) {
+      std::uint32_t addr = g_large_src_pos + static_cast<std::uint32_t>(index);
+      if (addr < g_large_src.size()) return g_large_src[addr];
+      return CR;
+    }
     // Use g_test_src_memory for simulated memory access
     std::uint16_t addr = SrcP + index;
     return g_test_src_memory[addr];
   }
 
   // Helper to convert simulated 16-bit address to real pointer into g_test_src_memory
-  // Used for symbol table and other memory operations
   inline std::uint8_t* SimPtrToMemPtr(std::uint16_t simAddr) {
     return &g_test_src_memory[simAddr];
   }
@@ -780,6 +827,49 @@ namespace {
       uint8_t  symFlags = 0;
       is_reloc          = false;
 
+      // CHR "x" helper used heavily by EI equates.
+      // Accepts both CHR "x" and CHR("x") forms.
+      if ((ch == 'C' || ch == 'c') &&
+          (SrcP_at(static_cast<std::uint8_t>(Y + 1)) == 'H' ||
+           SrcP_at(static_cast<std::uint8_t>(Y + 1)) == 'h') &&
+          (SrcP_at(static_cast<std::uint8_t>(Y + 2)) == 'R' ||
+           SrcP_at(static_cast<std::uint8_t>(Y + 2)) == 'r')) {
+        Y = static_cast<std::uint8_t>(Y + 3);
+        skip_spaces();
+
+        bool has_paren = false;
+        if (SrcP_at(Y) == '(') {
+          has_paren = true;
+          Y++;
+          skip_spaces();
+        }
+
+        uint8_t quote = SrcP_at(Y);
+        if (quote == '\'' || quote == '"') {
+          Y++;
+          uint8_t chr = SrcP_at(Y);
+          if (chr == CR || chr == 0) {
+            return false;
+          }
+          Y++;
+          if (SrcP_at(Y) != quote) {
+            return false;
+          }
+          Y++;
+          if (has_paren) {
+            skip_spaces();
+            if (SrcP_at(Y) != ')') {
+              return false;
+            }
+            Y++;
+          }
+          val = chr;
+          finish_tokens();
+          return true;
+        }
+        return false;
+      }
+
       if (parse_number(parsed)) {
         val = parsed;
         finish_tokens();
@@ -1222,6 +1312,16 @@ namespace {
     if (DskSrcF == 0 && TxtEnd > 0) {
       // Memory source mode - rewind to beginning for re-reading
       SrcP = g_test_src_base;
+      // Also rewind large source if active
+      if (!g_large_src.empty()) {
+        g_large_src_pos = g_large_src_base_pos;
+        g_large_src_end = g_large_src_base_end;
+        g_include_stack.clear();
+        g_include_bufs.clear();
+        g_pending_include = false;
+        g_pending_include_data.clear();
+        g_pending_include_name.clear();
+      }
       return;
     }
 
@@ -1302,7 +1402,12 @@ namespace {
     if (A == ';') goto Pass1Next;  // Comment line? Skip it
     if (A == CR) goto Pass1Next;   // Blank line? Skip it
 
-    // Check for label (non-space first character)
+    // Check for label (non-whitespace first character)
+    // EDASM sources commonly use either spaces or tabs for indentation.
+    if (A == SPACE || A == '\t') {
+      LabelF = 0;
+      goto NoLabel;
+    }
     A ^= SPACE;
     LabelF = A;  // 0 => no label
 
@@ -1604,6 +1709,12 @@ namespace {
     }
 
     // Memory source mode
+    // Large source buffer mode (used when include files are active)
+    if (!g_large_src.empty()) {
+      GSrcLin_large();
+      return;
+    }
+
     // Original: ASM3.S:2995-3001
     // LDA    SrcP            ; Check if there are still
     // CMP    TxtEnd          ; lines to be assembled
@@ -1634,6 +1745,54 @@ namespace {
     // Original returns here with carry flag indicating status:
     // C=1: EOF (SrcP >= TxtEnd)
     // C=0: Line available (SrcP < TxtEnd)
+  }
+
+  // GSrcLin_large - Large source buffer version of GSrcLin
+  // Called when g_large_src is active (include file support)
+  void GSrcLin_large() {
+    // Activate any pending include (set by HndlINCLUDE after advancing past
+    // the .INCLUDE source line)
+    if (g_pending_include) {
+      // Save current state on include stack
+      IncludeEntry entry;
+      entry.saved_pos     = g_large_src_pos;
+      entry.saved_end     = g_large_src_end;
+      entry.saved_bcdnbr0 = BCDNbr[0];
+      entry.saved_bcdnbr1 = BCDNbr[1];
+      entry.saved_bcdnbr2 = BCDNbr[2];
+      g_include_stack.push_back(entry);
+      // Append include data to g_large_src and switch to it
+      std::uint32_t include_start = static_cast<std::uint32_t>(g_large_src.size());
+      g_large_src.insert(g_large_src.end(), g_pending_include_data.begin(),
+                         g_pending_include_data.end());
+      g_large_src_pos = include_start;
+      g_large_src_end = static_cast<std::uint32_t>(g_large_src.size());
+      // Reset line counter for include file
+      BCDNbr[0]         = 1;
+      BCDNbr[1]         = 0;
+      BCDNbr[2]         = 0;
+      g_pending_include = false;
+      g_pending_include_data.clear();
+    }
+
+    // Check EOF of current file
+    while (g_large_src_pos >= g_large_src_end) {
+      if (!g_include_stack.empty()) {
+        // Pop include stack and resume parent file
+        IncludeEntry entry = g_include_stack.back();
+        g_include_stack.pop_back();
+        g_large_src_pos = entry.saved_pos;
+        g_large_src_end = entry.saved_end;
+        BCDNbr[0]       = entry.saved_bcdnbr0;
+        BCDNbr[1]       = entry.saved_bcdnbr1;
+        BCDNbr[2]       = entry.saved_bcdnbr2;
+        // If parent also at EOF, loop again
+      } else {
+        C = true;  // EOF
+        return;
+      }
+    }
+    C = false;
   }
 
   //=================================================
@@ -1690,6 +1849,25 @@ namespace {
     // Clear disk source flags (memory mode)
     IDskSrcF = 0;
     DskSrcF  = 0;
+
+    // Initialize large source buffer (used for include file support)
+    g_large_src.assign(reinterpret_cast<const std::uint8_t*>(sourceText),
+                       reinterpret_cast<const std::uint8_t*>(sourceText) + length);
+    g_large_src_pos      = 0;
+    g_large_src_end      = static_cast<std::uint32_t>(length);
+    g_large_src_base_pos = 0;
+    g_large_src_base_end = static_cast<std::uint32_t>(length);
+    g_large_src2p        = 0;
+
+    // Reset include state
+    g_include_stack.clear();
+    g_include_bufs.clear();
+    g_pending_include = false;
+    g_pending_include_data.clear();
+    g_pending_include_name.clear();
+    g_include_file_banners.clear();
+    g_next_include_file_number = 2;
+    g_include_banners_emitted  = false;
   }
 
   //=================================================
@@ -2238,11 +2416,21 @@ namespace {
     // Guard memory-source scans: if a malformed final line has no CR
     // terminator, stop at TxtEnd instead of wrapping Y forever.
     if (DskSrcF == 0) {
-      std::uint16_t cur_addr = static_cast<std::uint16_t>(SrcP + Y);
-      if (cur_addr >= TxtEnd) {
-        SrcP = TxtEnd;
-        Y    = 0;
-        return;
+      if (!g_large_src.empty()) {
+        // Large source mode: guard against scanning past current file end
+        std::uint32_t cur = g_large_src_pos + static_cast<std::uint32_t>(Y);
+        if (cur >= g_large_src_end) {
+          g_large_src_pos = g_large_src_end;
+          Y               = 0;
+          return;
+        }
+      } else {
+        std::uint16_t cur_addr = static_cast<std::uint16_t>(SrcP + Y);
+        if (cur_addr >= TxtEnd) {
+          SrcP = TxtEnd;
+          Y    = 0;
+          return;
+        }
       }
     }
 
@@ -2268,6 +2456,10 @@ namespace {
     SrcP               = (SrcP & 0xFF00) | (temp & 0xFF);             // Store low byte result
     if (temp > 0xFF) {                                                // Check carry
       SrcP += 0x100;                                                  // Add carry to high byte
+    }
+    // Also advance large source position if active
+    if (!g_large_src.empty()) {
+      g_large_src_pos += static_cast<std::uint32_t>(Y);
     }
     Y = 0;
   }
@@ -2351,24 +2543,6 @@ namespace {
     TotLines_hi = A;
     if (A < 100) goto L81C7;  // (BCC)
     A = TotLines_2;
-    A += 1;  // with carry
-    TotLines_2 = A;
-
-  L81C7:
-    // CLC
-    A = BCDNbr;
-    A += 1;  // BCD increment (simplified)
-    BCDNbr = A;
-    if (A < 100) goto L81E4;  // (BCC)
-    A = BCDNbr_hi;
-    A += 1;  // with carry
-    BCDNbr_hi = A;
-
-    // CLD - clear decimal mode
-    A = PassNbr;
-    if (A == 0) goto L81DF;  // (BEQ)
-    // BIT ListingF - listing ON?
-    if ((int8_t)ListingF < 0) goto L81E4;  // yes (BMI)
 
   L81DF:
     A = '.' | 0x80;  // show a dot
@@ -2398,6 +2572,15 @@ namespace {
     // EDASM ordering: SOURCE FILE banner appears first, then first listed line,
     // then NEXT OBJECT FILE NAME banner.
     EmitListingTextLine("SOURCE   FILE #01 =>" + g_listing_source_banner_name);
+    if (!g_include_file_banners.empty() && !g_include_banners_emitted) {
+      for (const auto& banner : g_include_file_banners) {
+        std::ostringstream includeLine;
+        includeLine << " INCLUDE FILE #" << std::setw(2) << std::setfill('0') << banner.file_number
+                    << " =>" << banner.filename;
+        EmitListingTextLine(includeLine.str());
+      }
+      g_include_banners_emitted = true;
+    }
     PutCR();
     g_emit_next_object_banner_pending = true;
 
@@ -2440,6 +2623,8 @@ namespace {
     Src2P                       = A;  // Save a copy of ptr
     A                           = SrcP_hi;
     Src2P_hi                    = A;  // to curr srcline
+    // Also save large source position for LstSrcLn
+    if (!g_large_src.empty()) g_large_src2p = g_large_src_pos;
 
     // BIT CondAsmF - Assembling alt block?
     if ((int8_t)CondAsmF < 0) goto L7F50;    // Yes (BMI), proceed to scan for alt blk
@@ -2518,6 +2703,11 @@ namespace {
 
   // Prepare to generate code
   CodeGen:
+    if (MnemP == nullptr || reinterpret_cast<std::uintptr_t>(MnemP) < 0x10000) {
+      X = 0x04;  // undefined opcode / unresolved mnemonic metadata
+      RegAsmEW(X);
+      goto L7F73;
+    }
     GInstLen();       // Determine instr's len
     A        = 0x27;  // 0010 0111
     LstCodeF = A;
@@ -3127,6 +3317,17 @@ namespace {
         break;
       }
       sourceLine.push_back(static_cast<char>(ch));
+    }
+
+    if (!g_large_src.empty()) {
+      sourceLine.clear();
+      for (std::uint32_t idx = 0; idx < 256; ++idx) {
+        std::uint32_t pos = g_large_src2p + idx;
+        if (pos >= g_large_src.size()) break;
+        std::uint8_t ch = g_large_src[pos];
+        if (ch == CR) break;
+        sourceLine.push_back(static_cast<char>(ch));
+      }
     }
 
     const std::string formatted = FormatListingSource(sourceLine);
@@ -4114,7 +4315,7 @@ namespace {
 
     if (mnemonic == "LDA" || mnemonic == "ADC" || mnemonic == "AND" || mnemonic == "ASL") {
       // Set a dummy MnemP for tests
-      MnemP = reinterpret_cast<const uint8_t*>(0x1000);
+      MnemP = nullptr;
       ZAB   = 0x7F;  // Not a directive
 
       // Peek at operand to determine addressing mode in both passes
@@ -4192,7 +4393,7 @@ namespace {
     }
 
     if (mnemonic == "STA") {
-      MnemP  = reinterpret_cast<const uint8_t*>(0x1001);
+      MnemP  = nullptr;
       ZAB    = 0x7F;
       Length = 3;
       if (PassNbr == 0) {
@@ -4278,7 +4479,7 @@ namespace {
     }
 
     if (mnemonic == "BRK") {
-      MnemP  = reinterpret_cast<const uint8_t*>(0x1003);
+      MnemP  = nullptr;
       ZAB    = 0x7F;
       Length = 1;
       if (PassNbr == 0) {
@@ -4297,13 +4498,17 @@ namespace {
       return;
     }
 
-    if (mnemonic == "BCC" || mnemonic == "BCS") {
+    if (mnemonic == "BCC" || mnemonic == "BCS" || mnemonic == "BEQ" || mnemonic == "BNE") {
       ZAB    = 0x7F;
       Length = 2;
       if (PassNbr == 0) {
         PC += 2;
       } else {
-        uint8_t  opcode   = (mnemonic == "BCC") ? 0x90 : 0xB0;
+        uint8_t opcode = 0x90;
+        if (mnemonic == "BCC") opcode = 0x90;
+        if (mnemonic == "BCS") opcode = 0xB0;
+        if (mnemonic == "BEQ") opcode = 0xF0;
+        if (mnemonic == "BNE") opcode = 0xD0;
         uint16_t branchPC = ObjPC;
         NxtField();
         EvalExpr();
@@ -4596,6 +4801,36 @@ namespace {
       return;
     }
 
+    if (mnemonic == ".INCLUDE" || mnemonic == "INCLUDE") {
+      ZAB    = 0x80;
+      Length = 0;
+      C      = false;
+      HndlINCLUDE();
+      return;
+    }
+
+    if (mnemonic == "CHR") {
+      // CHR "x" sets source delimiter/comment char in EDASM support files.
+      // It is a directive and does not emit object code.
+      ZAB    = 0x80;
+      Length = 0;
+      C      = false;
+
+      NxtField();
+      while (SrcP_at(Y) == ' ') Y++;
+      uint8_t quote = SrcP_at(Y);
+      if (quote == '\'' || quote == '"') {
+        Y++;
+        uint8_t ch = SrcP_at(Y);
+        if (ch != CR && ch != 0) {
+          Delimitr = ch;
+          Y++;
+          if (SrcP_at(Y) == quote) Y++;
+        }
+      }
+      return;
+    }
+
     if (mnemonic == ".TITLE" || mnemonic == "TITLE" || mnemonic == "SBTL") {
       ZAB                   = 0x80;
       g_LastDirectiveCalled = "HndlSBTL";
@@ -4620,7 +4855,7 @@ namespace {
     if (!mnemonic.empty() && mnemonic[0] == '.' && mnemonic != ".BYTE" && mnemonic != ".DFB" &&
         mnemonic != ".WORD" && mnemonic != ".DW" && mnemonic != ".EQU" && mnemonic != ".ORG" &&
         mnemonic != ".LIST" && mnemonic != ".NOLIST" && mnemonic != ".PAGE" &&
-        mnemonic != ".TITLE") {
+        mnemonic != ".INCLUDE" && mnemonic != ".TITLE") {
       ZAB                   = 0x80;  // Set directive flag
       g_LastDirectiveCalled = "";
       C                     = true;  // Error - unsupported
@@ -5359,6 +5594,19 @@ namespace {
             HndlDBYTE();
             return;
           }
+        }
+        // .INCLUDE directive
+        else if (second_char == 'I') {
+          HndlINCLUDE();
+          return;
+        }
+      } else if (first_char == 'P') {
+      } else if (first_char == 'I') {
+        // Regular directive starting with 'I' - could be INCLUDE
+        uint8_t second_char_r = MnemP[1] & 0x7F;
+        if (second_char_r == 'N') {
+          HndlINCLUDE();
+          return;
         }
       } else if (first_char == 'P') {
         // Regular directive starting with 'P' - could be PAGE
@@ -7345,8 +7593,82 @@ namespace {
     DrtvDone();
   }
 
+  //=================================================
+  // HndlINCLUDE - .INCLUDE / INCLUDE directive handler
+  // Loads an external source file and queues it for assembly
+  // The file is activated at the start of the next GSrcLin() call.
+  //=================================================
+  void HndlINCLUDE() {
+    g_LastDirectiveCalled = "HndlINCLUDE";
+
+    // Skip leading spaces in operand
+    while (Y < 255 && SrcP_at(Y) == ' ') Y++;
+
+    // Read filename until CR or space
+    std::string filename;
+    for (uint8_t yi = Y; yi < 255; yi++) {
+      uint8_t ch = SrcP_at(yi);
+      if (ch == CR || ch == ' ' || ch == 0) break;
+      filename += static_cast<char>(ch);
+    }
+
+    if (filename.empty()) {
+      RegAsmEW(0x24);  // operand error
+      DrtvDone();
+      return;
+    }
+
+    // Resolve full path
+    std::string full_path = g_include_search_path;
+    if (!full_path.empty() && full_path.back() != '/') full_path += '/';
+    full_path += filename;
+
+    // Load the file
+    std::FILE* fp = std::fopen(full_path.c_str(), "rb");
+    if (!fp) {
+      // Try without subdirectory (filename might be relative)
+      fp = std::fopen(filename.c_str(), "rb");
+    }
+    if (!fp) {
+      RegAsmEW(0x24);  // file not found - operand error
+      DrtvDone();
+      return;
+    }
+    std::fseek(fp, 0, SEEK_END);
+    long fsize = std::ftell(fp);
+    std::fseek(fp, 0, SEEK_SET);
+    std::vector<std::uint8_t> data(static_cast<size_t>(fsize));
+    std::fread(data.data(), 1, static_cast<size_t>(fsize), fp);
+    std::fclose(fp);
+
+    // Convert LF -> CR, ensure trailing CR
+    for (auto& b : data)
+      if (b == '\n') b = CR;
+    if (!data.empty() && data.back() != CR) data.push_back(CR);
+
+    // Register listing banner (only collect once - same list used across passes)
+    // Only add new banners (use filename as key)
+    bool already_registered = false;
+    for (const auto& banner : g_include_file_banners) {
+      if (banner.filename == filename) {
+        already_registered = true;
+        break;
+      }
+    }
+    if (!already_registered) {
+      g_include_file_banners.push_back({g_next_include_file_number++, filename});
+    }
+
+    // Queue the include data; it will be activated in the next GSrcLin() call
+    g_pending_include      = true;
+    g_pending_include_data = std::move(data);
+    g_pending_include_name = filename;
+
+    DrtvDone();
+  }
+
   void HndlLST() {
-    g_LastDirectiveCalled = "HndlLST";
+    g_LastDirectiveCalled = "HndlLST";  // continue...
 
     const char*   options = "CUEWGAVS";
     std::uint8_t* flags[] = {
@@ -8828,6 +9150,10 @@ namespace EdAsmNg {
     // Rewind source to beginning for second pass
     void RewindSource() {
       SrcP = g_test_src_base;
+    }
+
+    void SetIncludeSearchPath(const char* path) {
+      g_include_search_path = path ? path : "";
     }
 
     // Phase 8.2 variable accessors
