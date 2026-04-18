@@ -1,63 +1,43 @@
-Name          : ASM1.S
-End of file   :   37,977
-This file was generated using the DiskBrowser utility with minimal editing.
-It is meant for viewing purposes only.
-
+* Name          : ASM1.S
+* End of file   :   37,977
+* This file was generated using the DiskBrowser utility with minimal editing.
+* It is meant for viewing purposes only.
+* 
             MSB    OFF
             REP    50
-;=================================================
-; ASM/ASM1.S - Assembler Module Part 1: Symbol Table & Pass 3
 ;
-; This is the first part of the EDASM.ASM assembler module.
-; It handles symbol table printing (Pass 3) and related functions.
+; EDASM.ASM - load addr:$6800-$9EFF (len $4000)
+; The 1st part of the code ($6800-$77FF) is relocated
+; to $D000 of LCBank2. The rest of the code remained
+; resident @ $7800-$9EFF
 ;
-; MODULE LOADING:
-; EDASM.ASM loads at $6800-$9EFF (length $4000 = 16K)
-; Memory layout:
-;   $6800-$77FF: Relocated to $D000 (Language Card Bank 2)
-;   $7800-$9EFF: Remains resident in main memory
+; Basically, compilers can be written as:
+; Source -> Scanner/Lexer -> Parser -> CodeGenerator
 ;
-; ASSEMBLY PROCESS OVERVIEW:
-; Compilers/Assemblers typically follow this pipeline:
-;   Source → Scanner/Lexer → Parser → CodeGenerator
+; ORG $5800 ;modify ORG in ASSEMBLER.1
+            ORG    $D000
 ;
-; EDASM uses a multi-pass approach:
-;   Pass 1: Build symbol table, determine addresses
-;   Pass 2: Generate object code, resolve references  
-;   Pass 3: Print symbol table (optional, if LST requested)
+; This part of the code is loaded into memory
+; at $6800 and relocated to $D000 bank2
 ;
-; SYMBOL TABLE:
-; - Approximately 27K capacity
-; - If insufficient memory, assembler prints only sorted symbols
-; - Value-Ordered (VO) symbol table may not contain all identifiers
-; - See references: pages 84, 113 of documentation
+; Print the symbol table after an assembly listing
+; The symbol table is about 27K. If there is not
+; enough mem to do a listing, the assembler will
+; print only those symbols it can sort. The VO
+; symbol table may not contain all idfers
+; Ref pg 84,113
 ;
-; EXTERNAL LABEL REFERENCES (X-labels):
-; This module calls routines in EDASM.SYSTEM (EI module).
-; Labels starting with 'X' (e.g., XB883) correspond to local
-; labels in the EI module (e.g., LB883).
+DoPass3     LDA    LstASym         ;List symbols?
+            ORA    LstVSym
+            BMI    ChkPrtCols      ;Yes
+            RTS
 ;
-; IMPORTANT: ORG $5800 was modified to $D000 in ASSEMBLER.1
-;=================================================
+ChkPrtCols  LDA    #4
+            BIT    Lst6Cols
+            BPL    UsePrtr
 ;
-; PASS 3: Symbol Table Printing
-; This code section handles printing the symbol table after
-; assembly completes. It can print symbols alphabetically or
-; by value, in 2, 4, or 6 column format.
-;
-DoPass3     LDA    LstASym         ;Check if alphabetic symbol listing requested
-            ORA    LstVSym         ;Or value-ordered symbol listing
-            BMI    ChkPrtCols      ;Yes, at least one is enabled
-            RTS                    ;No symbol listing requested, return
-;
-; Determine number of printing columns based on output device
-;
-ChkPrtCols  LDA    #4              ;Default to 4 columns
-            BIT    Lst6Cols        ;6-column mode requested?
-            BPL    UsePrtr         ;No, check printer
-;
-            LDA    #6              ;Yes, use 6 columns
-UsePrtr     LDX    PrSlot          ;Check if printer is active
+            LDA    #6
+UsePrtr     LDX    PrSlot          ;Printer?
             BNE    SetPtrCols      ;Yes
             LDA    #2              ;40-col std video
 SetPtrCols  STA    NumCols         ;# of print cols=2,4,6

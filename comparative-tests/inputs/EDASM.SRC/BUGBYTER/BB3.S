@@ -1,86 +1,33 @@
-Name          : BB3.S
-End of file   :   34,069
-This file was generated using the DiskBrowser utility with minimal editing.
-It is meant for viewing purposes only.
-
+* Name          : BB3.S
+* End of file   :   34,069
+* This file was generated using the DiskBrowser utility with minimal editing.
+* It is meant for viewing purposes only.
+* 
 ;=================================================
-; BUGBYTER/BB3.S - BugByter Debugger Part 3: Utilities & Conversion
+; ($16BA) Convert a binary value to to its
+; decimal value & show it on screen
+; The binary value is first converted into its BCD
+; equivalent then a DEC to hex string converter
+; is called
+; NB. Only ADC and SBC inst are affected by a SED
 ;
-; This is the third part of the BugByter debugger module.
-; It contains utility routines for:
-; - Number format conversion (binary ↔ decimal ↔ hexadecimal)
-; - String formatting and display
-; - Screen output helpers
-; - Memory dump formatting
-; - Register display formatting
+Bin2Dec     LDA    #0
+            STA    Z40             ;Zero result
+            STA    Z40+1
 ;
-; CONVERSION ROUTINES:
-; The primary functions in this file handle conversion between
-; different number representations:
-; - Binary to decimal (for displaying counts and addresses)
-; - Binary to hexadecimal (for memory dumps)
-; - Decimal to binary (for user input parsing)
-; - BCD (Binary Coded Decimal) operations
-;
-; DECIMAL MODE USAGE:
-; This file extensively uses the 6502's decimal mode (SED
-; instruction) for BCD arithmetic. Only ADC and SBC instructions
-; are affected by decimal mode. This allows efficient conversion
-; between binary and decimal representations.
-;
-; DISPLAY FORMATTING:
-; These routines format numbers for display on the screen,
-; handling:
-; - Leading zero suppression
-; - Field width alignment
-; - Sign handling
-; - Hexadecimal digit conversion
-;
-; EXTERNAL REFERENCES:
-; Uses Monitor ROM routines for character output and screen
-; positioning.
-;=================================================
-;
-; Binary to Decimal Conversion and Display
-; Entry at $16BA (Bin2Dec)
-;
-; Converts a binary value to its decimal equivalent and displays
-; it on screen. The binary value is first converted to BCD
-; (Binary Coded Decimal), then a BCD-to-ASCII converter is called
-; to produce the display string.
-;
-; NOTE: Only ADC and SBC instructions are affected by the SED
-; (Set Decimal mode) instruction. Other operations remain in
-; binary mode.
-;
-; Input:
-;   Z3E-Z3E+1: 16-bit binary value to convert
-;   Y: Preserved during conversion
-;
-; Output:
-;   Z40-Z40+2: BCD result (3 bytes = 6 BCD digits = up to 65535)
-;
-Bin2Dec     LDA    #0              ;Initialize result to zero
-            STA    Z40             ;Clear BCD result low byte
-            STA    Z40+1           ;Clear BCD result middle byte
-;
-            SED                    ;Set 6502 decimal mode (BCD arithmetic)
-            STY    Z43             ;Save Y register (will be used for loop)
-            LDY    #16             ;Loop counter (16 bits to convert)
-;
-; Main conversion loop: Double-dabble algorithm
-; Repeatedly shift binary left, doubling BCD result each time
-;
-L16C5       ASL    Z3E             ;Shift binary value left (into carry)
-            ROL    Z3E+1           ;Rotate high byte (carry from low byte)
-            LDA    Z40             ;Get BCD low byte
-            ADC    Z40             ;Add to itself (double it) + carry bit
-            STA    Z40             ;Store result (BCD addition in decimal mode)
-            LDA    Z40+1           ;Get BCD middle byte
-            ADC    Z40+1           ;Double it + carry from low byte
-            STA    Z40+1           ;Store result
-            ROL    Z40+2           ;Rotate high byte (carry from middle byte)
-            DEY                    ;Decrement loop counter
+            SED                    ;Set 6502 dec mode
+            STY    Z43             ;Save Y-reg
+            LDY    #16             ;Loop cnt
+L16C5       ASL    Z3E
+            ROL    Z3E+1
+            LDA    Z40             ;Add in the C
+            ADC    Z40
+            STA    Z40
+            LDA    Z40+1
+            ADC    Z40+1
+            STA    Z40+1
+            ROL    Z40+2
+            DEY
             BNE    L16C5
 ;
             CLD                    ;Back to binary mode

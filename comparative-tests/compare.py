@@ -35,9 +35,7 @@ INPUTS_DIR = REPO_ROOT / "comparative-tests" / "inputs"
 EDASM_OUTPUTS_DIR = REPO_ROOT / "comparative-tests" / "edasm-outputs"
 EDASMNG_OUTPUTS_DIR = REPO_ROOT / "comparative-tests" / "edasmng-outputs"
 EDASM_RUN_TIMEOUT_SEC = 600
-EDASM_MAX_ATTEMPTS = 2
 EDASMNG_RUN_TIMEOUT_SEC = 600
-EDASMNG_MAX_ATTEMPTS = 2
 
 
 def to_prodos_name(stem: str, max_stem_len: int = 11) -> str:
@@ -161,6 +159,40 @@ def build_edasmng() -> bool:
     return True
 
 
+def _is_ei_driver_source(src_path: Path) -> bool:
+    return src_path.name.upper() == "EI.S"
+
+
+def _collect_ei_support_files(src_path: Path) -> list[tuple[Path, str]]:
+    """Collect supplemental files needed by EI.S with destination relative paths."""
+    if not _is_ei_driver_source(src_path):
+        return []
+
+    base_dir = src_path.parent
+    support: list[tuple[Path, str]] = []
+
+    common_equs = base_dir / "COMMONEQUS.S"
+    if common_equs.exists() and common_equs.is_file():
+        support.append((common_equs, "COMMONEQUS.S"))
+
+    ei_dir = base_dir / "EI"
+    if ei_dir.exists() and ei_dir.is_dir():
+        for file_path in sorted(p for p in ei_dir.rglob("*") if p.is_file()):
+            rel_path = file_path.relative_to(base_dir)
+            rel_dest = "/".join(part.upper() for part in rel_path.parts)
+            support.append((file_path, rel_dest))
+
+    return support
+
+
+def _write_ascii_sanitized_copy(src_path: Path, dest_path: Path) -> None:
+    """Write an ASCII-safe copy by replacing bytes >= 0x80 with spaces."""
+    data = src_path.read_bytes()
+    sanitized = bytes((b if b < 0x80 else 0x20) for b in data)
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    dest_path.write_bytes(sanitized)
+
+
 def run_original_edasm(
     src_path: Path,
     work_dir: Path,
@@ -179,6 +211,13 @@ def run_original_edasm(
     src_copy = work_dir.parent / prodos_src_name
     shutil.copy2(str(src_path), str(src_copy))
 
+    extra_inputs: list[str] = []
+    extra_input_root = work_dir.parent / "edasm_extra_inputs"
+    for support_src, support_dest in _collect_ei_support_files(src_path):
+        staged_support = extra_input_root / support_dest
+        _write_ascii_sanitized_copy(support_src, staged_support)
+        extra_inputs.append(f"{staged_support}:{support_dest}")
+
     cmd = [
         sys.executable,
         str(RUN_EDASM),
@@ -193,6 +232,8 @@ def run_original_edasm(
         "--max-instructions",
         str(max_instructions),
     ]
+    for extra_input in extra_inputs:
+        cmd.extend(["--input", extra_input])
     if debug:
         cmd.append("--debug")
 
@@ -220,14 +261,26 @@ def run_original_edasm(
         print_recursive_listing(work_dir)
         return None
 
-    obj_path = work_dir / "volumes" / "OUT" / obj_name
+    out_dir = work_dir / "volumes" / "OUT"
+    obj_path = out_dir / obj_name
     if not obj_path.exists():
         # look one level up just in case
         alt = work_dir / obj_name
         if alt.exists():
             obj_path = alt
         else:
-            print(f"  {YELLOW}EDASM ran but OBJ not found at {obj_path}{RESET}")
+            out_files = (
+                sorted(p for p in out_dir.glob("*") if p.is_file())
+                if out_dir.exists()
+                else []
+            )
+            if out_files:
+                fallback = out_files[0]
+                print(
+                    f"  {YELLOW}EDASM OBJ not found at {obj_path}; using OUT artifact {fallback.name}{RESET}"
+                )
+                return fallback
+            print(f"  {YELLOW}EDASM ran but OUT is empty{RESET}")
             print_prodos_logfile()
             print_recursive_listing(work_dir)
             return None
@@ -240,9 +293,20 @@ def run_edasmng(src_path: Path, out_dir: Path) -> Path | None:
     obj_path = out_dir / f"{stem}.OBJ"
     lst_path = out_dir / f"{stem}.LST"
 
+    assemble_src = src_path
+    if _is_ei_driver_source(src_path):
+        staged_src_root = out_dir.parent / "ng_src"
+        staged_src_root.mkdir(parents=True, exist_ok=True)
+        assemble_src = staged_src_root / src_path.name
+        shutil.copy2(str(src_path), str(assemble_src))
+        for support_src, support_dest in _collect_ei_support_files(src_path):
+            support_target = staged_src_root / support_dest
+            support_target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(support_src), str(support_target))
+
     cmd = [
         str(EDASMNG_BIN),
-        str(src_path),
+        str(assemble_src),
         "--object",
         str(obj_path),
         "--listing",
@@ -269,34 +333,46 @@ def run_edasmng(src_path: Path, out_dir: Path) -> Path | None:
         print_recursive_listing(out_dir)
         return None
     if not obj_path.exists():
-        print(f"  {YELLOW}EdAsmNg ran but OBJ not found{RESET}")
+        out_files = sorted(p for p in out_dir.glob("*") if p.is_file())
+        if out_files:
+            fallback = out_files[0]
+            print(
+                f"  {YELLOW}EdAsmNg OBJ not found at {obj_path}; using output artifact {fallback.name}{RESET}"
+            )
+            return fallback
+        print(f"  {YELLOW}EdAsmNg ran but output directory is empty{RESET}")
         print_prodos_logfile()
         print_recursive_listing(out_dir)
         return None
     return obj_path
 
 
-def hexdump(data: bytes, indent: str = "    ") -> str:
-    lines = []
-    for i in range(0, len(data), 16):
-        chunk = data[i : i + 16]
-        hex_part = " ".join(f"{b:02X}" for b in chunk)
-        lines.append(f"{indent}{i:04X}: {hex_part}")
-    return "\n".join(lines)
+def collect_output_files(root: Path) -> list[tuple[str, Path]]:
+    """Return all output files under root sorted by relative path."""
+    if not root.exists():
+        return []
+    files = [p for p in root.rglob("*") if p.is_file()]
+    files.sort(key=lambda p: p.relative_to(root).as_posix())
+    return [(p.relative_to(root).as_posix(), p) for p in files]
 
 
-def compare(ref_path: Path, ng_path: Path, label: str) -> bool:
+def print_output_file_list(label: str, files: list[tuple[str, Path]]) -> None:
+    print(f"  {label} outputs ({len(files)}):")
+    if not files:
+        print("    (none)")
+        return
+    for rel_name, _ in files:
+        print(f"    {rel_name}")
+
+
+def compare_binary_files(ref_path: Path, ng_path: Path, label: str) -> bool:
     ref = ref_path.read_bytes()
     ng = ng_path.read_bytes()
     if ref == ng:
         print(f"  {GREEN}MATCH{RESET}  {label} ({len(ref)} bytes)")
         return True
-    print(f"  {RED}MISMATCH{RESET}  {label}")
-    print(f"    Reference ({len(ref)} bytes):")
-    print(hexdump(ref))
-    print(f"    EdAsmNg   ({len(ng)} bytes):")
-    print(hexdump(ng))
-    # Show first differing byte
+    print(f"  {RED}MISMATCH{RESET}  {label} (ref={len(ref)} bytes ng={len(ng)} bytes)")
+    # Show first differing byte offset only (no content dump)
     for i, (a, b) in enumerate(zip(ref, ng, strict=False)):
         if a != b:
             print(f"    First difference at offset {i}: ref={a:02X} ng={b:02X}")
@@ -390,6 +466,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         sources = sorted(INPUTS_DIR.glob("*.src")) + sorted(INPUTS_DIR.glob("*.asm"))
 
+        # Include selected EDASM source bundle drivers kept under EDASM.SRC.
+        extra_sources = [
+            INPUTS_DIR / "EDASM.SRC" / "EI.S",
+        ]
+        sources.extend(path for path in extra_sources if path.exists())
+
     if not sources:
         print("No input files found.", file=sys.stderr)
         return 1
@@ -407,51 +489,31 @@ def main(argv: list[str] | None = None) -> int:
 
         with tempfile.TemporaryDirectory(prefix="edasmng_compare_") as tmp:
             tmp_path = Path(tmp)
-            ng_out = tmp_path / "ng"
-            ng_out.mkdir()
-
-            # Run EdAsmNg with retry in case the process hangs/intermittently fails.
-            ng_obj = None
-            ng_out_used = None
-            for attempt in range(1, EDASMNG_MAX_ATTEMPTS + 1):
-                ng_out_attempt = tmp_path / f"ng_{attempt}"
-                ng_out_attempt.mkdir()
-                ng_obj = run_edasmng(src, ng_out_attempt)
-                if ng_obj is not None:
-                    ng_out_used = ng_out_attempt
-                    break
-                if attempt < EDASMNG_MAX_ATTEMPTS:
-                    print(
-                        f"  {YELLOW}Retrying EdAsmNg ({attempt + 1}/{EDASMNG_MAX_ATTEMPTS})...{RESET}"
-                    )
+            # Run EdAsmNg once per source.
+            ng_out_used = tmp_path / "ng"
+            ng_out_used.mkdir()
+            ng_obj = run_edasmng(src, ng_out_used)
+            ng_files = collect_output_files(ng_out_used)
+            print_output_file_list("EdAsmNg", ng_files)
 
             if args.skip_edasm:
-                if ng_obj:
-                    print(f"  EdAsmNg: {ng_obj.stat().st_size} bytes")
-                    print(hexdump(ng_obj.read_bytes()))
+                if ng_files:
                     passed += 1
                 else:
                     failed += 1
                 continue
 
-            # Run original EDASM with a retry because emulator runs can be flaky.
-            edasm_obj = None
-            edasm_work_used = None
-            for attempt in range(1, EDASM_MAX_ATTEMPTS + 1):
-                edasm_work = tmp_path / f"edasm_work_{attempt}"
-                edasm_obj = run_original_edasm(
-                    src,
-                    edasm_work,
-                    args.max_instructions,
-                    debug=args.debug,
-                )
-                if edasm_obj is not None:
-                    edasm_work_used = edasm_work
-                    break
-                if attempt < EDASM_MAX_ATTEMPTS:
-                    print(
-                        f"  {YELLOW}Retrying original EDASM ({attempt + 1}/{EDASM_MAX_ATTEMPTS})...{RESET}"
-                    )
+            # Run original EDASM once per source.
+            edasm_work_used = tmp_path / "edasm_work"
+            edasm_obj = run_original_edasm(
+                src,
+                edasm_work_used,
+                args.max_instructions,
+                debug=args.debug,
+            )
+            edasm_out_dir = edasm_work_used / "volumes" / "OUT"
+            edasm_files = collect_output_files(edasm_out_dir)
+            print_output_file_list("EDASM", edasm_files)
 
             if edasm_obj is None:
                 print(
@@ -465,44 +527,69 @@ def main(argv: list[str] | None = None) -> int:
                 failed += 1
                 continue
 
-            assert ng_out_used is not None
-            assert edasm_work_used is not None
+            edasm_map = dict(edasm_files)
+            ng_map = dict(ng_files)
+            edasm_names = set(edasm_map)
+            ng_names = set(ng_map)
 
-            ok = compare(edasm_obj, ng_obj, src.name)
-            if ok:
-                passed += 1
-            else:
-                failed += 1
+            common_names = sorted(edasm_names & ng_names)
+            only_edasm = sorted(edasm_names - ng_names)
+            only_ng = sorted(ng_names - edasm_names)
 
-            prodos_stem = to_prodos_name(src.stem)
-            edasm_lst = edasm_work_used / "volumes" / "OUT" / f"{prodos_stem}.LST"
-            ng_lst = ng_out_used / f"{src.stem.upper()}.LST"
+            for name in only_edasm:
+                print(f"  {RED}DIFF{RESET}  missing in EdAsmNg: {name}")
+            for name in only_ng:
+                print(f"  {RED}DIFF{RESET}  missing in EDASM: {name}")
+
             first_line = (
                 src.read_text(errors="replace").splitlines()[0] if src.exists() else ""
             )
             ws_only = "[WS]" in first_line
-            lst_result = compare_listings(edasm_lst, ng_lst, src.name, ws_only=ws_only)
-            if lst_result == "match":
-                listing_passed += 1
-            elif lst_result == "diff":
-                listing_failed += 1
+            source_ok = not only_edasm and not only_ng
+
+            for name in common_names:
+                edasm_path = edasm_map[name]
+                ng_path = ng_map[name]
+                if name.lower().endswith(".lst"):
+                    lst_result = compare_listings(
+                        edasm_path,
+                        ng_path,
+                        f"{src.name}:{name}",
+                        ws_only=ws_only,
+                    )
+                    if lst_result == "match":
+                        listing_passed += 1
+                    elif lst_result == "diff":
+                        listing_failed += 1
+                        source_ok = False
+                    else:
+                        listing_skipped += 1
+                        source_ok = False
+                else:
+                    if not compare_binary_files(
+                        edasm_path, ng_path, f"{src.name}:{name}"
+                    ):
+                        source_ok = False
+
+            if source_ok:
+                passed += 1
             else:
-                listing_skipped += 1
+                failed += 1
 
             # Persist artifacts to the named output directories
             stem_upper = src.stem.upper()
-            EDASM_OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-            EDASMNG_OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(str(edasm_obj), str(EDASM_OUTPUTS_DIR / f"{stem_upper}.OBJ"))
-            if edasm_lst.exists():
-                shutil.copy2(
-                    str(edasm_lst), str(EDASM_OUTPUTS_DIR / f"{stem_upper}.LST")
-                )
-            shutil.copy2(str(ng_obj), str(EDASMNG_OUTPUTS_DIR / f"{stem_upper}.OBJ"))
-            if ng_lst.exists():
-                shutil.copy2(
-                    str(ng_lst), str(EDASMNG_OUTPUTS_DIR / f"{stem_upper}.LST")
-                )
+            edasm_artifact_root = EDASM_OUTPUTS_DIR / stem_upper
+            ng_artifact_root = EDASMNG_OUTPUTS_DIR / stem_upper
+            edasm_artifact_root.mkdir(parents=True, exist_ok=True)
+            ng_artifact_root.mkdir(parents=True, exist_ok=True)
+            for rel_name, path in edasm_files:
+                dest = edasm_artifact_root / rel_name
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(path), str(dest))
+            for rel_name, path in ng_files:
+                dest = ng_artifact_root / rel_name
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(path), str(dest))
 
     print(f"\n{'='*60}")
     print(

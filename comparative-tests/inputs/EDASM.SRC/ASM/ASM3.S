@@ -1,69 +1,28 @@
-Name          : ASM3.S
-Record length :    2,049
-End of file   :   62,315
-This file was generated using the DiskBrowser utility with minimal editing.
-It is meant for viewing purposes only.
+* Name          : ASM3.S
+* Record length :    2,049
+* End of file   :   62,315
+* This file was generated using the DiskBrowser utility with minimal editing.
+* It is meant for viewing purposes only.
 
-;=================================================
-; ASM/ASM3.S - Assembler Module Part 3: Directives & Code Generation
 ;
-; This is the third part of the EDASM.ASM assembler module.
-; It contains:
-; - Assembler directive handlers (EQU, ORG, MAC, END, DS, etc.)
-; - Opcode processing and code generation
-; - Addressing mode determination
-; - Operand evaluation
-; - Symbol table management
-; - Macro expansion
+; EQU directive
 ;
-; This file works in conjunction with ASM1.S and ASM2.S to
-; provide complete 6502/65C02 assembly functionality with
-; macro support, conditional assembly, and relocatable code
-; generation.
+L8A31       LDA    PassNbr
+            BNE    L8A41
 ;
-; DIRECTIVE PROCESSING:
-; Each directive (EQU, ORG, MAC, etc.) has its own handler
-; routine that processes the directive during the appropriate
-; assembly pass. Some directives only execute in Pass 1
-; (symbol definition), others in Pass 2 (code generation).
-;
-; CODE GENERATION:
-; The code generator determines the appropriate addressing mode,
-; calculates opcode bytes, and writes them to the object file
-; buffer. It handles:
-; - Immediate, Absolute, Zero Page, Indexed addressing
-; - Branch instructions (relative addressing)
-; - Sweet16 pseudo-opcodes
-; - Relocatable expressions (for REL files)
-;
-; EXTERNAL LABEL REFERENCES (X-labels):
-; Labels starting with 'X' refer to routines in other modules.
-;=================================================
-;
-; EQU Directive Handler
-; Assigns a value to a symbol (equate).
-; Format: label EQU expression
-;
-L8A31       LDA    PassNbr         ;Check current assembly pass
-            BNE    L8A41           ;If not Pass 1, skip symbol marking
-;
-; Pass 1 processing: Mark symbol as defined
-;
-            LDA    LabelF          ;Does source line have a label field?
-            BEQ    L8A53           ;No label, error condition
+            LDA    LabelF          ;Does src line have a label field?
+            BEQ    L8A53           ;No
             LDX    #$00
-            LDA    #undefined      ;Get undefined flag bit
-            ORA    (SymFBP,X)      ;Set undefined bit in symbol's flag byte
-            STA    (SymFBP,X)      ; (SymFBP set only during Pass 1)
+            LDA    #undefined
+            ORA    (SymFBP,X)      ;NB: SymFBP is set only
+            STA    (SymFBP,X)      ; during pass1
 ;
-; Process the operand expression to get the value
-;
-L8A41       JSR    EvalOprnd       ;Evaluate operand expression
-            BCS    L8A50           ;If error, branch
-            LDA    NxtToken        ;Check next token type
-            BNE    L8A50           ;If not space/CR, error (junk after operand)
-            LDA    PassNbr         ;Check current pass
-            BNE    DrtvFin         ;If Pass 2, done (SymFBP not set in Pass 2)
+L8A41       JSR    EvalOprnd       ;Process operand
+            BCS    L8A50
+            LDA    NxtToken        ;Is sp/cr?
+            BNE    L8A50           ;No
+            LDA    PassNbr         ;If pass2, skip code below cos
+            BNE    DrtvFin         ; (SymFBP) won't be set correctly
             BEQ    L8A5E           ;Pass 1
 ;
 L8A50       LDX    #$24            ;directive operand err
