@@ -5118,21 +5118,145 @@ namespace {
     }
 
     if (mnemonic == "DB") {
-      ZAB    = 0x7F;
-      Length = 1;
+      ZAB = 0x7F;
       NxtField();
-      if (PassNbr == 0) {
-        PC += 1;
-      } else {
-        EvalExpr();
-        std::uint8_t byte_value = ValExpr;
-        if (g_use_experimental_pass2) {
-          const std::uint8_t bytes[] = {byte_value};
-          QueueExperimentalBytes(bytes, 1);
+
+      auto trim = [&](const std::string& s) -> std::string {
+        std::size_t start = 0;
+        while (start < s.size() && (s[start] == ' ' || s[start] == '\t')) start++;
+        std::size_t end = s.size();
+        while (end > start && (s[end - 1] == ' ' || s[end - 1] == '\t')) end--;
+        return s.substr(start, end - start);
+      };
+
+      auto upper = [&](std::string s) -> std::string {
+        for (char& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        return s;
+      };
+
+      auto read_current_source_line = [&]() -> std::string {
+        std::string line;
+        if (!g_large_src.empty()) {
+          for (std::uint32_t idx = 0; idx < 256; ++idx) {
+            std::uint32_t pos = g_large_src2p + idx;
+            if (pos >= g_large_src.size()) break;
+            std::uint8_t ch = g_large_src[pos];
+            if (ch == CR) break;
+            line.push_back(static_cast<char>(ch & 0x7F));
+          }
         } else {
-          A = byte_value;
-          StorByt();
-          PC = ObjPC;
+          for (std::uint16_t idx = 0; idx < 256; ++idx) {
+            std::uint8_t ch = g_test_src_memory[static_cast<std::uint16_t>(Src2P + idx)];
+            if (ch == CR) break;
+            line.push_back(static_cast<char>(ch & 0x7F));
+          }
+        }
+        return line;
+      };
+
+      auto extract_db_operands = [&](const std::string& line) -> std::string {
+        std::size_t i = 0;
+        while (i < line.size()) {
+          while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) i++;
+          if (i >= line.size() || line[i] == ';') break;
+
+          std::size_t token_start = i;
+          while (i < line.size() && line[i] != ' ' && line[i] != '\t' && line[i] != ';') i++;
+          std::string token = upper(line.substr(token_start, i - token_start));
+          if (token == "DB" || token == ".DB") {
+            while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) i++;
+            std::size_t end = i;
+            while (end < line.size() && line[end] != ';') end++;
+            return trim(line.substr(i, end - i));
+          }
+        }
+        return "";
+      };
+
+      auto parse_db_token = [&](const std::string& tok) -> std::uint8_t {
+        std::string t = trim(tok);
+        if (t.empty()) return 0;
+
+        if (t[0] == '$') {
+          std::uint16_t value = 0;
+          for (std::size_t i = 1; i < t.size(); ++i) {
+            char c = t[i];
+            if (c >= '0' && c <= '9')
+              value = static_cast<std::uint16_t>((value << 4) | (c - '0'));
+            else if (c >= 'A' && c <= 'F')
+              value = static_cast<std::uint16_t>((value << 4) | (c - 'A' + 10));
+            else if (c >= 'a' && c <= 'f')
+              value = static_cast<std::uint16_t>((value << 4) | (c - 'a' + 10));
+            else
+              break;
+          }
+          return static_cast<std::uint8_t>(value & 0xFF);
+        }
+
+        bool decimal_only = true;
+        for (char c : t) {
+          if (c < '0' || c > '9') {
+            decimal_only = false;
+            break;
+          }
+        }
+        if (decimal_only) {
+          std::uint16_t value = 0;
+          for (char c : t) value = static_cast<std::uint16_t>(value * 10 + (c - '0'));
+          return static_cast<std::uint8_t>(value & 0xFF);
+        }
+
+        if ((t.front() == '\'' && t.back() == '\'' && t.size() >= 3) ||
+            (t.front() == '"' && t.back() == '"' && t.size() >= 3)) {
+          return static_cast<std::uint8_t>(t[1]);
+        }
+
+        const std::string sym = upper(t);
+        if (sym == "CR") return 0x8D;
+        if (sym == "BEL") return 0x87;
+        if (sym == "BS") return 0x88;
+        return 0;
+      };
+
+      std::string               operands = extract_db_operands(read_current_source_line());
+      std::vector<std::uint8_t> values;
+      std::string               current;
+      bool                      in_quote = false;
+      char                      quote_ch = 0;
+
+      for (char c : operands) {
+        if ((c == '\'' || c == '"')) {
+          if (in_quote && c == quote_ch)
+            in_quote = false;
+          else if (!in_quote) {
+            in_quote = true;
+            quote_ch = c;
+          }
+        }
+
+        if (c == ',' && !in_quote) {
+          values.push_back(parse_db_token(current));
+          current.clear();
+          continue;
+        }
+        current.push_back(c);
+      }
+      if (!current.empty()) values.push_back(parse_db_token(current));
+      if (values.empty()) values.push_back(0);
+
+      Length = static_cast<std::uint8_t>(values.size() & 0xFF);
+      if (PassNbr == 0) {
+        PC += Length;
+      } else {
+        for (std::uint8_t byte_value : values) {
+          if (g_use_experimental_pass2) {
+            const std::uint8_t bytes[] = {byte_value};
+            QueueExperimentalBytes(bytes, 1);
+          } else {
+            A = byte_value;
+            StorByt();
+            PC = ObjPC;
+          }
         }
       }
       C = false;
