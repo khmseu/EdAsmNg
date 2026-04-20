@@ -470,7 +470,7 @@ LB3AC       STA    DevCtlS,Y
             RTS
 ;
             ASC    '29-MAR-84'
-            ASC    '56:28          '
+            ASC    '56:28 '
 ;=================================================
 ; EI's CSW entry point
 ; (A) = char to be printed
@@ -508,57 +508,57 @@ LB404       BIT    RDROM2
 ;=================================================
 ; Command Interpreter's Error messages
 ;
-LB40A       ASC    'PATH/FILENAME  MISSING' ;ENTRY
+LB40A       ASC    'PATH/FILENAME MISSING' ;ENTRY
             DB     CR
 LB420       ASC    'SYNTAX'        ;ENTRY
             DB     CR
-LB427       ASC    'BAD            FORMAT' ;ENTRY
+LB427       ASC    'BAD FORMAT' ;ENTRY
             DB     CR
-LB432       ASC    'MEMORY         FULL' ;ENTRY
+LB432       ASC    'MEMORY FULL' ;ENTRY
             DB     CR
-LB43E       ASC    'BAD            RANGE' ;ENTRY
+LB43E       ASC    'BAD RANGE' ;ENTRY
             DB     CR
-LB448       ASC    'INVALID        PARAMETER ' ;ENTRY
+LB448       ASC    'INVALID PARAMETER ' ;ENTRY
             DB     CR
-LB45B       ASC    'ALL            OR SOME?(A/S)?' ;ENTRY
+LB45B       ASC    'ALL OR SOME?(A/S)?' ;ENTRY
             DB     CR
-LB46E       ASC    'FILE           NOT FOUND'
+LB46E       ASC    'FILE NOT FOUND'
             DB     CR
-LB47D       ASC    'FILE           TYPE MISMATCH'
+LB47D       ASC    'FILE TYPE MISMATCH'
             DB     CR
-LB490       ASC    'WRITE          PROTECTED'
+LB490       ASC    'WRITE PROTECTED'
             DB     CR
-LB4A0       ASC    'FILE           LOCKED'
+LB4A0       ASC    'FILE LOCKED'
             DB     CR
-LB4AC       ASC    'BAD            PATH/FILE NAME'
+LB4AC       ASC    'BAD PATH/FILE NAME'
             DB     CR
-LB4BF       ASC    'FILE           SIZE MISMATCH'
+LB4BF       ASC    'FILE SIZE MISMATCH'
             DB     CR
-LB4D2       ASC    'FILE           TOO LARGE'
+LB4D2       ASC    'FILE TOO LARGE'
             DB     CR
-LB4E1       ASC    'DISK           FULL'
+LB4E1       ASC    'DISK FULL'
             DB     CR
-LB4EB       ASC    'DISK           I/O FAILURE'
+LB4EB       ASC    'DISK I/O FAILURE'
             DB     CR
-LB4FC       ASC    'PRODOS         ERROR=$'
+LB4FC       ASC    'PRODOS ERROR=$'
 ;
 HexStr      DW     $5858
             DB     CR
-LB50D       ASC    'DIRECTORY      NOT FOUND' ;ENTRY
+LB50D       ASC    'DIRECTORY NOT FOUND' ;ENTRY
             DB     CR
-LB521       ASC    '               THE FILE IS LOCKED.  DESTROY ANYWAY (Y/N)?' ;ENTRY
+LB521       ASC    ' THE FILE IS LOCKED.  DESTROY ANYWAY (Y/N)?' ;ENTRY
             DB     CR
-LB54D       ASC    'PATH           NOT FOUND'
+LB54D       ASC    'PATH NOT FOUND'
             DB     CR
-LB55C       ASC    'DUPLICATE      FILE NAME'
+LB55C       ASC    'DUPLICATE FILE NAME'
             DB     CR
-LB570       ASC    'DIRECTORY      FULL'
+LB570       ASC    'DIRECTORY FULL'
             DB     CR
-LB57F       ASC    'PLEASE         RE-MOUNT '
+LB57F       ASC    'PLEASE RE-MOUNT '
             DB     $80
-LB590       ASC    'PRESS          RETURN TO CONTINUE '
+LB590       ASC    'PRESS RETURN TO CONTINUE '
             DB     $80
-LB5AA       ASC    'ASSEMBLER      NOT ONLINE'
+LB5AA       ASC    'ASSEMBLER NOT ONLINE'
             DB     CR
 ;=================================================
 ; ($B5BF) Command interpreter's error message table
