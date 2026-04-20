@@ -1465,6 +1465,34 @@ TEST_F(DirectiveDispatchTest, ORG_RoutesToHandler) {
   EXPECT_GE(zab, 0x80);
 }
 
+TEST_F(DirectiveDispatchTest, EQU_Pass2RefreshesValExprFromOperand) {
+  EdAsmNg::Asm::SetPassNbr(1);
+  EdAsmNg::Asm::SetValExpr(0xBB23);
+  EdAsmNg::Asm::SetupSourceLine(".EQU $5678");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  bool     found        = EdAsmNg::Asm::HndlMnem();
+  uint16_t errorsAfter  = EdAsmNg::Asm::GetErrorCount();
+
+  EXPECT_TRUE(found);
+  EXPECT_EQ(errorsAfter, errorsBefore);
+  EXPECT_STREQ(EdAsmNg::Asm::GetLastDirectiveCalled(), "HndlEQU");
+  EXPECT_EQ(EdAsmNg::Asm::GetValExpr(), 0x5678);
+}
+
+TEST_F(DirectiveDispatchTest, EQU_Pass2StillRejectsTrailingJunk) {
+  EdAsmNg::Asm::SetPassNbr(1);
+  EdAsmNg::Asm::SetupSourceLine(".EQU $5678 JUNK");
+
+  uint16_t errorsBefore = EdAsmNg::Asm::GetErrorCount();
+  bool     found        = EdAsmNg::Asm::HndlMnem();
+  uint16_t errorsAfter  = EdAsmNg::Asm::GetErrorCount();
+
+  EXPECT_TRUE(found);
+  EXPECT_STREQ(EdAsmNg::Asm::GetLastDirectiveCalled(), "HndlEQU");
+  EXPECT_GT(errorsAfter, errorsBefore);
+}
+
 //=================================================
 // Phase 5: EQU and ORG Directive Tests
 //=================================================

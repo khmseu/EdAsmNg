@@ -3324,29 +3324,37 @@ namespace {
         return sourceLine;
       }
 
-      // EDASM uses two distinct source-field layouts in current fixtures:
-      // compact mode for files enabling LST/LIST and a wide default mode.
-      const bool  compactColumns     = g_listing_compact_columns;
-      std::size_t labelStartColumn   = 10;
-      std::size_t noLabelStartColumn = 10;
-      if (!compactColumns) {
-        const bool hasOperand = !operand.empty();
-        if (!hasLabel) {
-          noLabelStartColumn = 36;
-        } else if (!hasOperand) {
-          labelStartColumn = 32;
-        }
-      }
-
       std::string mnemonicUpper = mnemonic;
       for (char& ch : mnemonicUpper) {
         ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
       }
       const bool isAscDirective = mnemonicUpper == "ASC";
       const bool isEquDirective = mnemonicUpper == "EQU";
+      const bool isChrDirective = mnemonicUpper == "CHR";
+
+      // EDASM uses two distinct source-field layouts in current fixtures:
+      // compact mode for files enabling LST/LIST and a wide default mode.
+      // EQU/CHR lines retain wide columns even in compact-listing mode.
+      bool compactColumns = g_listing_compact_columns;
+      if (isEquDirective || isChrDirective) {
+        compactColumns = false;
+      }
+      std::size_t labelStartColumn   = 10;
+      std::size_t noLabelStartColumn = 10;
+      if (!compactColumns) {
+        const bool hasOperand = !operand.empty();
+        if (!hasLabel) {
+          noLabelStartColumn = 36;
+          if (isChrDirective) {
+            noLabelStartColumn = 39;
+          }
+        } else if (!hasOperand) {
+          labelStartColumn = 32;
+        }
+      }
 
       if (!compactColumns && hasLabel && !operand.empty()) {
-        labelStartColumn = isEquDirective ? 32 : 30;
+        labelStartColumn = isEquDirective ? 34 : 30;
       }
 
       if (isAscDirective && hasLabel) {
@@ -3372,7 +3380,9 @@ namespace {
 
       formatted += mnemonic;
       if (!operand.empty()) {
-        const std::size_t operandPad = mnemonic.size() < 6 ? 6 - mnemonic.size() : 1;
+        const std::size_t mnemonicFieldWidth = (isEquDirective || isChrDirective) ? 7 : 6;
+        const std::size_t operandPad =
+            mnemonic.size() < mnemonicFieldWidth ? mnemonicFieldWidth - mnemonic.size() : 1;
         formatted.append(operandPad, ' ');
         formatted += operand;
       }
@@ -5459,22 +5469,25 @@ namespace {
       g_LastDirectiveCalled = "HndlEQU";
 
       // Dispatch-only tests call HndlMnem with a synthetic source buffer and
-      // no operand. Keep this path succeeding to preserve legacy expectations.
+      // no operand. Keep this path succeeding to preserve legacy expectations,
+      // but still allow operand-bearing synthetic lines to exercise the live
+      // pass-2 evaluation path.
       if (g_test_src_buffer != nullptr) {
-        Length = 0;
-        C      = false;
-        return;
+        std::size_t tail_index = mnemonic.size();
+        uint8_t     tail       = SrcP_at(static_cast<uint16_t>(tail_index));
+        while (tail == ' ' || tail == '\t') {
+          tail = SrcP_at(static_cast<uint16_t>(++tail_index));
+        }
+        if (tail == CR || tail == 0) {
+          Length = 0;
+          C      = false;
+          return;
+        }
       }
 
-      // EQU/.EQU updates symbols during pass 1 only. In pass 2/3 this should
-      // be a no-op line and must not trigger operand re-parse errors.
-      if (PassNbr != 0) {
-        Length = 0;
-        C      = false;
-        return;
-      }
-
-      // Evaluate the operand and store in symbol table
+      // Evaluate the operand in every pass so ValExpr stays current for the
+      // generic directive listing renderer. Only symbol table mutation is
+      // restricted to pass 1.
       NxtField();  // Skip to operand field
 
       uint8_t ch = SrcP_at(Y);
