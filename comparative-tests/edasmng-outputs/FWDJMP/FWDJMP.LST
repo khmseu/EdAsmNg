@@ -8,6 +8,6 @@ SOURCE   FILE #01 =>FWDJMP.SRC
 0803:EA              4                                     NOP
 0804:60              5 AFTER                           RTS
 ** SUCCESSFUL ASSEMBLY := NO ERRORS
-** ASSEMBLER CREATED ON 18-APR-26 05:49 
+** ASSEMBLER CREATED ON 20-APR-26 05:26 
 ** TOTAL LINES ASSEMBLED     5 
 ** FREE SPACE PAGE COUNT  160 

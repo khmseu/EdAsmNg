@@ -428,7 +428,7 @@ SOURCE   FILE #01 =>EI.S
 20B6:20 00 BF      115 L20B6                             JSR    PRODOS8         ;Get prefix
 20B9:C7            116                                        DB     $C7
 20BA:33 21         117                                        DW     CurrPfxP
-20BC:AD 59 BC      118                                        LDA    CurrPfxB
+20BC:AD 80 BB      118                                        LDA    CurrPfxB
 20BF:D0 20   20E1  119                                        BNE    L20E1
 20C1:              120 ;
 20C1:              121 ; No current prefix
@@ -439,15 +439,15 @@ SOURCE   FILE #01 =>EI.S
 20CA:C5            126                                        DB     $C5
 20CB:39 21         127                                        DW     OnLineP
 20CD:              128 ;
-20CD:AD 5A BC      129                                        LDA    CurrPfxB+1
+20CD:AD 81 BB      129                                        LDA    CurrPfxB+1
 20D0:29 0F         130                                        AND    #$0F            ;Get len byte of volname
 20D2:18            131                                         CLC
 20D3:69 02         132                                        ADC    #2
-20D5:8D 59 BC      133                                        STA    CurrPfxB
+20D5:8D 80 BB      133                                        STA    CurrPfxB
 20D8:A8            134                                         TAY
 20D9:A9 2F         135                                        LDA    #'/'            ;Prepend and append volname
-20DB:8D 5A BC      136                                        STA    CurrPfxB+1      ; with a slash
-20DE:99 59 BC      137                                        STA    CurrPfxB,Y
+20DB:8D 81 BB      136                                        STA    CurrPfxB+1      ; with a slash
+20DE:99 80 BB      137                                        STA    CurrPfxB,Y
 20E1:              138 ;
 20E1:              139 ; The code below assumes the TxBuf2 area has been
 20E1:              140 ; setup properly by ProDOS8
@@ -509,7 +509,7 @@ SOURCE   FILE #01 =>EI.S
 2133:              196 ; Use this parameter block to get the current prefix
 2133:              197 ;
 2133:01            198 CurrPfxP                       DB     $01
-2134:59 BC         199                                        DW     CurrPfxB
+2134:80 BB         199                                        DW     CurrPfxB
 2136:              200 ;
 2136:              201 ; EdAsm's Dir is where the 3 files EdAsm.Ed,
 2136:              202 ; Edasm.Asm and Edasm.System resides
@@ -519,7 +519,7 @@ SOURCE   FILE #01 =>EI.S
 2139:              206 ;
 2139:02            207 OnLineP                         DB     $02
 213A:60            208 OLUnit                           DB     $60
-213B:5A BC         209                                        DW     CurrPfxB+1
+213B:81 BB         209                                        DW     CurrPfxB+1
 213D:              210 ;=================================================
 213D:85 72         211 ShowErr                         STA    ErrCode
 213F:BA            212                                         TSX
@@ -856,18 +856,18 @@ B13B:85 0D          47                                        STA    HiMem+1
 B13D:               48 ;
 B13D:38             49                                         SEC
 B13E:E5 0B          50                                        SBC    TxtBgn+1
-B140:8D 5A BB       51                                        STA    FreeMem+1       ;=$99-$08
+B140:8D 81 BA       51                                        STA    FreeMem+1       ;=$99-$08
 B143:A9 00          52                                        LDA    #$00
-B145:8D 59 BB       53                                        STA    FreeMem
-B148:20 1A B8       54                                        JSR    LB741           ;Load EdAsm.Ed
+B145:8D 80 BA       53                                        STA    FreeMem
+B148:20 41 B7       54                                        JSR    LB741           ;Load EdAsm.Ed
 B14B:               55 ;
 B14B:A9 00          56                                        LDA    #$00
-B14D:8D DF BB       57                                        STA    ExitFlag
+B14D:8D 06 BB       57                                        STA    ExitFlag
 B150:2C 80 C0       58                                        BIT    RDBANK2
 B153:20 A4 B3       59                                        JSR    LB3A4
 B156:2C 80 C0       60                                        BIT    RDBANK2
 B159:20 41 DD       61                                        JSR    XDD41           ;Init tab table etc
-B15C:20 36 B9       62                                        JSR    LB85D           ;Empty text buffer
+B15C:20 5D B8       62                                        JSR    LB85D           ;Empty text buffer
 B15F:20 41 B3       63                                        JSR    ClearScr
 B162:               64 ;
 B162:A0 00          65                                        LDY    #0
@@ -880,24 +880,24 @@ B16F:               71 ;
 B16F:               72 ; Check for the presence of the EdAsm.AutoST file
 B16F:               73 ;
 B16F:A9 0D          74 LB16F                             LDA    #CR
-B171:8D D9 BC       75                                        STA    SavCmdB
-B174:20 0F B9       76                                        JSR    LB836           ;Set curr pfx to EdAsm's dir
+B171:8D 00 BC       75                                        STA    SavCmdB
+B174:20 36 B8       76                                        JSR    LB836           ;Set curr pfx to EdAsm's dir
 B177:A9 14          77                                        LDA    #>X9D14         ;Is EdAsm.AutoST present?
 B179:85 08          78                                        STA    Reg4
 B17B:A9 9D          79                                        LDA    #<X9D14
 B17D:85 09          80                                        STA    Reg4+1
 B17F:A9 04          81                                        LDA    #TXTtype
-B181:20 5C B9       82                                        JSR    CkAttrF
+B181:20 83 B8       82                                        JSR    CkAttrF
 B184:B0 0F   B195   83                                        BCS    LB195           ;Not Found
 B186:D0 0D   B195   84                                        BNE    LB195           ;Found but wrong type
 B188:               85 ;
 B188:A2 00          86                                        LDX    #>XAD00         ;1024-byte I/O buffer
 B18A:A0 AD          87                                        LDY    #<XAD00
-B18C:20 A7 B9       88                                        JSR    OpenDFile       ;Open it
-B18F:20 3F B9       89                                        JSR    LB866           ;Set prefix to curr pfx
-B192:4C AF BA       90                                        JMP    LB9D6           ;Proceed to read and exec its cmds
+B18C:20 CE B8       88                                        JSR    OpenDFile       ;Open it
+B18F:20 66 B8       89                                        JSR    LB866           ;Set prefix to curr pfx
+B192:4C D6 B9       90                                        JMP    LB9D6           ;Proceed to read and exec its cmds
 B195:               91 ;
-B195:20 3F B9       92 LB195                             JSR    LB866
+B195:20 66 B8       92 LB195                             JSR    LB866
 B198:               93 ;
 B198:               94 ; ($B198) Reset/Ctrl-Y Entry Point 
 B198:               95 ;
@@ -907,9 +907,9 @@ B19A:85 54          98                                        STA    PtrMode    
 B19C:24 53          99                                        BIT    ExecMode
 B19E:10 0B   B1AB  100                                        BPL    EIMainLoop      ;No
 B1A0:06 53         101                                        ASL    ExecMode
-B1A2:AD 72 BB      102                                        LDA    RdExeRN
-B1A5:8D D0 BB      103                                        STA    CloseRN
-B1A8:20 C8 B9      104                                        JSR    ClsFile
+B1A2:AD 99 BA      102                                        LDA    RdExeRN
+B1A5:8D F7 BA      103                                        STA    CloseRN
+B1A8:20 EF B8      104                                        JSR    ClsFile
 B1AB:              105 ;
 B1AB:              106 ; $B1AB
 B1AB:              107 ;
@@ -1087,7 +1087,7 @@ B29A:98 B1         278 LB29A                             DW     EIWrmStrt       
 B29C:14            279                                        DB     $14             ;poweredup byte
 B29D:              280 ;=================================================
 B29D:        B29D  281 LB29D                             EQU    *
-B29D:20 E1 B6      282                                        JSR    PrErrMsg2
+B29D:20 08 B6      282                                        JSR    PrErrMsg2
 B2A0:60            283                                         RTS
 B2A1:              284 ;=================================================
 B2A1:              285 ; Restore the most recent LIST cmd into InBuf
@@ -1095,7 +1095,7 @@ B2A1:              286 ;
 B2A1:        B2A1  287 LB2A1                             EQU    *
 B2A1:A2 FF         288                                        LDX    #-1
 B2A3:E8            289 LB2A3                              INX
-B2A4:BD D9 BC      290                                        LDA    SavCmdB,X
+B2A4:BD 00 BC      290                                        LDA    SavCmdB,X
 B2A7:9D 00 02      291                                        STA    InBuf,X
 B2AA:C9 0D         292                                        CMP    #CR
 B2AC:D0 F5   B2A3  293                                        BNE    LB2A3
@@ -1106,7 +1106,7 @@ B2AF:              297 ;
 B2AF:        B2AF  298 LB2AF                             EQU    *
 B2AF:A2 00         299                                        LDX    #0
 B2B1:BD 00 02      300 LB2B1                             LDA    InBuf,X
-B2B4:9D D9 BC      301                                        STA    SavCmdB,X
+B2B4:9D 00 BC      301                                        STA    SavCmdB,X
 B2B7:E8            302                                         INX
 B2B8:C9 0D         303                                        CMP    #CR
 B2BA:D0 F5   B2B1  304                                        BNE    LB2B1
@@ -1126,7 +1126,7 @@ B2C1:24 53         317                                        BIT    ExecMode
 B2C3:10 32   B2F7  318                                        BPL    LB2F7           ;No
 B2C5:20 00 BF      319                                        JSR    PRODOS8
 B2C8:CA            320                                        DB     $CA
-B2C9:71 BB         321                                        DW     RdExecP
+B2C9:98 BA         321                                        DW     RdExecP
 B2CB:D0 18   B2E5  322                                        BNE    LB2E5           ;(A)=error code
 B2CD:              323 ;
 B2CD:A9 2B         324                                        LDA    #'+'            ;Show we have just read a cmd
@@ -1135,22 +1135,22 @@ B2D2:A0 00         326                                        LDY    #0
 B2D4:B9 00 02      327 LB2D4                             LDA    InBuf,Y
 B2D7:20 43 B3      328                                        JSR    PrChar
 B2DA:C8            329                                         INY
-B2DB:CC 77 BB      330                                        CPY    LBA9E
+B2DB:CC 9E BA      330                                        CPY    LBA9E
 B2DE:90 F4   B2D4  331                                        BCC    LB2D4
 B2E0:              332 ;
-B2E0:AE 77 BB      333                                        LDX    LBA9E           ;Empty Line?
+B2E0:AE 9E BA      333                                        LDX    LBA9E           ;Empty Line?
 B2E3:D0 15   B2FA  334                                        BNE    LB2FA           ;No 
 B2E5:06 53         335 LB2E5                             ASL    ExecMode        ;msb off
-B2E7:AE 72 BB      336                                        LDX    RdExeRN
-B2EA:8E D0 BB      337                                        STX    CloseRN
-B2ED:20 D7 B9      338                                        JSR    ClsFile2
+B2E7:AE 99 BA      336                                        LDX    RdExeRN
+B2EA:8E F7 BA      337                                        STX    CloseRN
+B2ED:20 FE B8      338                                        JSR    ClsFile2
 B2F0:C9 4C         339                                        CMP    #$4C            ;EOF?
 B2F2:F0 03   B2F7  340                                        BEQ    LB2F7           ;yep
-B2F4:4C DB B6      341                                        JMP    PrErrMsg
+B2F4:4C 02 B6      341                                        JMP    PrErrMsg
 B2F7:              342 ;
 B2F7:20 0B A7      343 LB2F7                             JSR    XA70B           ;Get user's cmd
 B2FA:BD 00 02      344 LB2FA                             LDA    InBuf,X
-B2FD:9D 59 BD      345                                        STA    ExecLineB,X
+B2FD:9D 80 BC      345                                        STA    ExecLineB,X
 B300:CA            346                                         DEX
 B301:D0 F7   B2FA  347                                        BNE    LB2FA
 B303:F0 13   B318  348                                        BEQ    LB318           ;always
@@ -1159,8 +1159,8 @@ B305:              350 ; Move next cmd forward and copy it to InBuf as well
 B305:              351 ;
 B305:A6 76         352 LB305                             LDX    BufIndex
 B307:A0 00         353                                        LDY    #0
-B309:BD 59 BD      354 LB309                             LDA    ExecLineB,X
-B30C:99 59 BD      355                                        STA    ExecLineB,Y
+B309:BD 80 BC      354 LB309                             LDA    ExecLineB,X
+B30C:99 80 BC      355                                        STA    ExecLineB,Y
 B30F:99 00 02      356                                        STA    InBuf,Y
 B312:C8            357                                         INY
 B313:E8            358                                         INX
@@ -1278,1075 +1278,1075 @@ B3C6:8D 40 BE      469                                        STA    DevCtlS    
 B3C9:60            470                                         RTS
 B3CA:              471 ;
 B3CA:32 39 2D 4D   472                                        ASC    '29-MAR-84'
-B3D3:35 36 3A 32   473                                        ASC    '56:28          '
-B3E2:              474 ;=================================================
-B3E2:              475 ; EI's CSW entry point
-B3E2:              476 ; (A) = char to be printed
-B3E2:              477 ;
-B3E2:        B3E2  478 LB3D9                             EQU    *               ;ENTRY
-B3E2:C9 E0         479                                        CMP    #'a'-1+$80
-B3E4:90 0B   B3F1  480                                        BCC    LB3E8           ;Is char a-z?
-B3E6:C9 FB         481                                        CMP    #'z'+1+$80
-B3E8:B0 07   B3F1  482                                        BCS    LB3E8
-B3EA:2C 98 BF      483                                        BIT    MACHID          ;Is ][?
-B3ED:30 02   B3F1  484                                        BMI    LB3E8           ;No, //e or //c or /// emulation
-B3EF:29 1F         485                                        AND    #$1F            ;a-z -> $01-$1A
-B3F1:C9 9D         486 LB3E8                             CMP    #$9D            ;ctrl-] - clrEOL
-B3F3:D0 0A   B3FF  487                                        BNE    LB3F6
-B3F5:98            488                                         TYA
-B3F6:48            489                                         PHA
-B3F7:20 9C FC      490                                        JSR    CLREOL
-B3FA:68            491                                         PLA
-B3FB:A8            492                                         TAY
-B3FC:A9 9D         493                                        LDA    #$9D
-B3FE:60            494                                         RTS
-B3FF:              495 ;
-B3FF:C9 8C         496 LB3F6                             CMP    #FF+$80         ; ctlr-L - form feed?
-B401:D0 0A   B40D  497                                        BNE    LB404
-B403:98            498                                         TYA
-B404:48            499                                         PHA
-B405:20 58 FC      500                                        JSR    HOME
-B408:68            501                                         PLA
-B409:A8            502                                         TAY
-B40A:A9 8C         503                                        LDA    #FF+$80
-B40C:60            504                                         RTS
-B40D:              505 ;
-B40D:2C 82 C0      506 LB404                             BIT    RDROM2
-B410:4C F0 FD      507                                        JMP    COUT1           ;Call Monitor's ROM rtn
-B413:              508 ;=================================================
-B413:              509 ; Command Interpreter's Error messages
-B413:              510 ;
-B413:50 41 54 48   511 LB40A                             ASC    'PATH/FILENAME  MISSING' ;ENTRY
-B429:0D            512                                        DB     CR
-B42A:53 59 4E 54   513 LB420                             ASC    'SYNTAX'        ;ENTRY
-B430:0D            514                                        DB     CR 
-B431:42 41 44 20   515 LB427                             ASC    'BAD            FORMAT' ;ENTRY
-B446:0D            516                                        DB     CR
-B447:4D 45 4D 4F   517 LB432                             ASC    'MEMORY         FULL' ;ENTRY
-B45A:0D            518                                        DB     CR
-B45B:42 41 44 20   519 LB43E                             ASC    'BAD            RANGE' ;ENTRY
-B46F:0D            520                                        DB     CR
-B470:49 4E 56 41   521 LB448                             ASC    'INVALID        PARAMETER ' ;ENTRY
-B489:0D            522                                        DB     CR
-B48A:41 4C 4C 20   523 LB45B                             ASC    'ALL            OR SOME?(A/S)?' ;ENTRY
-B4A7:0D            524                                        DB     CR
-B4A8:46 49 4C 45   525 LB46E                             ASC    'FILE           NOT FOUND'
-B4C0:0D            526                                        DB     CR
-B4C1:46 49 4C 45   527 LB47D                             ASC    'FILE           TYPE MISMATCH'
-B4DD:0D            528                                        DB     CR
-B4DE:57 52 49 54   529 LB490                             ASC    'WRITE          PROTECTED'
-B4F6:0D            530                                        DB     CR
-B4F7:46 49 4C 45   531 LB4A0                             ASC    'FILE           LOCKED'
-B50C:0D            532                                        DB     CR
-B50D:42 41 44 20   533 LB4AC                             ASC    'BAD            PATH/FILE NAME'
-B52A:0D            534                                        DB     CR
-B52B:46 49 4C 45   535 LB4BF                             ASC    'FILE           SIZE MISMATCH'
-B547:0D            536                                        DB     CR
-B548:46 49 4C 45   537 LB4D2                             ASC    'FILE           TOO LARGE'
-B560:0D            538                                        DB     CR
-B561:44 49 53 4B   539 LB4E1                             ASC    'DISK           FULL'
-B574:0D            540                                        DB     CR
-B575:44 49 53 4B   541 LB4EB                             ASC    'DISK           I/O FAILURE'
-B58F:0D            542                                        DB     CR
-B590:50 52 4F 44   543 LB4FC                             ASC    'PRODOS         ERROR=$'
-B5A6:              544 ;
-B5A6:58 58         545 HexStr                           DW     $5858
-B5A8:0D            546                                        DB     CR
-B5A9:44 49 52 45   547 LB50D                             ASC    'DIRECTORY      NOT FOUND' ;ENTRY
-B5C1:0D            548                                        DB     CR
-B5C2:20 20 20 20   549 LB521                             ASC    '               THE FILE IS LOCKED.  DESTROY ANYWAY (Y/N)?' ;ENTRY
-B5FB:0D            550                                        DB     CR
-B5FC:50 41 54 48   551 LB54D                             ASC    'PATH           NOT FOUND'
-B614:0D            552                                        DB     CR
-B615:44 55 50 4C   553 LB55C                             ASC    'DUPLICATE      FILE NAME'
-B62D:0D            554                                        DB     CR
-B62E:44 49 52 45   555 LB570                             ASC    'DIRECTORY      FULL'
-B641:0D            556                                        DB     CR
-B642:50 4C 45 41   557 LB57F                             ASC    'PLEASE         RE-MOUNT '
-B65A:80            558                                        DB     $80
-B65B:50 52 45 53   559 LB590                             ASC    'PRESS          RETURN TO CONTINUE '
-B67D:80            560                                        DB     $80
-B67E:41 53 53 45   561 LB5AA                             ASC    'ASSEMBLER      NOT ONLINE'
-B697:0D            562                                        DB     CR
-B698:              563 ;=================================================
-B698:              564 ; ($B5BF) Command interpreter's error message table
-B698:              565 ; Each entry consists of 3 bytes
-B698:              566 ;
-B698:        B698  567 ErrTable                       EQU    *
-B698:10            568                                        DB     $10             ;error code
-B699:48 B5         569                                        DW     LB4D2           ;msg ptr
-B69B:11            570                                        DB     $11
-B69C:C1 B4         571                                        DW     LB47D
-B69E:12            572                                        DB     $12
-B69F:2B B5         573                                        DW     LB4BF
-B6A1:27            574                                        DB     $27 
-B6A2:75 B5         575                                        DW     LB4EB
-B6A4:2A            576                                        DB     $2A
-B6A5:75 B5         577                                        DW     LB4EB
-B6A7:2B            578                                        DB     $2B
-B6A8:DE B4         579                                        DW     LB490
-B6AA:48            580                                        DB     $48
-B6AB:61 B5         581                                        DW     LB4E1
-B6AD:46            582                                        DB     $46
-B6AE:A8 B4         583                                        DW     LB46E
-B6B0:40            584                                        DB     $40
-B6B1:0D B5         585                                        DW     LB4AC
-B6B3:4B            586                                        DB     $4B
-B6B4:0D B5         587                                        DW     LB4AC
-B6B6:4E            588                                        DB     $4E
-B6B7:F7 B4         589                                        DW     LB4A0
-B6B9:44            590                                        DB     $44
-B6BA:FC B5         591                                        DW     LB54D
-B6BC:45            592                                        DB     $45
-B6BD:A9 B5         593                                        DW     LB50D
-B6BF:47            594                                        DB     $47
-B6C0:15 B6         595                                        DW     LB55C
-B6C2:49            596                                        DB     $49
-B6C3:2E B6         597                                        DW     LB570
-B6C5:FC            598                                        DB     $FC
-B6C6:7E B6         599                                        DW     LB5AA
-B6C8:FD            600                                        DB     $FD
-B6C9:5B B6         601                                        DW     LB590
-B6CB:FE            602                                        DB     $FE
-B6CC:42 B6         603                                        DW     LB57F
-B6CE:FF            604                                        DB     $FF
-B6CF:90 B5         605                                        DW     LB4FC
-B6D1:              606 ;=================================================
-B6D1:              607 ; ($B5F8)
-B6D1:              608 ; Input
-B6D1:              609 ;  (A)=error code
-B6D1:              610 ;
-B6D1:        B6D1  611 FatalErr                       EQU    *               ;ENTRY
-B6D1:AA            612                                         TAX                    ;error code
-B6D2:68            613                                         PLA                    ;dump RTS addr
-B6D3:68            614                                         PLA
-B6D4:8A            615                                         TXA
-B6D5:4C DB B6      616                                        JMP    PrErrMsg
-B6D8:              617 ;=================================================
-B6D8:              618 ;
-B6D8:20 D7 B9      619 LB5FF                             JSR    ClsFile2        ;ENTRY
-B6DB:              620 ;
-B6DB:              621 ; ($B602) Print Error Message and return to CI mainloop
-B6DB:              622 ;  (A) - error code
-B6DB:              623 ;
-B6DB:        B6DB  624 PrErrMsg                       EQU    *               ;ENTRY
-B6DB:20 E1 B6      625                                        JSR    PrErrMsg2
-B6DE:4C 98 B1      626                                        JMP    EIWrmStrt
-B6E1:              627 ;=================================================
-B6E1:              628 ; ($B608)
-B6E1:              629 ; Input
-B6E1:              630 ;  (A)=error code
-B6E1:              631 ;
-B6E1:A2 39         632 PrErrMsg2                     LDX    #$39
-B6E3:CA            633 LB60A                              DEX
-B6E4:CA            634                                         DEX 
-B6E5:CA            635                                         DEX
-B6E6:30 3A   B722  636                                        BMI    LB649           ;Not found
-B6E8:DD 98 B6      637                                        CMP    ErrTable,X      ;Is this the error code?
-B6EB:D0 F6   B6E3  638                                        BNE    LB60A           ;keep searching
-B6ED:              639 ;
-B6ED:E8            640                                         INX
-B6EE:BD 98 B6      641                                        LDA    ErrTable,X      ;msg ptr
-B6F1:85 12         642                                        STA    Z12             ;Reg9
-B6F3:E8            643                                         INX
-B6F4:BD 98 B6      644                                        LDA    ErrTable,X
-B6F7:85 13         645                                        STA    Z12+1
-B6F9:              646 ;
-B6F9:        B6F9  647 LB620                             EQU    *               ;ENTRY
-B6F9:A9 45         648                                        LDA    #'E'
-B6FB:20 43 B3      649                                        JSR    PrChar
-B6FE:A9 52         650                                        LDA    #'R'
-B700:20 43 B3      651                                        JSR    PrChar
-B703:20 43 B3      652                                        JSR    PrChar
-B706:20 3D B3      653                                        JSR    RingBell
-B709:A9 3A         654                                        LDA    #':'
-B70B:20 43 B3      655                                        JSR    PrChar
-B70E:A9 20         656                                        LDA    #SPACE
-B710:20 43 B3      657                                        JSR    PrChar
-B713:              658 ;
-B713:A0 00         659                                        LDY    #0
-B715:B1 12         660 LB63C                             LDA    (Z12),Y         ;Reg9
-B717:30 08   B721  661                                        BMI    LB648
-B719:20 43 B3      662                                        JSR    PrChar
-B71C:C8            663                                         INY
-B71D:C9 0D         664                                        CMP    #CR
-B71F:D0 F4   B715  665                                        BNE    LB63C
-B721:60            666 LB648                              RTS
-B722:              667 ;
-B722:              668 ; Error code not in our table
-B722:              669 ; Just show a generic error message
-B722:              670 ;
-B722:85 72         671 LB649                             STA    ErrCode         ;error code
-B724:20 74 BA      672                                        JSR    Cnv2Hex
-B727:8D A7 B5      673                                        STA    HexStr+1
-B72A:8E A6 B5      674                                        STX    HexStr
-B72D:A9 FF         675                                        LDA    #$FF            ;Show err msg w/errcode in hex
-B72F:4C E1 B6      676                                        JMP    PrErrMsg2
-B732:              677 ;=================================================
-B732:        B732  678 LB659                             EQU    *               ;ENTRY
-B732:A9 0D         679                                        LDA    #CR
-B734:C5 12         680                                        CMP    Z12
-B736:F0 03   B73B  681                                        BEQ    LB662
-B738:4C 8E B2      682                                        JMP    LB28E           ;cmd syntax
-B73B:              683 ;
-B73B:              684 ; 3 of the commands get some special treament viz
-B73B:              685 ; ASM, END and LIST
-B73B:              686 ;
-B73B:A9 00         687 LB662                             LDA    #$00
-B73D:85 01         688                                        STA    Z00+1
-B73F:20 7E B2      689                                        JSR    GetToken        ;Get token fr Cmd table
-B742:85 00         690                                        STA    Z00
-B744:F0 79   B7BF  691                                        BEQ    LB6E6           ;ASM cmd
-B746:              692 ;
-B746:C9 5C         693                                        CMP    #$5C            ;END cmd
-B748:F0 33   B77D  694                                        BEQ    LB6A4 
-B74A:C9 26         695                                        CMP    #$26            ;LIST cmd?
-B74C:D0 05   B753  696                                        BNE    LB67A
-B74E:20 AF B2      697                                        JSR    LB2AF           ;Yes, make a copy of cmd
-B751:A5 00         698                                        LDA    Z00
-B753:A4 00         699 LB67A                             LDY    Z00
-B755:C0 5D         700                                        CPY    #$5D            ;']' - sentinel value
-B757:90 02   B75B  701                                        BCC    LB682
-B759:              702 ; $D680
-B759:A0 00         703                                        LDY    #0
-B75B:B9 A2 DF      704 LB682                             LDA    XDFA2,Y
-B75E:85 04         705                                        STA    Z04             ;Set SW16 R2 w/JMP addr-1
-B760:C8            706                                         INY
-B761:B9 A2 DF      707                                        LDA    XDFA2,Y
-B764:85 05         708                                        STA    Z04+1
-B766:8D 80 C0      709                                        STA    RDBANK2
-B769:24 54         710                                        BIT    PtrMode         ;Is Printer on?
-B76B:10 03   B770  711                                        BPL    LB697           ;No
-B76D:20 10 D6      712                                        JSR    XD610           ;Init printer
-B770:              713 ;
-B770:              714 ; The last instruction of the Sweet16 code below
-B770:              715 ; will take us to the addr stored in R2 since
-B770:              716 ; R15 is SW16's PC
-B770:              717 ;
-B770:20 00 D0      718 LB697                             JSR    NEWSW16
-B773:10 0D 00      719                                        SET    R0,CR
-B776:F5            720                                        DCR    R5
-B777:55            721                                        STI    R5
-B778:22            722                                        LD     R2
-B779:1C 00 BD      723                                        SET    R12,XBD00
-B77C:3F            724                                        ST     R15
-B77D:              725 ;=================================================
-B77D:              726 ; END cmd
-B77D:              727 ;
-B77D:        B77D  728 LB6A4                             EQU    *
-B77D:A5 74         729                                        LDA    SwapMode        ;Do we have a split txt buf?
-B77F:D0 42   B7C3  730                                        BNE    LB6EA           ;Yes, so can't quit
-B781:20 72 A8      731                                        JSR    XA872           ;Load Quit Code
-B784:A2 00         732                                        LDX    #$00            ;Slot #
-B786:20 8A A7      733                                        JSR    XA78A           ;Init I/O Hooks
-B789:              734 ;
-B789:AD 81 C0      735                                        LDA    ROMIN2
-B78C:AD 81 C0      736                                        LDA    ROMIN2
-B78F:A9 60         737                                        LDA    #$60            ;RTS
-B791:8D F8 03      738                                        STA    USRADR
-B794:A9 00         739                                        LDA    #>BASCLD
-B796:8D F2 03      740                                        STA    SOFTEV
-B799:A9 E0         741                                        LDA    #<BASCLD        ;Vector @ $E000 -> $F128
-B79B:8D F3 03      742                                        STA    SOFTEV+1
-B79E:A9 45         743                                        LDA    #$45
-B7A0:8D F4 03      744                                        STA    PWREDUP
-B7A3:20 89 FE      745                                        JSR    SETKBD
-B7A6:20 93 FE      746                                        JSR    SETVID
-B7A9:20 58 FC      747                                        JSR    HOME
-B7AC:20 00 BF      748                                        JSR    PRODOS8
-B7AF:65            749                                        DB     $65
-B7B0:B8 B7         750                                        DW     QuitP
-B7B2:              751 ;
-B7B2:        B7B2  752 LB6D9                             EQU    *
-B7B2:8D FF 02      753                                        STA    InBuf+$FF
-B7B5:4C 00 E0      754                                        JMP    BASCLD          ;Do a Monitor cold Start 
-B7B8:              755 ;
-B7B8:04            756 QuitP                             DB     $04
-B7B9:00            757                                        DB     $00             ;If quit type $EE,
-B7BA:00 00         758                                        DW     $0000           ; addr of launch pathname
-B7BC:00            759                                        DB     $00             ; reserved
-B7BD:00 00         760                                        DW     $0000
-B7BF:              761 ;=================================================
-B7BF:              762 ; Prepare for Assembly
-B7BF:              763 ;
-B7BF:        B7BF  764 LB6E6                             EQU    *
-B7BF:A5 74         765                                        LDA    SwapMode        ;Do we have a split txt buf?
-B7C1:F0 05   B7C8  766                                        BEQ    LB6EF           ;No
-B7C3:        B7C3  767 LB6EA                             EQU    *               ;ENTRY
-B7C3:A2 41         768                                        LDX    #$41            ;Multi-buffer
-B7C5:4C 90 B2      769                                        JMP    LB290
-B7C8:              770 ;
-B7C8:A5 0F         771 LB6EF                             LDA    TxtEnd+1        ;Is edit buffer empty?
-B7CA:C5 0B         772                                        CMP    TxtBgn+1
-B7CC:D0 06   B7D4  773                                        BNE    LB6FB
-B7CE:A5 0E         774                                        LDA    TxtEnd
-B7D0:C5 0A         775                                        CMP    TxtBgn
-B7D2:F0 05   B7D9  776                                        BEQ    LB700           ;Yes
-B7D4:A2 47         777 LB6FB                             LDX    #$47            ;'Buffer'
-B7D6:4C 90 B2      778                                        JMP    LB290
-B7D9:              779 ;
-B7D9:A9 20         780 LB700                             LDA    #SPACE
-B7DB:A2 10         781                                        LDX    #16
-B7DD:9D 64 BE      782 LB704                             STA    DateTime,X      ;Prepare data area
-B7E0:CA            783                                         DEX
-B7E1:10 FA   B7DD  784                                        BPL    LB704
-B7E3:              785 ;
-B7E3:20 00 BF      786                                        JSR    PRODOS8
-B7E6:82            787                                        DB     $82             ;Get time
-B7E7:E7 B7         788                                        DW     *
-B7E9:20 55 9E      789                                        JSR    X9E55           ;Date/Time Conversion
-B7EC:              790 ;
-B7EC:              791 ; The assembler uses the Editor's first 3 tabs
-B7EC:              792 ; if the 1st tab col of user-defined tab
-B7EC:              793 ; table is < 12. Otherwise, a modified tab
-B7EC:              794 ; table is passed to the assembler
-B7EC:              795 ;
-B7EC:A0 02         796                                        LDY    #2
-B7EE:A6 68         797 LB715                             LDX    UserTabT        ;Get 1st tab col
-B7F0:E0 0C         798                                        CPX    #12
-B7F2:90 0E   B802  799                                        BCC    LB729
-B7F4:B9 68 00      800                                        LDA    UserTabT,Y
-B7F7:              801 ; DB $B9,$68,$00
-B7F7:18            802                                         CLC
-B7F8:69 11         803                                        ADC    #17
-B7FA:99 60 BE      804 LB721                             STA    TabTable,Y      ;Tabs table passed to the assembler
-B7FD:88            805                                         DEY
-B7FE:10 EE   B7EE  806                                        BPL    LB715
-B800:30 05   B807  807                                        BMI    DoAsmbly        ;always
-B802:              808 ;
-B802:B9 11 9D      809 LB729                             LDA    X9D11,Y         ;Editor's default tab table
-B805:D0 F3   B7FA  810                                        BNE    LB721           ;always
-B807:              811 ;
-B807:A9 00         812 DoAsmbly                       LDA    #$00
-B809:85 54         813                                        STA    PtrMode         ;Disable Printer
-B80B:20 B2 B8      814                                        JSR    LoadAsm 
-B80E:AD 80 C0      815                                        LDA    RDBANK2
-B811:20 00 78      816                                        JSR    X7800           ;xfer control to Assembler
-B814:20 1A B8      817                                        JSR    LB741           ;Re-load EdAsm.Ed
-B817:4C AB B1      818                                        JMP    EIMainLoop
-B81A:              819 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-B81A:              820 ; Set prefix to EdAsm's Launch dir
-B81A:              821 ; Load the Editor's modules into mem
-B81A:              822 ; Relocator module loaded @ $8900-$98FF to
-B81A:              823 ; $D000 LC Bank2
-B81A:              824 ; Return to caller if successful else crash into Monitor
-B81A:              825 ;
-B81A:        B81A  826 LB741                             EQU    *
-B81A:20 0F B9      827                                        JSR    LB836           ;Set prefix to EdAsm's Dir
-B81D:90 2E   B84D  828                                        BCC    LoadDEd
-B81F:A9 FE         829                                        LDA    #$FE            ;Re-mount...
-B821:20 E1 B6      830                                        JSR    PrErrMsg2
-B824:              831 ;
-B824:              832 ; Print EDASM's launch dir. This directory contains
-B824:              833 ; the files EDASM.SYSTEM, EDASM.ED and EDASM.ASM
-B824:              834 ; $BE79-BA(65 bytes incl leading and trailing /'s)
-B824:              835 ;
-B824:A0 00         836                                        LDY    #0
-B826:AE 79 BE      837                                        LDX    EdAsmDir        ;len byte
-B829:B9 7A BE      838 LB750                             LDA    EdAsmDir+1,Y
-B82C:20 43 B3      839                                        JSR    PrChar
-B82F:C8            840                                         INY
-B830:CA            841                                         DEX
-B831:D0 F6   B829  842                                        BNE    LB750
-B833:              843 ;
-B833:20 39 B3      844                                        JSR    PrtCR
-B836:A9 FD         845                                        LDA    #$FD            ;Press return...
-B838:20 E1 B6      846                                        JSR    PrErrMsg2
-B83B:              847 ;
-B83B:AD 00 C0      848 WaitK1                           LDA    KBD
-B83E:10 FB   B83B  849                                        BPL    WaitK1
-B840:2C 10 C0      850                                        BIT    KBDSTROBE
-B843:C9 8D         851                                        CMP    #CR+$80
-B845:D0 F4   B83B  852                                        BNE    WaitK1
-B847:20 39 B3      853                                        JSR    PrtCR
-B84A:4C 1A B8      854                                        JMP    LB741           ;try again
-B84D:              855 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-B84D:              856 ; Load the file EDASM.ED
-B84D:              857 ;
-B84D:              858 ; $9900-$A8FF - Editor overlay
-B84D:              859 ; $D000-$DFFF - Editor code
-B84D:              860 ;
-B84D:A9 00         861 LoadDEd                         LDA    #>LoadAdrEd
-B84F:8D 63 BB      862                                        STA    ReadDBuf
-B852:A9 89         863                                        LDA    #<LoadAdrEd
-B854:8D 64 BB      864                                        STA    ReadDBuf+1
-B857:A9 00         865                                        LDA    #$00
-B859:8D 65 BB      866                                        STA    ReadLen         ;$2000
-B85C:A9 20         867                                        LDA    #$20
-B85E:8D 66 BB      868                                        STA    ReadLen+1
-B861:A2 E0         869                                        LDX    #>EdStr
-B863:A0 BB         870                                        LDY    #<EdStr
-B865:20 1D B9      871                                        JSR    LoadMod
-B868:B0 2E   B898  872                                        BCS    LB7BF
-B86A:              873 ;
-B86A:A9 00         874                                        LDA    #>LoadAdrEd 
-B86C:85 3C         875                                        STA    A1              ;start addr
-B86E:A9 89         876                                        LDA    #<LoadAdrEd
-B870:85 3D         877                                        STA    A1+1
-B872:A9 FF         878                                        LDA    #>LoadAdrEd+$1000-1
-B874:85 3E         879                                        STA    A2              ;end addr
-B876:A9 98         880                                        LDA    #<LoadAdrEd+$1000-1
-B878:85 3F         881                                        STA    A2+1
-B87A:A9 FF         882                                        LDA    #$FF
-B87C:8D 6C BF      883                                        STA    BitMap+20       ;Reserve pages $A0-$A7
-B87F:A9 1F         884                                        LDA    #%00011111      ;Mark pages $98-$9A
-B881:8D 6B BF      885                                        STA    BitMap+19       ; as free
-B884:              886 ;
-B884:              887 ; ($B7AB) Move code btwn $8900-$98FF to the LC Bank2
-B884:              888 ; Also referenced by Editor to move Quit Code
-B884:              889 ; back to LC Bank2
-B884:              890 ;
-B884:        B884  891 Mv2LCB2                         EQU    *               ;ENTRY
-B884:A9 00         892                                        LDA    #>XD000         ;dest addr
-B886:85 42         893                                        STA    A4
-B888:A9 D0         894                                        LDA    #<XD000
-B88A:85 43         895                                        STA    A4+1
-B88C:AD 81 C0      896                                        LDA    ROMIN2
-B88F:AD 81 C0      897                                        LDA    ROMIN2
-B892:A0 00         898                                        LDY    #$00
-B894:20 2C FE      899                                        JSR    MOVE            ;Monitor rtn
-B897:60            900                                         RTS
-B898:              901 ;
-B898:              902 ; Error loading Editor's Modules
-B898:              903 ;
-B898:85 72         904 LB7BF                             STA    ErrCode         ;A=err code
-B89A:BA            905                                         TSX
-B89B:86 73         906                                        STX    StackP2
-B89D:A2 80         907                                        LDX    #$80
-B89F:9A            908                                         TXS
-B8A0:AD 82 C0      909                                        LDA    RDROM2
-B8A3:20 89 FE      910                                        JSR    SETKBD
-B8A6:20 93 FE      911                                        JSR    SETVID
-B8A9:20 58 FC      912                                        JSR    HOME
-B8AC:20 2D FF      913                                        JSR    PRERR
-B8AF:4C 65 FF      914                                        JMP    MON             ;Crash!
-B8B2:              915 ;=================================================
-B8B2:              916 ; Load the file EDASM.ASM
-B8B2:              917 ; $7800-$9EFF - Assembler overlay
-B8B2:              918 ; $D000-$DFFF (bank2) - Assembler tables,
-B8B2:              919 ;  Sorting,print symbol tables
-B8B2:              920 ;=================================================
-B8B2:        B8B2  921 LoadAsm                         EQU    *
-B8B2:20 0F B9      922                                        JSR    LB836           ;Set prefix to EdAsm's Boot Dir
-B8B5:90 08   B8BF  923                                        BCC    LB7E6
-B8B7:20 16 B9      924                                        JSR    LB83D           ;Set to user's prefix
-B8BA:A9 FC         925                                        LDA    #$FC            ;err code
-B8BC:4C DB B6      926                                        JMP    PrErrMsg
-B8BF:              927 ;
-B8BF:A9 00         928 LB7E6                             LDA    #$00            ;Setup the bit map
-B8C1:8D 6C BF      929                                        STA    BitMap+20       ;Mark pages $98-$A7
-B8C4:8D 6B BF      930                                        STA    BitMap+19       ; as free
-B8C7:              931 ;
-B8C7:A9 00         932                                        LDA    #$00
-B8C9:8D 65 BB      933                                        STA    ReadLen         ;=$4000
-B8CC:A9 40         934                                        LDA    #$40 
-B8CE:8D 66 BB      935                                        STA    ReadLen+1
-B8D1:A9 00         936                                        LDA    #>LoadAdrAsm
-B8D3:8D 63 BB      937                                        STA    ReadDBuf
-B8D6:A9 68         938                                        LDA    #<LoadAdrAsm
-B8D8:8D 64 BB      939                                        STA    ReadDBuf+1
-B8DB:A2 E9         940                                        LDX    #>AsmStr
-B8DD:A0 BB         941                                        LDY    #<AsmStr
-B8DF:20 1D B9      942                                        JSR    LoadMod
-B8E2:90 17   B8FB  943                                        BCC    LB822
-B8E4:              944 ;
-B8E4:C9 45         945                                        CMP    #$45            ;vol not mounted
-B8E6:F0 08   B8F0  946                                        BEQ    LB817
-B8E8:C9 46         947                                        CMP    #$46            ;file not found
-B8EA:F0 04   B8F0  948                                        BEQ    LB817
-B8EC:C9 44         949                                        CMP    #$44            ;non-existent file
-B8EE:D0 02   B8F2  950                                        BNE    LB819
-B8F0:              951 ;
-B8F0:A9 FC         952 LB817                             LDA    #$FC
-B8F2:20 E1 B6      953 LB819                             JSR    PrErrMsg2
-B8F5:20 1A B8      954                                        JSR    LB741           ;Load Editor's Modules
-B8F8:4C 98 B1      955                                        JMP    EIWrmStrt
-B8FB:              956 ;
-B8FB:              957 ; Assembler's modules successfully loaded
-B8FB:              958 ;
-B8FB:A9 00         959 LB822                             LDA    #>LoadAdrAsm
-B8FD:85 3C         960                                        STA    A1              ;start addr
-B8FF:A9 68         961                                        LDA    #<LoadAdrAsm
-B901:85 3D         962                                        STA    A1+1
-B903:A9 FF         963                                        LDA    #>LoadAdrAsm+$1000-1
-B905:85 3E         964                                        STA    A2
-B907:A9 77         965                                        LDA    #<LoadAdrAsm+$1000-1
-B909:85 3F         966                                        STA    A2+1            ;end addr
-B90B:20 84 B8      967                                        JSR    Mv2LCB2         ;Set dest addr and do move
-B90E:60            968                                         RTS
-B90F:              969 ;=================================================
-B90F:              970 ; Set prefix to EdAsm's Boot Dir
-B90F:              971 ;
-B90F:        B90F  972 LB836                             EQU    *               ;ENTRY
-B90F:20 00 BF      973                                        JSR    PRODOS8
-B912:C6            974                                        DB     $C6
-B913:98 BB         975                                        DW     SPfxEdAsm
-B915:60            976                                         RTS
-B916:              977 ;
-B916:              978 ; Set prefix to user's prefix
-B916:              979 ;
-B916:20 00 BF      980 LB83D                             JSR    PRODOS8
-B919:C6            981                                        DB     $C6
-B91A:92 BB         982                                        DW     SPfx1P
-B91C:60            983                                         RTS
-B91D:              984 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-B91D:              985 ; ($B844) Load EdAsm's modules
-B91D:              986 ; EdAsm.Ed or EdAsm.Asm are loaded into memory
-B91D:              987 ; Input
-B91D:              988 ;  (X,Y) - ptr to filename
-B91D:              989 ;
-B91D:        B91D  990 LoadMod                         EQU    *               ;ENTRY
-B91D:A9 FF         991                                        LDA    #$FF
-B91F:8D DF BB      992                                        STA    ExitFlag
-B922:86 08         993                                        STX    Reg4            ;ptr to file name
-B924:84 09         994                                        STY    Reg4+1 
-B926:A9 06         995                                        LDA    #BINtype
-B928:20 10 BA      996                                        JSR    OpenNRd
-B92B:08            997                                         PHP                    ;Save error status
-B92C:4E DF BB      998                                        LSR    ExitFlag        ;Set/reset msb with the Carry-bit
-B92F:48            999                                         PHA
-B930:20 16 B9     1000                                        JSR    LB83D           ;Set to user's prefix
-B933:68           1001                                         PLA
-B934:28           1002                                         PLP
-B935:60           1003                                         RTS
-B936:             1004 ;=================================================
-B936:             1005 ; Effectively "emptying" the textedit buffer
-B936:             1006 ;
-B936:A5 0A        1007 LB85D                             LDA    TxtBgn
-B938:85 0E        1008                                        STA    TxtEnd
-B93A:A5 0B        1009                                        LDA    TxtBgn+1
-B93C:85 0F        1010                                        STA    TxtEnd+1
-B93E:60           1011                                         RTS
-B93F:             1012 ;=================================================
-B93F:             1013 ; Set default prefix to the user's prefix
-B93F:             1014 ;
-B93F:20 00 BF     1015 LB866                             JSR    PRODOS8
-B942:C6           1016                                        DB     $C6
-B943:92 BB        1017                                        DW     SPfx1P
-B945:D0 01   B948 1018                                        BNE    LB86F
-B947:60           1019                                         RTS
-B948:             1020 ;
-B948:        B948 1021 LB86F                             EQU    *               ;ENTRY
-B948:C9 40        1022                                        CMP    #$40            ;Invalid pathname
-B94A:F0 03   B94F 1023                                        BEQ    LB876
-B94C:4C 52 B9     1024                                        JMP    ErrHndlr
-B94F:             1025 ;
-B94F:4C DB B6     1026 LB876                             JMP    PrErrMsg
-B952:             1027 ;=================================================
-B952:             1028 ; EI's error handler
-B952:             1029 ; Input
-B952:             1030 ;  ExitFlag - $00,$FF,$8x
-B952:             1031 ;
-B952:        B952 1032 ErrHndlr                       EQU    *
-B952:2C DF BB     1033                                        BIT    ExitFlag
-B955:10 02   B959 1034                                        BPL    LB880
-B957:38           1035                                         SEC
-B958:60           1036                                         RTS
-B959:             1037 ;
-B959:4C D1 B6     1038 LB880                             JMP    FatalErr
-B95C:             1039 ;=================================================
-B95C:             1040 ; ($B883) Check attributes of file (if it exists)
-B95C:             1041 ; Input
-B95C:             1042 ;  (A)-filetype
-B95C:             1043 ; Output
-B95C:             1044 ;  (A) - error code if not found/wrong filetype
-B95C:             1045 ;  C=1 - Not found
-B95C:             1046 ;  C=0, Z=0 - Found but wrong filetype
-B95C:             1047 ;  C=0, Z=1 - Found
-B95C:             1048 ;
-B95C:        B95C 1049 CkAttrF                         EQU    *               ;ENTRY
-B95C:85 51        1050                                        STA    FileType        ;ftype
-B95E:20 8B B9     1051                                        JSR    SetupFN
-B961:A9 19        1052                                        LDA    #>FileNameB
-B963:8D A1 BB     1053                                        STA    GFIPath
-B966:8D 5C BB     1054                                        STA    PathNameP 
-B969:A9 BC        1055                                        LDA    #<FileNameB
-B96B:8D A2 BB     1056                                        STA    GFIPath+1
-B96E:8D 5D BB     1057                                        STA    PathNameP+1
-B971:20 00 BF     1058                                        JSR    PRODOS8
-B974:C4           1059                                        DB     $C4
-B975:A0 BB        1060                                        DW     GFInfoP
-B977:F0 07   B980 1061                                        BEQ    LB8A7
-B979:             1062 ;
-B979:C9 46        1063                                        CMP    #$46            ;file not found
-B97B:F0 0D   B98A 1064                                        BEQ    LB8B1           ;C=1, (A)=$46 Z=1
-B97D:4C 52 B9     1065                                        JMP    ErrHndlr
-B980:             1066 ;
-B980:AD A4 BB     1067 LB8A7                             LDA    GFIftype
-B983:C5 51        1068                                        CMP    FileType
-B985:F0 02   B989 1069                                        BEQ    LB8B0           ;C=0, Z=1
-B987:A9 11        1070                                        LDA    #$11            ;File type mismatch (C=0,Z=0, (A)=$11)
-B989:18           1071 LB8B0                              CLC
-B98A:60           1072 LB8B1                              RTS
-B98B:             1073 ;=================================================
-B98B:             1074 ; ($B8B2) Setup file name
-B98B:             1075 ; Input
-B98B:             1076 ;  (Reg4)=ptr to the filename
-B98B:             1077 ;
-B98B:        B98B 1078 SetupFN                         EQU    *               ;ENTRY
-B98B:A0 00        1079                                        LDY    #0
-B98D:B1 08        1080 LB8B4                             LDA    (Reg4),Y
-B98F:F0 0F   B9A0 1081                                        BEQ    LB8C7           ;null-terminated
-B991:29 7F        1082                                        AND    #$7F
-B993:C9 20        1083                                        CMP    #SPACE
-B995:F0 09   B9A0 1084                                        BEQ    LB8C7           ;Ignore rest of text
-B997:99 1A BC     1085                                        STA    FileNameB+1,Y
-B99A:99 81 02     1086                                        STA    TxBuf2+1,Y
-B99D:C8           1087                                         INY
-B99E:10 ED   B98D 1088                                        BPL    LB8B4
-B9A0:8C 19 BC     1089 LB8C7                             STY    FileNameB       ;len byte of filename
-B9A3:8C 80 02     1090                                        STY    TxBuf2
-B9A6:60           1091                                         RTS
-B9A7:             1092 ;=================================================
-B9A7:             1093 ; ($B8CE) Open the file for reading. All files BIN/TXT files
-B9A7:             1094 ; are opened for reading and writing using this rtn
-B9A7:             1095 ; Input
-B9A7:             1096 ;  (X,Y)- ptr to 1024-byte buffer of PRODOS to use
-B9A7:             1097 ;  PathNameP - Pathname of file to be opened
-B9A7:             1098 ;
-B9A7:        B9A7 1099 OpenDFile                     EQU    *               ;ENTRY
-B9A7:8E 5E BB     1100                                        STX    IOBufP
-B9AA:8C 5F BB     1101                                        STY    IOBufP+1
-B9AD:20 00 BF     1102                                        JSR    PRODOS8
-B9B0:C8           1103                                        DB     $C8
-B9B1:5B BB        1104                                        DW     OpenPB
-B9B3:90 03   B9B8 1105                                        BCC    LB8DF
-B9B5:4C 52 B9     1106                                        JMP    ErrHndlr
-B9B8:             1107 ;
-B9B8:AD 60 BB     1108 LB8DF                             LDA    OpenRN
-B9BB:8D 62 BB     1109                                        STA    ReadRN
-B9BE:8D 6A BB     1110                                        STA    WriteRN
-B9C1:8D 9C BB     1111                                        STA    GeofRN
-B9C4:8D D0 BB     1112                                        STA    CloseRN
-B9C7:60           1113                                         RTS
-B9C8:             1114 ;================================================= 
-B9C8:             1115 ; ($B8EF)
-B9C8:             1116 ;
-B9C8:        B9C8 1117 ClsFile                         EQU    *               ;ENTRY
-B9C8:20 00 BF     1118                                        JSR    PRODOS8
-B9CB:CC           1119                                        DB     $CC
-B9CC:CF BB        1120                                        DW     CloseP
-B9CE:F0 03   B9D3 1121                                        BEQ    LB8FA
-B9D0:4C 52 B9     1122                                        JMP    ErrHndlr
-B9D3:             1123 ;
-B9D3:8D D0 BB     1124 LB8FA                             STA    CloseRN         ;zero ref #
-B9D6:60           1125                                         RTS
-B9D7:             1126 ;=================================================
-B9D7:             1127 ; ($B8FE)
-B9D7:             1128 ; (A)-error code
-B9D7:             1129 ; Preserved (A)
-B9D7:             1130 ;
-B9D7:        B9D7 1131 ClsFile2                       EQU    *               ;ENTRY
-B9D7:48           1132                                         PHA
-B9D8:20 C8 B9     1133                                        JSR    ClsFile
-B9DB:68           1134                                         PLA
-B9DC:60           1135                                         RTS
-B9DD:             1136 ;=================================================
-B9DD:        B9DD 1137 LB904                             EQU    *               ;ENTRY
-B9DD:20 00 BF     1138                                        JSR    PRODOS8
-B9E0:C3           1139                                        DB     $C3
-B9E1:B2 BB        1140                                        DW     SFInfoP
-B9E3:60           1141                                         RTS
-B9E4:             1142 ;
-B9E4:        B9E4 1143 LB90B                             EQU    *               ;ENTRY
-B9E4:20 00 BF     1144                                        JSR    PRODOS8
-B9E7:C1           1145                                        DB     $C1
-B9E8:CC BB        1146                                        DW     DestroyP
-B9EA:60           1147                                         RTS
-B9EB:             1148 ;
-B9EB:        B9EB 1149 LB912                             EQU    *               ;ENTRY
-B9EB:20 00 BF     1150                                        JSR    PRODOS8
-B9EE:C2           1151                                        DB     $C2
-B9EF:D1 BB        1152                                        DW     RenameP
-B9F1:60           1153                                         RTS
-B9F2:             1154 ;
-B9F2:        B9F2 1155 LB919                             EQU    *               ;ENTRY
-B9F2:20 00 BF     1156                                        JSR    PRODOS8
-B9F5:C0           1157                                        DB     $C0
-B9F6:C0 BB        1158                                        DW     CreateP
-B9F8:60           1159                                         RTS
-B9F9:             1160 ;
-B9F9:        B9F9 1161 LB920                             EQU    *               ;ENTRY
-B9F9:20 00 BF     1162                                        JSR    PRODOS8
-B9FC:CB           1163                                        DB     $CB
-B9FD:69 BB        1164                                        DW     WritePB
-B9FF:60           1165                                         RTS
-BA00:             1166 ;
-BA00:        BA00 1167 LB927                             EQU    *               ;ENTRY
-BA00:20 00 BF     1168                                        JSR    PRODOS8
-BA03:D0           1169                                        DB     $D0
-BA04:8D BB        1170                                        DW     SeofP
-BA06:60           1171                                         RTS
-BA07:             1172 ;=================================================
-BA07:             1173 ; Used by EXIT cmd to transfer control
-BA07:             1174 ; to a SYSTEM program 
-BA07:             1175 ;
-BA07:        BA07 1176 LB92E                             EQU    *               ;ENTRY
-BA07:AD 81 C0     1177                                        LDA    ROMIN2
-BA0A:AD 81 C0     1178                                        LDA    ROMIN2
-BA0D:4C 00 20     1179                                        JMP    L2000
-BA10:             1180 ;=================================================
-BA10:             1181 ; ($B937) Open and read the entire file (modules)
-BA10:             1182 ; into memory. We must check the file size
-BA10:             1183 ; Input
-BA10:             1184 ;  (A)-filetype
-BA10:             1185 ;  (Reg4) - ptr to filename
-BA10:             1186 ;  ReadDBuf - Mem location to read into
-BA10:             1187 ;
-BA10:             1188 ; Output
-BA10:             1189 ;  C=1 - error
-BA10:             1190 ;  (A) - error code
-BA10:             1191 ;  C=0 - file loaded successfully
-BA10:             1192 ;
-BA10:        BA10 1193 OpenNRd                         EQU    *               ;ENTRY
-BA10:20 5C B9     1194                                        JSR    CkAttrF         ;Check file's attributes
-BA13:B0 29   BA3E 1195                                        BCS    LB965           ;Not found
-BA15:D0 26   BA3D 1196                                        BNE    LB964           ;Found but wrong type
-BA17:             1197 ;
-BA17:A2 00        1198                                        LDX    #>XA900         ;1024-byte I/O buffer
-BA19:A0 A9        1199                                        LDY    #<XA900
-BA1B:20 A7 B9     1200                                        JSR    OpenDFile
-BA1E:20 3F BA     1201                                        JSR    CkSizeF
-BA21:B0 17   BA3A 1202                                        BCS    LB961           ;too big
-BA23:             1203 ;
-BA23:AD 9D BB     1204                                        LDA    fileEOF
-BA26:8D 65 BB     1205                                        STA    ReadLen
-BA29:AD 9E BB     1206                                        LDA    fileEOF+1
-BA2C:8D 66 BB     1207                                        STA    ReadLen+1
-BA2F:20 00 BF     1208                                        JSR    PRODOS8
-BA32:CA           1209                                        DB     $CA
-BA33:61 BB        1210                                        DW     ReadPB
-BA35:B0 03   BA3A 1211                                        BCS    LB961
-BA37:4C C8 B9     1212                                        JMP    ClsFile         ;C=0, (A)=0
-BA3A:             1213 ;
-BA3A:20 D7 B9     1214 LB961                             JSR    ClsFile2        ;(A)=errcode
-BA3D:38           1215 LB964                              SEC
-BA3E:60           1216 LB965                              RTS
-BA3F:             1217 ;=================================================
-BA3F:             1218 ; ($B966) Check size of file to be read
-BA3F:             1219 ; Output
-BA3F:             1220 ;  (A)=error code
-BA3F:             1221 ;  C=1 - file too large
-BA3F:             1222 ;
-BA3F:        BA3F 1223 CkSizeF                         EQU    *               ;ENTRY
-BA3F:20 00 BF     1224                                        JSR    PRODOS8
-BA42:D1           1225                                        DB     $D1
-BA43:9B BB        1226                                        DW     GeofP
-BA45:B0 2C   BA73 1227                                        BCS    LB99A
-BA47:             1228 ;
-BA47:AD 9F BB     1229                                        LDA    fileEOF+2       ;More than 64K
-BA4A:D0 24   BA70 1230                                        BNE    LB997           ;File is too large
-BA4C:EE 65 BB     1231                                        INC    ReadLen
-BA4F:D0 03   BA54 1232                                        BNE    LB97B
-BA51:EE 66 BB     1233                                        INC    ReadLen+1
-BA54:             1234 ; 
-BA54:AD 9D BB     1235 LB97B                             LDA    fileEOF         ;Is  file's EOF>=ReadLen?
-BA57:CD 65 BB     1236                                        CMP    ReadLen
-BA5A:AD 9E BB     1237                                        LDA    fileEOF+1
-BA5D:ED 66 BB     1238                                        SBC    ReadLen+1
-BA60:08           1239                                         PHP
-BA61:AD 65 BB     1240                                        LDA    ReadLen
-BA64:D0 03   BA69 1241                                        BNE    LB990
-BA66:CE 66 BB     1242                                        DEC    ReadLen+1
-BA69:CE 65 BB     1243 LB990                             DEC    ReadLen
-BA6C:28           1244                                         PLP
-BA6D:B0 01   BA70 1245                                        BCS    LB997           ;yes
-BA6F:60           1246                                         RTS
-BA70:A9 10        1247 LB997                             LDA    #$10            ;err code
-BA72:38           1248                                         SEC
-BA73:60           1249 LB99A                              RTS
-BA74:             1250 ;=================================================
-BA74:             1251 ; ($B99B)
-BA74:             1252 ; Input
-BA74:             1253 ;  (A) - byte value to be converted
-BA74:             1254 ; Output
-BA74:             1255 ;  (X,A) - Hex Digits
-BA74:             1256 ;
-BA74:        BA74 1257 Cnv2Hex                         EQU    *               ;ENTRY
-BA74:48           1258                                         PHA                    ;Convert to 2 HEX digits
-BA75:4A           1259                                        LSR                    ;Shift upper nybble
-BA76:4A           1260                                        LSR
-BA77:4A           1261                                        LSR
-BA78:4A           1262                                        LSR
-BA79:20 7E BA     1263                                        JSR    LB9A5
-BA7C:AA           1264                                         TAX                    ;Save in X
-BA7D:68           1265                                         PLA
-BA7E:29 0F        1266 LB9A5                             AND    #$0F
-BA80:09 30        1267                                        ORA    #'0'
-BA82:C9 3A        1268                                        CMP    #'9'+1
-BA84:90 02   BA88 1269                                        BCC    LB9AF
-BA86:69 06        1270                                        ADC    #$06
-BA88:60           1271 LB9AF                              RTS
-BA89:             1272 ;=================================================
-BA89:             1273 ; EXEC command
-BA89:             1274 ; Ref pg 62 for lots of info on use of EXEC files
-BA89:             1275 ;
-BA89:        BA89 1276 LB9B0                             EQU    *               ;ENTRY
-BA89:14 80 BD     1277                                        SET    R4,XBD80
-BA8C:00           1278                                         RTN
-BA8D:             1279 ;
-BA8D:        BA8D 1280 LB9B4                             EQU    *
-BA8D:24 53        1281                                        BIT    ExecMode        ;exec mode?
-BA8F:10 0B   BA9C 1282                                        BPL    LB9C3           ;No
-BA91:06 53        1283                                        ASL    ExecMode
-BA93:AD 72 BB     1284                                        LDA    RdExeRN         ;Close the old EXEC file first
-BA96:8D D0 BB     1285                                        STA    CloseRN
-BA99:20 C8 B9     1286                                        JSR    ClsFile
-BA9C:A9 04        1287 LB9C3                             LDA    #TXTtype
-BA9E:20 5C B9     1288                                        JSR    CkAttrF
-BAA1:90 03   BAA6 1289                                        BCC    LB9CD           ;Found
-BAA3:             1290 ;
-BAA3:4C DB B6     1291 LB9CA                             JMP    PrErrMsg        ;Not Found
-BAA6:             1292 ;
-BAA6:D0 FB   BAA3 1293 LB9CD                             BNE    LB9CA           ;Wrong type
-BAA8:             1294 ; 
-BAA8:A2 00        1295                                        LDX    #>XAD00         ;1024-byte I/O buf for ProDOS8
-BAAA:A0 AD        1296                                        LDY    #<XAD00
-BAAC:20 A7 B9     1297                                        JSR    OpenDFile
-BAAF:             1298 ;
-BAAF:             1299 ; Set to read file in new line mode
-BAAF:             1300 ;
-BAAF:        BAAF 1301 LB9D6                             EQU    *
-BAAF:AD 60 BB     1302                                        LDA    OpenRN
-BAB2:8D 7A BB     1303                                        STA    NewLineRN
-BAB5:8D 72 BB     1304                                        STA    RdExeRN
-BAB8:20 00 BF     1305                                        JSR    PRODOS8
-BABB:C9           1306                                        DB     $C9
-BABC:79 BB        1307                                        DW     NewLinePB
-BABE:B0 E3   BAA3 1308                                        BCS    LB9CA
-BAC0:A9 80        1309                                        LDA    #$80            ;Flag we are in exec mode
-BAC2:85 53        1310                                        STA    ExecMode
-BAC4:4C CB B1     1311                                        JMP    LB1CB
-BAC7:             1312 ;=================================================
-BAC7:             1313 ; Used by the SWAP command
-BAC7:             1314 ;
-BAC7:        0004 1315 LB9EE                             DS     4,0             ;TxtBgn,TxtEnd for file1 ;ENTRY
-BACB:        0041 1316 LB9F2                             DS     65,SPACE        ;Pathname buf for file1
-BB0C:        0004 1317 LBA33                             DS     4,0             ;TxtBgn,TxtEnd for file2 ;ENTRY
-BB10:        0041 1318 LBA37                             DS     65,SPACE        ;Pathname buf for file2
-BB51:             1319 ;
-BB51:        0008 1320 LBA78                             DS     8,0             ;SW16 subrtn ret addr stack ;ENTRY
-BB59:             1321 ;
-BB59:00 00        1322 FreeMem                         DW     $0000           ;# of free mem pages ;ENTRY
-BB5B:             1323 ;
-BB5B:             1324 ; ($BA82) Open Parameter Block. Use to open all files.
-BB5B:             1325 ; The ptr to the pathname and file I/O buffer must be set
-BB5B:             1326 ;
-BB5B:03           1327 OpenPB                           DB     $03
-BB5C:00 00        1328 PathNameP                     DW     $0000
-BB5E:00 00        1329 IOBufP                           DW     $0000           ;1024-byte buffer
-BB60:A0           1330 OpenRN                           DB     $A0             ;ENTRY
-BB61:             1331 ;
-BB61:             1332 ; $BA88
-BB61:             1333 ;
-BB61:04           1334 ReadPB                           DB     $04
-BB62:B0           1335 ReadRN                           DB     $B0
-BB63:A0 A0        1336 ReadDBuf                       DW     $A0A0           ;Data Buffer ;ENTRY
-BB65:A0 A0        1337 ReadLen                         DW     $A0A0           ;ENTRY
-BB67:A0 A0        1338 LBA8E                             DW     $A0A0           ;ENTRY
-BB69:             1339 ;
-BB69:             1340 ; $BA90
-BB69:             1341 ;
-BB69:04           1342 WritePB                         DB     $04
-BB6A:B2           1343 WriteRN                         DB     $B2             ;ENTRY
-BB6B:C9 D5        1344                                        DW     $D5C9           ;ENTRY
-BB6D:A0 D0        1345                                        DW     $D0A0           ;ENTRY
-BB6F:A0 A0        1346                                        DW     $A0A0
-BB71:             1347 ;
-BB71:             1348 ; Used by EXEC file
-BB71:             1349 ;
-BB71:04           1350 RdExecP                         DB     $04
-BB72:A0           1351 RdExeRN                         DB     $A0
-BB73:00 02        1352                                        DW     InBuf
-BB75:FF 00        1353                                        DW     255
-BB77:C0 A0        1354 LBA9E                             DW     $A0C0           ;# of chars actually read 
-BB79:             1355 ;
-BB79:03           1356 NewLinePB                     DB     $03             ;ENTRY
-BB7A:A0           1357 NewLineRN                     DB     $A0             ;ENTRY
-BB7B:7F           1358                                        DB     $7F             ;ignore msb
-BB7C:0D           1359                                        DB     CR              ;newline char
-BB7D:             1360 ;
-BB7D:             1361 ; Use by the CATALOG/CAT cmd
-BB7D:             1362 ;
-BB7D:04           1363 LBAA4                             DB     $04             ;ENTRY
-BB7E:00           1364                                        DB     $00             ;ENTRY
-BB7F:D1 A8        1365                                        DW     XA8D1
-BB81:00 00        1366                                        DW     $0000           ;ENTRY
-BB83:00 00        1367                                        DW     $0000
-BB85:             1368 ;
-BB85:             1369 ; Use to skip last 5 bytes of a dir block
-BB85:             1370 ;
-BB85:04           1371 LBAAC                             DB     $04             ;ENTRY
-BB86:00           1372                                        DB     $00             ;ENTRY
-BB87:F1 A8        1373                                        DW     XA8D1+$20
-BB89:05 00        1374                                        DW     $0005           ;# of bytes
-BB8B:00 00        1375                                        DW     $0000
-BB8D:             1376 ;
-BB8D:02           1377 SeofP                             DB     $02
-BB8E:C0           1378 LBAB5                             DB     $C0             ;ENTRY
-BB8F:        0003 1379 LBAB6                             DS     3,0             ;ENTRY
-BB92:             1380 ;
-BB92:01           1381 SPfx1P                           DB     $01
-BB93:59 BC        1382                                        DW     CurrPfxB
-BB95:             1383 ;
-BB95:             1384 ;
-BB95:01           1385 LBABC                             DB     $01             ;ENTRY
-BB96:59 BC        1386                                        DW     CurrPfxB
-BB98:             1387 ;
-BB98:             1388 ; Set prefix to dir from which EdAsm.System was launched
-BB98:             1389 ;
-BB98:01           1390 SPfxEdAsm                     DB     $01
-BB99:79 BE        1391                                        DW     EdAsmDir
-BB9B:             1392 ;
-BB9B:02           1393 GeofP                             DB     $02
-BB9C:A0           1394 GeofRN                           DB     $A0
-BB9D:        0003 1395 fileEOF                         DS     3,$A0
-BBA0:             1396 ;
-BBA0:0A           1397 GFInfoP                         DB     10
-BBA1:A0 A0        1398 GFIPath                         DW     $A0A0           ;ENTRY
-BBA3:A0           1399 LBACA                             DB     $A0             ;ENTRY
-BBA4:D6           1400 GFIftype                       DB     $D6             ;ENTRY
-BBA5:C9 D5        1401 LBACC                             DW     $D5C9           ;ENTRY
-BBA7:A0           1402 LBACE                             DB     $A0             ;ENTRY
-BBA8:A0 A0        1403 LBACF                             DW     $A0A0           ;ENTRY
-BBAA:A0 A0        1404 LBAD1                             DW     $A0A0           ;ENTRY
-BBAC:A0 CF        1405                                        DW     $CFA0
-BBAE:FF A0        1406                                        DW     $A0FF
-BBB0:A0 A0        1407                                        DW     $A0A0
-BBB2:             1408 ; $DAD9
-BBB2:07           1409 SFInfoP                         DB     $07
-BBB3:A0 A0        1410 LBADA                             DW     $A0A0           ;ENTRY
-BBB5:A0           1411 LBADC                             DB     $A0             ;ENTRY
-BBB6:A0           1412 LBADD                             DB     $A0             ;ENTRY
-BBB7:C5 A0        1413 LBADE                             DW     $A0C5           ;ENTRY
-BBB9:A0           1414                                        DB     $A0 
-BBBA:A0 A0        1415                                        DW     $A0A0
-BBBC:00 00        1416 LBAE3                             DW     $0000           ;ENTRY
-BBBE:00 00        1417                                        DW     $0000
-BBC0:             1418 ;
-BBC0:07           1419 CreateP                         DB     $07
-BBC1:A0 A0        1420 LBAE8                             DW     $A0A0           ;ENTRY
-BBC3:C3           1421 LBAEA                             DB     $C3             ;ENTRY
-BBC4:04           1422 LBAEB                             DB     $04             ;ENTRY
-BBC5:00 00        1423 LBAEC                             DW     $0000           ;ENTRY
-BBC7:01           1424 LBAEE                             DB     $01             ;ENTRY
-BBC8:00 00        1425                                        DW     $0000
-BBCA:00 00        1426                                        DW     $0000
-BBCC:             1427 ;
-BBCC:01           1428 DestroyP                       DB     $01
-BBCD:A0 C5        1429 LBAF4                             DW     $C5A0           ;ENTRY
-BBCF:             1430 ;
-BBCF:01           1431 CloseP                           DB     $01
-BBD0:A0           1432 CloseRN                         DB     $A0             ;ENTRY
-BBD1:             1433 ;
-BBD1:02           1434 RenameP                         DB     $02
-BBD2:19 BC        1435                                        DW     FileNameB
-BBD4:00 00        1436 LBAFB                             DW     $0000           ;ENTRY
-BBD6:             1437 ;
-BBD6:             1438 ; Online
-BBD6:             1439 ;
-BBD6:02           1440 LBAFD                             DB     $02             ;ENTRY
-BBD7:00           1441 LBAFE                             DB     $00             ;ENTRY
-BBD8:00 A9        1442                                        DW     XA900
-BBDA:             1443 ;
-BBDA:02           1444 LBB01                             DB     $02
-BBDB:AA A0        1445                                        DW     $A0AA
-BBDD:A0 A0        1446                                        DW     $A0A0
-BBDF:             1447 ;
-BBDF:00           1448 ExitFlag                       DB     $00             ;Used by the Error Handler
-BBE0:             1449 ;
-BBE0:45 44 41 53  1450 EdStr                             ASC    'EDASM.ED'
-BBE8:00           1451                                        DB     $00
-BBE9:45 44 41 53  1452 AsmStr                           ASC    'EDASM.ASM'
-BBF2:00           1453                                        DB     $00
-BBF3:        BBF3 1454 BIStr                             EQU    *               ;ENTRY
-BBF3:42 41 53 49  1455                                        ASC    'BASIC.SYSTEM'
-BBFF:00           1456                                        DB     $00
-BC00:             1457 ;
-BC00:             1458 ; The random bytes below are generated by DS statement
-BC00:             1459 ;
-BC00:        BC00 1460 LBB27                             EQU    *               ;ENTRY
-BC00:D1 A0 35 3E  1461                                        DB     $D1,$A0,$35,$3E,$CF,$D5,$D4,$CE
-BC08:C1 CD 45 21  1462                                        DB     $C1,$CD,$45,$21,$51,$A2,$23,$3F
-BC10:CF D5 D4 D4  1463                                        DB     $CF,$D5,$D4,$D4,$C9,$D4,$CC,$45
-BC18:21           1464                                        DB     $21
-BC19:             1465 ;
-BC19:             1466 ; $BB40
-BC19:             1467 ;
-BC19:        BC19 1468 FileNameB                     EQU    *
-BC19:32 A2 5A 3E  1469                                        DB     $32,$A2,$5A,$3E,$C3,$C1,$D4,$CC
-BC21:CF CF 50 20  1470                                        DB     $CF,$CF,$50,$20,$EF,$A0,$6D,$3F
-BC29:CE C5 D8 D4  1471                                        DB     $CE,$C5,$D8,$D4,$C3,$C1,$54,$21
-BC31:6D A2 67 3E  1472                                        DB     $6D,$A2,$67,$3E,$C3,$C1,$D4,$C5
-BC39:CE C4 C5 44  1473                                        DB     $CE,$C4,$C5,$44,$21,$0D,$A1,$72
-BC41:3E C3 C1 D4  1474                                        DB     $3E,$C3,$C1,$D4,$C1,$D3,$43,$21 
-BC49:96 A3 88 3E  1475                                        DB     $96,$A3,$88,$3E,$C3,$C1,$D4,$CF
-BC51:D5 54 21 16  1476                                        DB     $D5,$54,$21,$16,$A1,$C4,$42,$D4
-BC59:             1477 ;
-BC59:             1478 ; $BB80
-BC59:             1479 ;
-BC59:        BC59 1480 CurrPfxB                       EQU    *               ;ENTRY
-BC59:D3 D4 CB C5  1481                                        DB     $D3,$D4,$CB,$C5,$59,$21,$11,$DD
-BC61:94 3E C3 C1  1482                                        DB     $94,$3E,$C3,$C1,$D4,$C6,$CF,$CF
-BC69:54 21 2A A1  1483                                        DB     $54,$21,$2A,$A1,$A0,$3E,$C3,$C1
-BC71:D4 CF D5 D4  1484                                        DB     $D4,$CF,$D5,$D4,$31,$20,$1E,$A1
-BC79:CF 3E C3 C1  1485                                        DB     $CF,$3E,$C3,$C1,$D4,$C6,$D8,$C9
-BC81:54 21 9E A1  1486                                        DB     $54,$21,$9E,$A1,$28,$46,$D3,$D0
-BC89:C1 C3 C1 54  1487                                        DB     $C1,$C3,$C1,$54,$21,$54,$A5,$76
-BC91:45 C6 CF CF  1488                                        DB     $45,$C6,$CF,$CF,$D4,$CC,$C7,$48
-BC99:01 3E 00 2A  1489                                        DB     $01,$3E,$00,$2A,$41,$CD,$CF,$D6
-BCA1:C6 CF CF 54  1490                                        DB     $C6,$CF,$CF,$54,$20,$5E,$A1,$17
-BCA9:3F C3 C1 D4  1491                                        DB     $3F,$C3,$C1,$D4,$C6,$CF,$CF,$D4
-BCB1:52 21 F4 A1  1492                                        DB     $52,$21,$F4,$A1,$4C,$41,$C1,$C3
-BCB9:C3 48 21 AE  1493                                        DB     $C3,$48,$21,$AE,$A5,$BC,$3F,$D4
-BCC1:CF D4 CC C2  1494                                        DB     $CF,$D4,$CC,$C2,$CC,$CB,$53,$21
-BCC9:2D A2 8C 40  1495                                        DB     $2D,$A2,$8C,$40,$C8,$C5,$D8,$C4
-BCD1:C5 43 21 0F  1496                                        DB     $C5,$43,$21,$0F,$A5,$22,$42,$D5
-BCD9:             1497 ;
-BCD9:             1498 ; $BC00 - Buf to save the most recent List cmd
-BCD9:             1499 ;
-BCD9:        BCD9 1500 SavCmdB                         EQU    *
-BCD9:D3 C5 C4 C2  1501                                        DB     $D3,$C5,$C4,$C2,$CC,$CB,$53,$21
-BCE1:16 A2 00 00  1502                                        DB     $16,$A2,$00,$00,$C6,$D2,$C5,$C5
-BCE9:C2 CC CB 53  1503                                        DB     $C2,$CC,$CB,$53,$21,$00,$A2,$5F
-BCF1:40 C3 C1 D4  1504                                        DB     $40,$C3,$C1,$D4,$C9,$D4,$CC,$31
-BCF9:20 A3 A1 31  1505                                        DB     $20,$A3,$A1,$31,$3F,$CF,$D5,$D4
-BD01:C9 D4 CC C5  1506                                        DB     $C9,$D4,$CC,$C5,$CC,$50,$20,$34
-BD09:A2 3D 3F CF  1507                                        DB     $A2,$3D,$3F,$CF,$D5,$D4,$C9,$D4
-BD11:CC 32 21 3F  1508                                        DB     $CC,$32,$21,$3F,$A2,$49,$3F,$CF
-BD19:D5 D4 C9 D4  1509                                        DB     $D5,$D4,$C9,$D4,$CC,$33,$21,$50
-BD21:A2 57 3F CF  1510                                        DB     $A2,$57,$3F,$CF,$D5,$D4,$C9,$D4
-BD29:CC C5 CC 51  1511                                        DB     $CC,$C5,$CC,$51,$20,$45,$A2,$5A
-BD31:42 CF D5 D4  1512                                        DB     $42,$CF,$D5,$D4,$CE,$CC,$50,$20
-BD39:5C A2 79 3F  1513                                        DB     $5C,$A2,$79,$3F,$C3,$D2,$C5,$C1
-BD41:C4 31 21 7E  1514                                        DB     $C4,$31,$21,$7E,$A2,$84,$3F,$CE
-BD49:C5 D8 D4 CF  1515                                        DB     $C5,$D8,$D4,$CF,$C6,$46,$20,$7C
-BD51:A2 00 00 C3  1516                                        DB     $A2,$00,$00,$C3,$D2,$C5,$C1,$C4
-BD59:             1517 ;
-BD59:             1518 ; $BC80
-BD59:             1519 ;
-BD59:        BD59 1520 ExecLineB                     EQU    *
-BD59:32 21 90 A2  1521                                        DB     $32,$21,$90,$A2,$57,$4B,$CE,$C5
-BD61:D8 D4 C3 58  1522                                        DB     $D8,$D4,$C3,$58,$21,$9C,$A2,$9A
-BD69:3F D0 D2 C5  1523                                        DB     $3F,$D0,$D2,$C5,$C6,$C9,$58,$20
-BD71:9E A2 A5 3F  1524                                        DB     $9E,$A2,$A5,$3F,$D0,$D2,$C5,$C7
-BD79:C5 54 21 E1  1525                                        DB     $C5,$54,$21,$E1,$A2,$B0,$3F,$D0
-BD81:D2 C5 D3 C5  1526                                        DB     $D2,$C5,$D3,$C5,$54,$21,$BD,$A2
-BD89:D3 3F D0 D2  1527                                        DB     $D3,$3F,$D0,$D2,$C5,$D3,$C5,$D4
-BD91:31 21 BE A2  1528                                        DB     $31,$21,$BE,$A2,$C8,$3F,$D0,$C6
-BD99:D8 CE D5 CC  1529                                        DB     $D8,$CE,$D5,$CC,$4C,$60,$AF,$A2
-BDA1:D5 40 D0 C6  1530                                        DB     $D5,$40,$D0,$C6,$D8,$D8,$C9,$54
-BDA9:60 BA A2 DF  1531                                        DB     $60,$BA,$A2,$DF,$3F,$D0,$D2,$C5
-BDB1:CD CF D6 45  1532                                        DB     $CD,$CF,$D6,$45,$20,$C2,$A2,$F9
-BDB9:3F D0 D2 C5  1533                                        DB     $3F,$D0,$D2,$C5,$C6,$C5,$CE,$44
-BDC1:21 D3 A2 4E  1534                                        DB     $21,$D3,$A2,$4E,$42,$D3,$D4,$D2 
-BDC9:D3 C5 D4 D0  1535                                        DB     $D3,$C5,$D4,$D0,$C6,$58,$21,$EF
-BDD1:A2 05 40 D0  1536                                        DB     $A2,$05,$40,$D0,$D2,$C5,$D3
-BDD8:        BDD8 1537 CIEnd                             EQU    *
-   3C A1               3E A2               42 A4             BBE9 ASMSTR        
+B3D3:35 36 3A 32   473                                        ASC    '56:28 '
+B3D9:              474 ;=================================================
+B3D9:              475 ; EI's CSW entry point
+B3D9:              476 ; (A) = char to be printed
+B3D9:              477 ;
+B3D9:        B3D9  478 LB3D9                             EQU    *               ;ENTRY
+B3D9:C9 E0         479                                        CMP    #'a'-1+$80
+B3DB:90 0B   B3E8  480                                        BCC    LB3E8           ;Is char a-z?
+B3DD:C9 FB         481                                        CMP    #'z'+1+$80
+B3DF:B0 07   B3E8  482                                        BCS    LB3E8
+B3E1:2C 98 BF      483                                        BIT    MACHID          ;Is ][?
+B3E4:30 02   B3E8  484                                        BMI    LB3E8           ;No, //e or //c or /// emulation
+B3E6:29 1F         485                                        AND    #$1F            ;a-z -> $01-$1A
+B3E8:C9 9D         486 LB3E8                             CMP    #$9D            ;ctrl-] - clrEOL
+B3EA:D0 0A   B3F6  487                                        BNE    LB3F6
+B3EC:98            488                                         TYA
+B3ED:48            489                                         PHA
+B3EE:20 9C FC      490                                        JSR    CLREOL
+B3F1:68            491                                         PLA
+B3F2:A8            492                                         TAY
+B3F3:A9 9D         493                                        LDA    #$9D
+B3F5:60            494                                         RTS
+B3F6:              495 ;
+B3F6:C9 8C         496 LB3F6                             CMP    #FF+$80         ; ctlr-L - form feed?
+B3F8:D0 0A   B404  497                                        BNE    LB404
+B3FA:98            498                                         TYA
+B3FB:48            499                                         PHA
+B3FC:20 58 FC      500                                        JSR    HOME
+B3FF:68            501                                         PLA
+B400:A8            502                                         TAY
+B401:A9 8C         503                                        LDA    #FF+$80
+B403:60            504                                         RTS
+B404:              505 ;
+B404:2C 82 C0      506 LB404                             BIT    RDROM2
+B407:4C F0 FD      507                                        JMP    COUT1           ;Call Monitor's ROM rtn
+B40A:              508 ;=================================================
+B40A:              509 ; Command Interpreter's Error messages
+B40A:              510 ;
+B40A:50 41 54 48   511 LB40A                             ASC    'PATH/FILENAME MISSING' ;ENTRY
+B41F:0D            512                                        DB     CR
+B420:53 59 4E 54   513 LB420                             ASC    'SYNTAX'        ;ENTRY
+B426:0D            514                                        DB     CR 
+B427:42 41 44 20   515 LB427                             ASC    'BAD FORMAT' ;ENTRY
+B431:0D            516                                        DB     CR
+B432:4D 45 4D 4F   517 LB432                             ASC    'MEMORY FULL' ;ENTRY
+B43D:0D            518                                        DB     CR
+B43E:42 41 44 20   519 LB43E                             ASC    'BAD RANGE' ;ENTRY
+B447:0D            520                                        DB     CR
+B448:49 4E 56 41   521 LB448                             ASC    'INVALID PARAMETER ' ;ENTRY
+B45A:0D            522                                        DB     CR
+B45B:41 4C 4C 20   523 LB45B                             ASC    'ALL OR SOME?(A/S)?' ;ENTRY
+B46D:0D            524                                        DB     CR
+B46E:46 49 4C 45   525 LB46E                             ASC    'FILE NOT FOUND'
+B47C:0D            526                                        DB     CR
+B47D:46 49 4C 45   527 LB47D                             ASC    'FILE TYPE MISMATCH'
+B48F:0D            528                                        DB     CR
+B490:57 52 49 54   529 LB490                             ASC    'WRITE PROTECTED'
+B49F:0D            530                                        DB     CR
+B4A0:46 49 4C 45   531 LB4A0                             ASC    'FILE LOCKED'
+B4AB:0D            532                                        DB     CR
+B4AC:42 41 44 20   533 LB4AC                             ASC    'BAD PATH/FILE NAME'
+B4BE:0D            534                                        DB     CR
+B4BF:46 49 4C 45   535 LB4BF                             ASC    'FILE SIZE MISMATCH'
+B4D1:0D            536                                        DB     CR
+B4D2:46 49 4C 45   537 LB4D2                             ASC    'FILE TOO LARGE'
+B4E0:0D            538                                        DB     CR
+B4E1:44 49 53 4B   539 LB4E1                             ASC    'DISK FULL'
+B4EA:0D            540                                        DB     CR
+B4EB:44 49 53 4B   541 LB4EB                             ASC    'DISK I/O FAILURE'
+B4FB:0D            542                                        DB     CR
+B4FC:50 52 4F 44   543 LB4FC                             ASC    'PRODOS ERROR=$'
+B50A:              544 ;
+B50A:58 58         545 HexStr                           DW     $5858
+B50C:0D            546                                        DB     CR
+B50D:44 49 52 45   547 LB50D                             ASC    'DIRECTORY NOT FOUND' ;ENTRY
+B520:0D            548                                        DB     CR
+B521:20 54 48 45   549 LB521                             ASC    ' THE FILE IS LOCKED.  DESTROY ANYWAY (Y/N)?' ;ENTRY
+B54C:0D            550                                        DB     CR
+B54D:50 41 54 48   551 LB54D                             ASC    'PATH NOT FOUND'
+B55B:0D            552                                        DB     CR
+B55C:44 55 50 4C   553 LB55C                             ASC    'DUPLICATE FILE NAME'
+B56F:0D            554                                        DB     CR
+B570:44 49 52 45   555 LB570                             ASC    'DIRECTORY FULL'
+B57E:0D            556                                        DB     CR
+B57F:50 4C 45 41   557 LB57F                             ASC    'PLEASE RE-MOUNT '
+B58F:80            558                                        DB     $80
+B590:50 52 45 53   559 LB590                             ASC    'PRESS RETURN TO CONTINUE '
+B5A9:80            560                                        DB     $80
+B5AA:41 53 53 45   561 LB5AA                             ASC    'ASSEMBLER NOT ONLINE'
+B5BE:0D            562                                        DB     CR
+B5BF:              563 ;=================================================
+B5BF:              564 ; ($B5BF) Command interpreter's error message table
+B5BF:              565 ; Each entry consists of 3 bytes
+B5BF:              566 ;
+B5BF:        B5BF  567 ErrTable                       EQU    *
+B5BF:10            568                                        DB     $10             ;error code
+B5C0:D2 B4         569                                        DW     LB4D2           ;msg ptr
+B5C2:11            570                                        DB     $11
+B5C3:7D B4         571                                        DW     LB47D
+B5C5:12            572                                        DB     $12
+B5C6:BF B4         573                                        DW     LB4BF
+B5C8:27            574                                        DB     $27 
+B5C9:EB B4         575                                        DW     LB4EB
+B5CB:2A            576                                        DB     $2A
+B5CC:EB B4         577                                        DW     LB4EB
+B5CE:2B            578                                        DB     $2B
+B5CF:90 B4         579                                        DW     LB490
+B5D1:48            580                                        DB     $48
+B5D2:E1 B4         581                                        DW     LB4E1
+B5D4:46            582                                        DB     $46
+B5D5:6E B4         583                                        DW     LB46E
+B5D7:40            584                                        DB     $40
+B5D8:AC B4         585                                        DW     LB4AC
+B5DA:4B            586                                        DB     $4B
+B5DB:AC B4         587                                        DW     LB4AC
+B5DD:4E            588                                        DB     $4E
+B5DE:A0 B4         589                                        DW     LB4A0
+B5E0:44            590                                        DB     $44
+B5E1:4D B5         591                                        DW     LB54D
+B5E3:45            592                                        DB     $45
+B5E4:0D B5         593                                        DW     LB50D
+B5E6:47            594                                        DB     $47
+B5E7:5C B5         595                                        DW     LB55C
+B5E9:49            596                                        DB     $49
+B5EA:70 B5         597                                        DW     LB570
+B5EC:FC            598                                        DB     $FC
+B5ED:AA B5         599                                        DW     LB5AA
+B5EF:FD            600                                        DB     $FD
+B5F0:90 B5         601                                        DW     LB590
+B5F2:FE            602                                        DB     $FE
+B5F3:7F B5         603                                        DW     LB57F
+B5F5:FF            604                                        DB     $FF
+B5F6:FC B4         605                                        DW     LB4FC
+B5F8:              606 ;=================================================
+B5F8:              607 ; ($B5F8)
+B5F8:              608 ; Input
+B5F8:              609 ;  (A)=error code
+B5F8:              610 ;
+B5F8:        B5F8  611 FatalErr                       EQU    *               ;ENTRY
+B5F8:AA            612                                         TAX                    ;error code
+B5F9:68            613                                         PLA                    ;dump RTS addr
+B5FA:68            614                                         PLA
+B5FB:8A            615                                         TXA
+B5FC:4C 02 B6      616                                        JMP    PrErrMsg
+B5FF:              617 ;=================================================
+B5FF:              618 ;
+B5FF:20 FE B8      619 LB5FF                             JSR    ClsFile2        ;ENTRY
+B602:              620 ;
+B602:              621 ; ($B602) Print Error Message and return to CI mainloop
+B602:              622 ;  (A) - error code
+B602:              623 ;
+B602:        B602  624 PrErrMsg                       EQU    *               ;ENTRY
+B602:20 08 B6      625                                        JSR    PrErrMsg2
+B605:4C 98 B1      626                                        JMP    EIWrmStrt
+B608:              627 ;=================================================
+B608:              628 ; ($B608)
+B608:              629 ; Input
+B608:              630 ;  (A)=error code
+B608:              631 ;
+B608:A2 39         632 PrErrMsg2                     LDX    #$39
+B60A:CA            633 LB60A                              DEX
+B60B:CA            634                                         DEX 
+B60C:CA            635                                         DEX
+B60D:30 3A   B649  636                                        BMI    LB649           ;Not found
+B60F:DD BF B5      637                                        CMP    ErrTable,X      ;Is this the error code?
+B612:D0 F6   B60A  638                                        BNE    LB60A           ;keep searching
+B614:              639 ;
+B614:E8            640                                         INX
+B615:BD BF B5      641                                        LDA    ErrTable,X      ;msg ptr
+B618:85 12         642                                        STA    Z12             ;Reg9
+B61A:E8            643                                         INX
+B61B:BD BF B5      644                                        LDA    ErrTable,X
+B61E:85 13         645                                        STA    Z12+1
+B620:              646 ;
+B620:        B620  647 LB620                             EQU    *               ;ENTRY
+B620:A9 45         648                                        LDA    #'E'
+B622:20 43 B3      649                                        JSR    PrChar
+B625:A9 52         650                                        LDA    #'R'
+B627:20 43 B3      651                                        JSR    PrChar
+B62A:20 43 B3      652                                        JSR    PrChar
+B62D:20 3D B3      653                                        JSR    RingBell
+B630:A9 3A         654                                        LDA    #':'
+B632:20 43 B3      655                                        JSR    PrChar
+B635:A9 20         656                                        LDA    #SPACE
+B637:20 43 B3      657                                        JSR    PrChar
+B63A:              658 ;
+B63A:A0 00         659                                        LDY    #0
+B63C:B1 12         660 LB63C                             LDA    (Z12),Y         ;Reg9
+B63E:30 08   B648  661                                        BMI    LB648
+B640:20 43 B3      662                                        JSR    PrChar
+B643:C8            663                                         INY
+B644:C9 0D         664                                        CMP    #CR
+B646:D0 F4   B63C  665                                        BNE    LB63C
+B648:60            666 LB648                              RTS
+B649:              667 ;
+B649:              668 ; Error code not in our table
+B649:              669 ; Just show a generic error message
+B649:              670 ;
+B649:85 72         671 LB649                             STA    ErrCode         ;error code
+B64B:20 9B B9      672                                        JSR    Cnv2Hex
+B64E:8D 0B B5      673                                        STA    HexStr+1
+B651:8E 0A B5      674                                        STX    HexStr
+B654:A9 FF         675                                        LDA    #$FF            ;Show err msg w/errcode in hex
+B656:4C 08 B6      676                                        JMP    PrErrMsg2
+B659:              677 ;=================================================
+B659:        B659  678 LB659                             EQU    *               ;ENTRY
+B659:A9 0D         679                                        LDA    #CR
+B65B:C5 12         680                                        CMP    Z12
+B65D:F0 03   B662  681                                        BEQ    LB662
+B65F:4C 8E B2      682                                        JMP    LB28E           ;cmd syntax
+B662:              683 ;
+B662:              684 ; 3 of the commands get some special treament viz
+B662:              685 ; ASM, END and LIST
+B662:              686 ;
+B662:A9 00         687 LB662                             LDA    #$00
+B664:85 01         688                                        STA    Z00+1
+B666:20 7E B2      689                                        JSR    GetToken        ;Get token fr Cmd table
+B669:85 00         690                                        STA    Z00
+B66B:F0 79   B6E6  691                                        BEQ    LB6E6           ;ASM cmd
+B66D:              692 ;
+B66D:C9 5C         693                                        CMP    #$5C            ;END cmd
+B66F:F0 33   B6A4  694                                        BEQ    LB6A4 
+B671:C9 26         695                                        CMP    #$26            ;LIST cmd?
+B673:D0 05   B67A  696                                        BNE    LB67A
+B675:20 AF B2      697                                        JSR    LB2AF           ;Yes, make a copy of cmd
+B678:A5 00         698                                        LDA    Z00
+B67A:A4 00         699 LB67A                             LDY    Z00
+B67C:C0 5D         700                                        CPY    #$5D            ;']' - sentinel value
+B67E:90 02   B682  701                                        BCC    LB682
+B680:              702 ; $D680
+B680:A0 00         703                                        LDY    #0
+B682:B9 A2 DF      704 LB682                             LDA    XDFA2,Y
+B685:85 04         705                                        STA    Z04             ;Set SW16 R2 w/JMP addr-1
+B687:C8            706                                         INY
+B688:B9 A2 DF      707                                        LDA    XDFA2,Y
+B68B:85 05         708                                        STA    Z04+1
+B68D:8D 80 C0      709                                        STA    RDBANK2
+B690:24 54         710                                        BIT    PtrMode         ;Is Printer on?
+B692:10 03   B697  711                                        BPL    LB697           ;No
+B694:20 10 D6      712                                        JSR    XD610           ;Init printer
+B697:              713 ;
+B697:              714 ; The last instruction of the Sweet16 code below
+B697:              715 ; will take us to the addr stored in R2 since
+B697:              716 ; R15 is SW16's PC
+B697:              717 ;
+B697:20 00 D0      718 LB697                             JSR    NEWSW16
+B69A:10 0D 00      719                                        SET    R0,CR
+B69D:F5            720                                        DCR    R5
+B69E:55            721                                        STI    R5
+B69F:22            722                                        LD     R2
+B6A0:1C 00 BD      723                                        SET    R12,XBD00
+B6A3:3F            724                                        ST     R15
+B6A4:              725 ;=================================================
+B6A4:              726 ; END cmd
+B6A4:              727 ;
+B6A4:        B6A4  728 LB6A4                             EQU    *
+B6A4:A5 74         729                                        LDA    SwapMode        ;Do we have a split txt buf?
+B6A6:D0 42   B6EA  730                                        BNE    LB6EA           ;Yes, so can't quit
+B6A8:20 72 A8      731                                        JSR    XA872           ;Load Quit Code
+B6AB:A2 00         732                                        LDX    #$00            ;Slot #
+B6AD:20 8A A7      733                                        JSR    XA78A           ;Init I/O Hooks
+B6B0:              734 ;
+B6B0:AD 81 C0      735                                        LDA    ROMIN2
+B6B3:AD 81 C0      736                                        LDA    ROMIN2
+B6B6:A9 60         737                                        LDA    #$60            ;RTS
+B6B8:8D F8 03      738                                        STA    USRADR
+B6BB:A9 00         739                                        LDA    #>BASCLD
+B6BD:8D F2 03      740                                        STA    SOFTEV
+B6C0:A9 E0         741                                        LDA    #<BASCLD        ;Vector @ $E000 -> $F128
+B6C2:8D F3 03      742                                        STA    SOFTEV+1
+B6C5:A9 45         743                                        LDA    #$45
+B6C7:8D F4 03      744                                        STA    PWREDUP
+B6CA:20 89 FE      745                                        JSR    SETKBD
+B6CD:20 93 FE      746                                        JSR    SETVID
+B6D0:20 58 FC      747                                        JSR    HOME
+B6D3:20 00 BF      748                                        JSR    PRODOS8
+B6D6:65            749                                        DB     $65
+B6D7:DF B6         750                                        DW     QuitP
+B6D9:              751 ;
+B6D9:        B6D9  752 LB6D9                             EQU    *
+B6D9:8D FF 02      753                                        STA    InBuf+$FF
+B6DC:4C 00 E0      754                                        JMP    BASCLD          ;Do a Monitor cold Start 
+B6DF:              755 ;
+B6DF:04            756 QuitP                             DB     $04
+B6E0:00            757                                        DB     $00             ;If quit type $EE,
+B6E1:00 00         758                                        DW     $0000           ; addr of launch pathname
+B6E3:00            759                                        DB     $00             ; reserved
+B6E4:00 00         760                                        DW     $0000
+B6E6:              761 ;=================================================
+B6E6:              762 ; Prepare for Assembly
+B6E6:              763 ;
+B6E6:        B6E6  764 LB6E6                             EQU    *
+B6E6:A5 74         765                                        LDA    SwapMode        ;Do we have a split txt buf?
+B6E8:F0 05   B6EF  766                                        BEQ    LB6EF           ;No
+B6EA:        B6EA  767 LB6EA                             EQU    *               ;ENTRY
+B6EA:A2 41         768                                        LDX    #$41            ;Multi-buffer
+B6EC:4C 90 B2      769                                        JMP    LB290
+B6EF:              770 ;
+B6EF:A5 0F         771 LB6EF                             LDA    TxtEnd+1        ;Is edit buffer empty?
+B6F1:C5 0B         772                                        CMP    TxtBgn+1
+B6F3:D0 06   B6FB  773                                        BNE    LB6FB
+B6F5:A5 0E         774                                        LDA    TxtEnd
+B6F7:C5 0A         775                                        CMP    TxtBgn
+B6F9:F0 05   B700  776                                        BEQ    LB700           ;Yes
+B6FB:A2 47         777 LB6FB                             LDX    #$47            ;'Buffer'
+B6FD:4C 90 B2      778                                        JMP    LB290
+B700:              779 ;
+B700:A9 20         780 LB700                             LDA    #SPACE
+B702:A2 10         781                                        LDX    #16
+B704:9D 64 BE      782 LB704                             STA    DateTime,X      ;Prepare data area
+B707:CA            783                                         DEX
+B708:10 FA   B704  784                                        BPL    LB704
+B70A:              785 ;
+B70A:20 00 BF      786                                        JSR    PRODOS8
+B70D:82            787                                        DB     $82             ;Get time
+B70E:0E B7         788                                        DW     *
+B710:20 55 9E      789                                        JSR    X9E55           ;Date/Time Conversion
+B713:              790 ;
+B713:              791 ; The assembler uses the Editor's first 3 tabs
+B713:              792 ; if the 1st tab col of user-defined tab
+B713:              793 ; table is < 12. Otherwise, a modified tab
+B713:              794 ; table is passed to the assembler
+B713:              795 ;
+B713:A0 02         796                                        LDY    #2
+B715:A6 68         797 LB715                             LDX    UserTabT        ;Get 1st tab col
+B717:E0 0C         798                                        CPX    #12
+B719:90 0E   B729  799                                        BCC    LB729
+B71B:B9 68 00      800                                        LDA    UserTabT,Y
+B71E:              801 ; DB $B9,$68,$00
+B71E:18            802                                         CLC
+B71F:69 11         803                                        ADC    #17
+B721:99 60 BE      804 LB721                             STA    TabTable,Y      ;Tabs table passed to the assembler
+B724:88            805                                         DEY
+B725:10 EE   B715  806                                        BPL    LB715
+B727:30 05   B72E  807                                        BMI    DoAsmbly        ;always
+B729:              808 ;
+B729:B9 11 9D      809 LB729                             LDA    X9D11,Y         ;Editor's default tab table
+B72C:D0 F3   B721  810                                        BNE    LB721           ;always
+B72E:              811 ;
+B72E:A9 00         812 DoAsmbly                       LDA    #$00
+B730:85 54         813                                        STA    PtrMode         ;Disable Printer
+B732:20 D9 B7      814                                        JSR    LoadAsm 
+B735:AD 80 C0      815                                        LDA    RDBANK2
+B738:20 00 78      816                                        JSR    X7800           ;xfer control to Assembler
+B73B:20 41 B7      817                                        JSR    LB741           ;Re-load EdAsm.Ed
+B73E:4C AB B1      818                                        JMP    EIMainLoop
+B741:              819 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+B741:              820 ; Set prefix to EdAsm's Launch dir
+B741:              821 ; Load the Editor's modules into mem
+B741:              822 ; Relocator module loaded @ $8900-$98FF to
+B741:              823 ; $D000 LC Bank2
+B741:              824 ; Return to caller if successful else crash into Monitor
+B741:              825 ;
+B741:        B741  826 LB741                             EQU    *
+B741:20 36 B8      827                                        JSR    LB836           ;Set prefix to EdAsm's Dir
+B744:90 2E   B774  828                                        BCC    LoadDEd
+B746:A9 FE         829                                        LDA    #$FE            ;Re-mount...
+B748:20 08 B6      830                                        JSR    PrErrMsg2
+B74B:              831 ;
+B74B:              832 ; Print EDASM's launch dir. This directory contains
+B74B:              833 ; the files EDASM.SYSTEM, EDASM.ED and EDASM.ASM
+B74B:              834 ; $BE79-BA(65 bytes incl leading and trailing /'s)
+B74B:              835 ;
+B74B:A0 00         836                                        LDY    #0
+B74D:AE 79 BE      837                                        LDX    EdAsmDir        ;len byte
+B750:B9 7A BE      838 LB750                             LDA    EdAsmDir+1,Y
+B753:20 43 B3      839                                        JSR    PrChar
+B756:C8            840                                         INY
+B757:CA            841                                         DEX
+B758:D0 F6   B750  842                                        BNE    LB750
+B75A:              843 ;
+B75A:20 39 B3      844                                        JSR    PrtCR
+B75D:A9 FD         845                                        LDA    #$FD            ;Press return...
+B75F:20 08 B6      846                                        JSR    PrErrMsg2
+B762:              847 ;
+B762:AD 00 C0      848 WaitK1                           LDA    KBD
+B765:10 FB   B762  849                                        BPL    WaitK1
+B767:2C 10 C0      850                                        BIT    KBDSTROBE
+B76A:C9 8D         851                                        CMP    #CR+$80
+B76C:D0 F4   B762  852                                        BNE    WaitK1
+B76E:20 39 B3      853                                        JSR    PrtCR
+B771:4C 41 B7      854                                        JMP    LB741           ;try again
+B774:              855 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+B774:              856 ; Load the file EDASM.ED
+B774:              857 ;
+B774:              858 ; $9900-$A8FF - Editor overlay
+B774:              859 ; $D000-$DFFF - Editor code
+B774:              860 ;
+B774:A9 00         861 LoadDEd                         LDA    #>LoadAdrEd
+B776:8D 8A BA      862                                        STA    ReadDBuf
+B779:A9 89         863                                        LDA    #<LoadAdrEd
+B77B:8D 8B BA      864                                        STA    ReadDBuf+1
+B77E:A9 00         865                                        LDA    #$00
+B780:8D 8C BA      866                                        STA    ReadLen         ;$2000
+B783:A9 20         867                                        LDA    #$20
+B785:8D 8D BA      868                                        STA    ReadLen+1
+B788:A2 07         869                                        LDX    #>EdStr
+B78A:A0 BB         870                                        LDY    #<EdStr
+B78C:20 44 B8      871                                        JSR    LoadMod
+B78F:B0 2E   B7BF  872                                        BCS    LB7BF
+B791:              873 ;
+B791:A9 00         874                                        LDA    #>LoadAdrEd 
+B793:85 3C         875                                        STA    A1              ;start addr
+B795:A9 89         876                                        LDA    #<LoadAdrEd
+B797:85 3D         877                                        STA    A1+1
+B799:A9 FF         878                                        LDA    #>LoadAdrEd+$1000-1
+B79B:85 3E         879                                        STA    A2              ;end addr
+B79D:A9 98         880                                        LDA    #<LoadAdrEd+$1000-1
+B79F:85 3F         881                                        STA    A2+1
+B7A1:A9 FF         882                                        LDA    #$FF
+B7A3:8D 6C BF      883                                        STA    BitMap+20       ;Reserve pages $A0-$A7
+B7A6:A9 1F         884                                        LDA    #%00011111      ;Mark pages $98-$9A
+B7A8:8D 6B BF      885                                        STA    BitMap+19       ; as free
+B7AB:              886 ;
+B7AB:              887 ; ($B7AB) Move code btwn $8900-$98FF to the LC Bank2
+B7AB:              888 ; Also referenced by Editor to move Quit Code
+B7AB:              889 ; back to LC Bank2
+B7AB:              890 ;
+B7AB:        B7AB  891 Mv2LCB2                         EQU    *               ;ENTRY
+B7AB:A9 00         892                                        LDA    #>XD000         ;dest addr
+B7AD:85 42         893                                        STA    A4
+B7AF:A9 D0         894                                        LDA    #<XD000
+B7B1:85 43         895                                        STA    A4+1
+B7B3:AD 81 C0      896                                        LDA    ROMIN2
+B7B6:AD 81 C0      897                                        LDA    ROMIN2
+B7B9:A0 00         898                                        LDY    #$00
+B7BB:20 2C FE      899                                        JSR    MOVE            ;Monitor rtn
+B7BE:60            900                                         RTS
+B7BF:              901 ;
+B7BF:              902 ; Error loading Editor's Modules
+B7BF:              903 ;
+B7BF:85 72         904 LB7BF                             STA    ErrCode         ;A=err code
+B7C1:BA            905                                         TSX
+B7C2:86 73         906                                        STX    StackP2
+B7C4:A2 80         907                                        LDX    #$80
+B7C6:9A            908                                         TXS
+B7C7:AD 82 C0      909                                        LDA    RDROM2
+B7CA:20 89 FE      910                                        JSR    SETKBD
+B7CD:20 93 FE      911                                        JSR    SETVID
+B7D0:20 58 FC      912                                        JSR    HOME
+B7D3:20 2D FF      913                                        JSR    PRERR
+B7D6:4C 65 FF      914                                        JMP    MON             ;Crash!
+B7D9:              915 ;=================================================
+B7D9:              916 ; Load the file EDASM.ASM
+B7D9:              917 ; $7800-$9EFF - Assembler overlay
+B7D9:              918 ; $D000-$DFFF (bank2) - Assembler tables,
+B7D9:              919 ;  Sorting,print symbol tables
+B7D9:              920 ;=================================================
+B7D9:        B7D9  921 LoadAsm                         EQU    *
+B7D9:20 36 B8      922                                        JSR    LB836           ;Set prefix to EdAsm's Boot Dir
+B7DC:90 08   B7E6  923                                        BCC    LB7E6
+B7DE:20 3D B8      924                                        JSR    LB83D           ;Set to user's prefix
+B7E1:A9 FC         925                                        LDA    #$FC            ;err code
+B7E3:4C 02 B6      926                                        JMP    PrErrMsg
+B7E6:              927 ;
+B7E6:A9 00         928 LB7E6                             LDA    #$00            ;Setup the bit map
+B7E8:8D 6C BF      929                                        STA    BitMap+20       ;Mark pages $98-$A7
+B7EB:8D 6B BF      930                                        STA    BitMap+19       ; as free
+B7EE:              931 ;
+B7EE:A9 00         932                                        LDA    #$00
+B7F0:8D 8C BA      933                                        STA    ReadLen         ;=$4000
+B7F3:A9 40         934                                        LDA    #$40 
+B7F5:8D 8D BA      935                                        STA    ReadLen+1
+B7F8:A9 00         936                                        LDA    #>LoadAdrAsm
+B7FA:8D 8A BA      937                                        STA    ReadDBuf
+B7FD:A9 68         938                                        LDA    #<LoadAdrAsm
+B7FF:8D 8B BA      939                                        STA    ReadDBuf+1
+B802:A2 10         940                                        LDX    #>AsmStr
+B804:A0 BB         941                                        LDY    #<AsmStr
+B806:20 44 B8      942                                        JSR    LoadMod
+B809:90 17   B822  943                                        BCC    LB822
+B80B:              944 ;
+B80B:C9 45         945                                        CMP    #$45            ;vol not mounted
+B80D:F0 08   B817  946                                        BEQ    LB817
+B80F:C9 46         947                                        CMP    #$46            ;file not found
+B811:F0 04   B817  948                                        BEQ    LB817
+B813:C9 44         949                                        CMP    #$44            ;non-existent file
+B815:D0 02   B819  950                                        BNE    LB819
+B817:              951 ;
+B817:A9 FC         952 LB817                             LDA    #$FC
+B819:20 08 B6      953 LB819                             JSR    PrErrMsg2
+B81C:20 41 B7      954                                        JSR    LB741           ;Load Editor's Modules
+B81F:4C 98 B1      955                                        JMP    EIWrmStrt
+B822:              956 ;
+B822:              957 ; Assembler's modules successfully loaded
+B822:              958 ;
+B822:A9 00         959 LB822                             LDA    #>LoadAdrAsm
+B824:85 3C         960                                        STA    A1              ;start addr
+B826:A9 68         961                                        LDA    #<LoadAdrAsm
+B828:85 3D         962                                        STA    A1+1
+B82A:A9 FF         963                                        LDA    #>LoadAdrAsm+$1000-1
+B82C:85 3E         964                                        STA    A2
+B82E:A9 77         965                                        LDA    #<LoadAdrAsm+$1000-1
+B830:85 3F         966                                        STA    A2+1            ;end addr
+B832:20 AB B7      967                                        JSR    Mv2LCB2         ;Set dest addr and do move
+B835:60            968                                         RTS
+B836:              969 ;=================================================
+B836:              970 ; Set prefix to EdAsm's Boot Dir
+B836:              971 ;
+B836:        B836  972 LB836                             EQU    *               ;ENTRY
+B836:20 00 BF      973                                        JSR    PRODOS8
+B839:C6            974                                        DB     $C6
+B83A:BF BA         975                                        DW     SPfxEdAsm
+B83C:60            976                                         RTS
+B83D:              977 ;
+B83D:              978 ; Set prefix to user's prefix
+B83D:              979 ;
+B83D:20 00 BF      980 LB83D                             JSR    PRODOS8
+B840:C6            981                                        DB     $C6
+B841:B9 BA         982                                        DW     SPfx1P
+B843:60            983                                         RTS
+B844:              984 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+B844:              985 ; ($B844) Load EdAsm's modules
+B844:              986 ; EdAsm.Ed or EdAsm.Asm are loaded into memory
+B844:              987 ; Input
+B844:              988 ;  (X,Y) - ptr to filename
+B844:              989 ;
+B844:        B844  990 LoadMod                         EQU    *               ;ENTRY
+B844:A9 FF         991                                        LDA    #$FF
+B846:8D 06 BB      992                                        STA    ExitFlag
+B849:86 08         993                                        STX    Reg4            ;ptr to file name
+B84B:84 09         994                                        STY    Reg4+1 
+B84D:A9 06         995                                        LDA    #BINtype
+B84F:20 37 B9      996                                        JSR    OpenNRd
+B852:08            997                                         PHP                    ;Save error status
+B853:4E 06 BB      998                                        LSR    ExitFlag        ;Set/reset msb with the Carry-bit
+B856:48            999                                         PHA
+B857:20 3D B8     1000                                        JSR    LB83D           ;Set to user's prefix
+B85A:68           1001                                         PLA
+B85B:28           1002                                         PLP
+B85C:60           1003                                         RTS
+B85D:             1004 ;=================================================
+B85D:             1005 ; Effectively "emptying" the textedit buffer
+B85D:             1006 ;
+B85D:A5 0A        1007 LB85D                             LDA    TxtBgn
+B85F:85 0E        1008                                        STA    TxtEnd
+B861:A5 0B        1009                                        LDA    TxtBgn+1
+B863:85 0F        1010                                        STA    TxtEnd+1
+B865:60           1011                                         RTS
+B866:             1012 ;=================================================
+B866:             1013 ; Set default prefix to the user's prefix
+B866:             1014 ;
+B866:20 00 BF     1015 LB866                             JSR    PRODOS8
+B869:C6           1016                                        DB     $C6
+B86A:B9 BA        1017                                        DW     SPfx1P
+B86C:D0 01   B86F 1018                                        BNE    LB86F
+B86E:60           1019                                         RTS
+B86F:             1020 ;
+B86F:        B86F 1021 LB86F                             EQU    *               ;ENTRY
+B86F:C9 40        1022                                        CMP    #$40            ;Invalid pathname
+B871:F0 03   B876 1023                                        BEQ    LB876
+B873:4C 79 B8     1024                                        JMP    ErrHndlr
+B876:             1025 ;
+B876:4C 02 B6     1026 LB876                             JMP    PrErrMsg
+B879:             1027 ;=================================================
+B879:             1028 ; EI's error handler
+B879:             1029 ; Input
+B879:             1030 ;  ExitFlag - $00,$FF,$8x
+B879:             1031 ;
+B879:        B879 1032 ErrHndlr                       EQU    *
+B879:2C 06 BB     1033                                        BIT    ExitFlag
+B87C:10 02   B880 1034                                        BPL    LB880
+B87E:38           1035                                         SEC
+B87F:60           1036                                         RTS
+B880:             1037 ;
+B880:4C F8 B5     1038 LB880                             JMP    FatalErr
+B883:             1039 ;=================================================
+B883:             1040 ; ($B883) Check attributes of file (if it exists)
+B883:             1041 ; Input
+B883:             1042 ;  (A)-filetype
+B883:             1043 ; Output
+B883:             1044 ;  (A) - error code if not found/wrong filetype
+B883:             1045 ;  C=1 - Not found
+B883:             1046 ;  C=0, Z=0 - Found but wrong filetype
+B883:             1047 ;  C=0, Z=1 - Found
+B883:             1048 ;
+B883:        B883 1049 CkAttrF                         EQU    *               ;ENTRY
+B883:85 51        1050                                        STA    FileType        ;ftype
+B885:20 B2 B8     1051                                        JSR    SetupFN
+B888:A9 40        1052                                        LDA    #>FileNameB
+B88A:8D C8 BA     1053                                        STA    GFIPath
+B88D:8D 83 BA     1054                                        STA    PathNameP 
+B890:A9 BB        1055                                        LDA    #<FileNameB
+B892:8D C9 BA     1056                                        STA    GFIPath+1
+B895:8D 84 BA     1057                                        STA    PathNameP+1
+B898:20 00 BF     1058                                        JSR    PRODOS8
+B89B:C4           1059                                        DB     $C4
+B89C:C7 BA        1060                                        DW     GFInfoP
+B89E:F0 07   B8A7 1061                                        BEQ    LB8A7
+B8A0:             1062 ;
+B8A0:C9 46        1063                                        CMP    #$46            ;file not found
+B8A2:F0 0D   B8B1 1064                                        BEQ    LB8B1           ;C=1, (A)=$46 Z=1
+B8A4:4C 79 B8     1065                                        JMP    ErrHndlr
+B8A7:             1066 ;
+B8A7:AD CB BA     1067 LB8A7                             LDA    GFIftype
+B8AA:C5 51        1068                                        CMP    FileType
+B8AC:F0 02   B8B0 1069                                        BEQ    LB8B0           ;C=0, Z=1
+B8AE:A9 11        1070                                        LDA    #$11            ;File type mismatch (C=0,Z=0, (A)=$11)
+B8B0:18           1071 LB8B0                              CLC
+B8B1:60           1072 LB8B1                              RTS
+B8B2:             1073 ;=================================================
+B8B2:             1074 ; ($B8B2) Setup file name
+B8B2:             1075 ; Input
+B8B2:             1076 ;  (Reg4)=ptr to the filename
+B8B2:             1077 ;
+B8B2:        B8B2 1078 SetupFN                         EQU    *               ;ENTRY
+B8B2:A0 00        1079                                        LDY    #0
+B8B4:B1 08        1080 LB8B4                             LDA    (Reg4),Y
+B8B6:F0 0F   B8C7 1081                                        BEQ    LB8C7           ;null-terminated
+B8B8:29 7F        1082                                        AND    #$7F
+B8BA:C9 20        1083                                        CMP    #SPACE
+B8BC:F0 09   B8C7 1084                                        BEQ    LB8C7           ;Ignore rest of text
+B8BE:99 41 BB     1085                                        STA    FileNameB+1,Y
+B8C1:99 81 02     1086                                        STA    TxBuf2+1,Y
+B8C4:C8           1087                                         INY
+B8C5:10 ED   B8B4 1088                                        BPL    LB8B4
+B8C7:8C 40 BB     1089 LB8C7                             STY    FileNameB       ;len byte of filename
+B8CA:8C 80 02     1090                                        STY    TxBuf2
+B8CD:60           1091                                         RTS
+B8CE:             1092 ;=================================================
+B8CE:             1093 ; ($B8CE) Open the file for reading. All files BIN/TXT files
+B8CE:             1094 ; are opened for reading and writing using this rtn
+B8CE:             1095 ; Input
+B8CE:             1096 ;  (X,Y)- ptr to 1024-byte buffer of PRODOS to use
+B8CE:             1097 ;  PathNameP - Pathname of file to be opened
+B8CE:             1098 ;
+B8CE:        B8CE 1099 OpenDFile                     EQU    *               ;ENTRY
+B8CE:8E 85 BA     1100                                        STX    IOBufP
+B8D1:8C 86 BA     1101                                        STY    IOBufP+1
+B8D4:20 00 BF     1102                                        JSR    PRODOS8
+B8D7:C8           1103                                        DB     $C8
+B8D8:82 BA        1104                                        DW     OpenPB
+B8DA:90 03   B8DF 1105                                        BCC    LB8DF
+B8DC:4C 79 B8     1106                                        JMP    ErrHndlr
+B8DF:             1107 ;
+B8DF:AD 87 BA     1108 LB8DF                             LDA    OpenRN
+B8E2:8D 89 BA     1109                                        STA    ReadRN
+B8E5:8D 91 BA     1110                                        STA    WriteRN
+B8E8:8D C3 BA     1111                                        STA    GeofRN
+B8EB:8D F7 BA     1112                                        STA    CloseRN
+B8EE:60           1113                                         RTS
+B8EF:             1114 ;================================================= 
+B8EF:             1115 ; ($B8EF)
+B8EF:             1116 ;
+B8EF:        B8EF 1117 ClsFile                         EQU    *               ;ENTRY
+B8EF:20 00 BF     1118                                        JSR    PRODOS8
+B8F2:CC           1119                                        DB     $CC
+B8F3:F6 BA        1120                                        DW     CloseP
+B8F5:F0 03   B8FA 1121                                        BEQ    LB8FA
+B8F7:4C 79 B8     1122                                        JMP    ErrHndlr
+B8FA:             1123 ;
+B8FA:8D F7 BA     1124 LB8FA                             STA    CloseRN         ;zero ref #
+B8FD:60           1125                                         RTS
+B8FE:             1126 ;=================================================
+B8FE:             1127 ; ($B8FE)
+B8FE:             1128 ; (A)-error code
+B8FE:             1129 ; Preserved (A)
+B8FE:             1130 ;
+B8FE:        B8FE 1131 ClsFile2                       EQU    *               ;ENTRY
+B8FE:48           1132                                         PHA
+B8FF:20 EF B8     1133                                        JSR    ClsFile
+B902:68           1134                                         PLA
+B903:60           1135                                         RTS
+B904:             1136 ;=================================================
+B904:        B904 1137 LB904                             EQU    *               ;ENTRY
+B904:20 00 BF     1138                                        JSR    PRODOS8
+B907:C3           1139                                        DB     $C3
+B908:D9 BA        1140                                        DW     SFInfoP
+B90A:60           1141                                         RTS
+B90B:             1142 ;
+B90B:        B90B 1143 LB90B                             EQU    *               ;ENTRY
+B90B:20 00 BF     1144                                        JSR    PRODOS8
+B90E:C1           1145                                        DB     $C1
+B90F:F3 BA        1146                                        DW     DestroyP
+B911:60           1147                                         RTS
+B912:             1148 ;
+B912:        B912 1149 LB912                             EQU    *               ;ENTRY
+B912:20 00 BF     1150                                        JSR    PRODOS8
+B915:C2           1151                                        DB     $C2
+B916:F8 BA        1152                                        DW     RenameP
+B918:60           1153                                         RTS
+B919:             1154 ;
+B919:        B919 1155 LB919                             EQU    *               ;ENTRY
+B919:20 00 BF     1156                                        JSR    PRODOS8
+B91C:C0           1157                                        DB     $C0
+B91D:E7 BA        1158                                        DW     CreateP
+B91F:60           1159                                         RTS
+B920:             1160 ;
+B920:        B920 1161 LB920                             EQU    *               ;ENTRY
+B920:20 00 BF     1162                                        JSR    PRODOS8
+B923:CB           1163                                        DB     $CB
+B924:90 BA        1164                                        DW     WritePB
+B926:60           1165                                         RTS
+B927:             1166 ;
+B927:        B927 1167 LB927                             EQU    *               ;ENTRY
+B927:20 00 BF     1168                                        JSR    PRODOS8
+B92A:D0           1169                                        DB     $D0
+B92B:B4 BA        1170                                        DW     SeofP
+B92D:60           1171                                         RTS
+B92E:             1172 ;=================================================
+B92E:             1173 ; Used by EXIT cmd to transfer control
+B92E:             1174 ; to a SYSTEM program 
+B92E:             1175 ;
+B92E:        B92E 1176 LB92E                             EQU    *               ;ENTRY
+B92E:AD 81 C0     1177                                        LDA    ROMIN2
+B931:AD 81 C0     1178                                        LDA    ROMIN2
+B934:4C 00 20     1179                                        JMP    L2000
+B937:             1180 ;=================================================
+B937:             1181 ; ($B937) Open and read the entire file (modules)
+B937:             1182 ; into memory. We must check the file size
+B937:             1183 ; Input
+B937:             1184 ;  (A)-filetype
+B937:             1185 ;  (Reg4) - ptr to filename
+B937:             1186 ;  ReadDBuf - Mem location to read into
+B937:             1187 ;
+B937:             1188 ; Output
+B937:             1189 ;  C=1 - error
+B937:             1190 ;  (A) - error code
+B937:             1191 ;  C=0 - file loaded successfully
+B937:             1192 ;
+B937:        B937 1193 OpenNRd                         EQU    *               ;ENTRY
+B937:20 83 B8     1194                                        JSR    CkAttrF         ;Check file's attributes
+B93A:B0 29   B965 1195                                        BCS    LB965           ;Not found
+B93C:D0 26   B964 1196                                        BNE    LB964           ;Found but wrong type
+B93E:             1197 ;
+B93E:A2 00        1198                                        LDX    #>XA900         ;1024-byte I/O buffer
+B940:A0 A9        1199                                        LDY    #<XA900
+B942:20 CE B8     1200                                        JSR    OpenDFile
+B945:20 66 B9     1201                                        JSR    CkSizeF
+B948:B0 17   B961 1202                                        BCS    LB961           ;too big
+B94A:             1203 ;
+B94A:AD C4 BA     1204                                        LDA    fileEOF
+B94D:8D 8C BA     1205                                        STA    ReadLen
+B950:AD C5 BA     1206                                        LDA    fileEOF+1
+B953:8D 8D BA     1207                                        STA    ReadLen+1
+B956:20 00 BF     1208                                        JSR    PRODOS8
+B959:CA           1209                                        DB     $CA
+B95A:88 BA        1210                                        DW     ReadPB
+B95C:B0 03   B961 1211                                        BCS    LB961
+B95E:4C EF B8     1212                                        JMP    ClsFile         ;C=0, (A)=0
+B961:             1213 ;
+B961:20 FE B8     1214 LB961                             JSR    ClsFile2        ;(A)=errcode
+B964:38           1215 LB964                              SEC
+B965:60           1216 LB965                              RTS
+B966:             1217 ;=================================================
+B966:             1218 ; ($B966) Check size of file to be read
+B966:             1219 ; Output
+B966:             1220 ;  (A)=error code
+B966:             1221 ;  C=1 - file too large
+B966:             1222 ;
+B966:        B966 1223 CkSizeF                         EQU    *               ;ENTRY
+B966:20 00 BF     1224                                        JSR    PRODOS8
+B969:D1           1225                                        DB     $D1
+B96A:C2 BA        1226                                        DW     GeofP
+B96C:B0 2C   B99A 1227                                        BCS    LB99A
+B96E:             1228 ;
+B96E:AD C6 BA     1229                                        LDA    fileEOF+2       ;More than 64K
+B971:D0 24   B997 1230                                        BNE    LB997           ;File is too large
+B973:EE 8C BA     1231                                        INC    ReadLen
+B976:D0 03   B97B 1232                                        BNE    LB97B
+B978:EE 8D BA     1233                                        INC    ReadLen+1
+B97B:             1234 ; 
+B97B:AD C4 BA     1235 LB97B                             LDA    fileEOF         ;Is  file's EOF>=ReadLen?
+B97E:CD 8C BA     1236                                        CMP    ReadLen
+B981:AD C5 BA     1237                                        LDA    fileEOF+1
+B984:ED 8D BA     1238                                        SBC    ReadLen+1
+B987:08           1239                                         PHP
+B988:AD 8C BA     1240                                        LDA    ReadLen
+B98B:D0 03   B990 1241                                        BNE    LB990
+B98D:CE 8D BA     1242                                        DEC    ReadLen+1
+B990:CE 8C BA     1243 LB990                             DEC    ReadLen
+B993:28           1244                                         PLP
+B994:B0 01   B997 1245                                        BCS    LB997           ;yes
+B996:60           1246                                         RTS
+B997:A9 10        1247 LB997                             LDA    #$10            ;err code
+B999:38           1248                                         SEC
+B99A:60           1249 LB99A                              RTS
+B99B:             1250 ;=================================================
+B99B:             1251 ; ($B99B)
+B99B:             1252 ; Input
+B99B:             1253 ;  (A) - byte value to be converted
+B99B:             1254 ; Output
+B99B:             1255 ;  (X,A) - Hex Digits
+B99B:             1256 ;
+B99B:        B99B 1257 Cnv2Hex                         EQU    *               ;ENTRY
+B99B:48           1258                                         PHA                    ;Convert to 2 HEX digits
+B99C:4A           1259                                        LSR                    ;Shift upper nybble
+B99D:4A           1260                                        LSR
+B99E:4A           1261                                        LSR
+B99F:4A           1262                                        LSR
+B9A0:20 A5 B9     1263                                        JSR    LB9A5
+B9A3:AA           1264                                         TAX                    ;Save in X
+B9A4:68           1265                                         PLA
+B9A5:29 0F        1266 LB9A5                             AND    #$0F
+B9A7:09 30        1267                                        ORA    #'0'
+B9A9:C9 3A        1268                                        CMP    #'9'+1
+B9AB:90 02   B9AF 1269                                        BCC    LB9AF
+B9AD:69 06        1270                                        ADC    #$06
+B9AF:60           1271 LB9AF                              RTS
+B9B0:             1272 ;=================================================
+B9B0:             1273 ; EXEC command
+B9B0:             1274 ; Ref pg 62 for lots of info on use of EXEC files
+B9B0:             1275 ;
+B9B0:        B9B0 1276 LB9B0                             EQU    *               ;ENTRY
+B9B0:14 80 BD     1277                                        SET    R4,XBD80
+B9B3:00           1278                                         RTN
+B9B4:             1279 ;
+B9B4:        B9B4 1280 LB9B4                             EQU    *
+B9B4:24 53        1281                                        BIT    ExecMode        ;exec mode?
+B9B6:10 0B   B9C3 1282                                        BPL    LB9C3           ;No
+B9B8:06 53        1283                                        ASL    ExecMode
+B9BA:AD 99 BA     1284                                        LDA    RdExeRN         ;Close the old EXEC file first
+B9BD:8D F7 BA     1285                                        STA    CloseRN
+B9C0:20 EF B8     1286                                        JSR    ClsFile
+B9C3:A9 04        1287 LB9C3                             LDA    #TXTtype
+B9C5:20 83 B8     1288                                        JSR    CkAttrF
+B9C8:90 03   B9CD 1289                                        BCC    LB9CD           ;Found
+B9CA:             1290 ;
+B9CA:4C 02 B6     1291 LB9CA                             JMP    PrErrMsg        ;Not Found
+B9CD:             1292 ;
+B9CD:D0 FB   B9CA 1293 LB9CD                             BNE    LB9CA           ;Wrong type
+B9CF:             1294 ; 
+B9CF:A2 00        1295                                        LDX    #>XAD00         ;1024-byte I/O buf for ProDOS8
+B9D1:A0 AD        1296                                        LDY    #<XAD00
+B9D3:20 CE B8     1297                                        JSR    OpenDFile
+B9D6:             1298 ;
+B9D6:             1299 ; Set to read file in new line mode
+B9D6:             1300 ;
+B9D6:        B9D6 1301 LB9D6                             EQU    *
+B9D6:AD 87 BA     1302                                        LDA    OpenRN
+B9D9:8D A1 BA     1303                                        STA    NewLineRN
+B9DC:8D 99 BA     1304                                        STA    RdExeRN
+B9DF:20 00 BF     1305                                        JSR    PRODOS8
+B9E2:C9           1306                                        DB     $C9
+B9E3:A0 BA        1307                                        DW     NewLinePB
+B9E5:B0 E3   B9CA 1308                                        BCS    LB9CA
+B9E7:A9 80        1309                                        LDA    #$80            ;Flag we are in exec mode
+B9E9:85 53        1310                                        STA    ExecMode
+B9EB:4C CB B1     1311                                        JMP    LB1CB
+B9EE:             1312 ;=================================================
+B9EE:             1313 ; Used by the SWAP command
+B9EE:             1314 ;
+B9EE:        0004 1315 LB9EE                             DS     4,0             ;TxtBgn,TxtEnd for file1 ;ENTRY
+B9F2:        0041 1316 LB9F2                             DS     65,SPACE        ;Pathname buf for file1
+BA33:        0004 1317 LBA33                             DS     4,0             ;TxtBgn,TxtEnd for file2 ;ENTRY
+BA37:        0041 1318 LBA37                             DS     65,SPACE        ;Pathname buf for file2
+BA78:             1319 ;
+BA78:        0008 1320 LBA78                             DS     8,0             ;SW16 subrtn ret addr stack ;ENTRY
+BA80:             1321 ;
+BA80:00 00        1322 FreeMem                         DW     $0000           ;# of free mem pages ;ENTRY
+BA82:             1323 ;
+BA82:             1324 ; ($BA82) Open Parameter Block. Use to open all files.
+BA82:             1325 ; The ptr to the pathname and file I/O buffer must be set
+BA82:             1326 ;
+BA82:03           1327 OpenPB                           DB     $03
+BA83:00 00        1328 PathNameP                     DW     $0000
+BA85:00 00        1329 IOBufP                           DW     $0000           ;1024-byte buffer
+BA87:A0           1330 OpenRN                           DB     $A0             ;ENTRY
+BA88:             1331 ;
+BA88:             1332 ; $BA88
+BA88:             1333 ;
+BA88:04           1334 ReadPB                           DB     $04
+BA89:B0           1335 ReadRN                           DB     $B0
+BA8A:A0 A0        1336 ReadDBuf                       DW     $A0A0           ;Data Buffer ;ENTRY
+BA8C:A0 A0        1337 ReadLen                         DW     $A0A0           ;ENTRY
+BA8E:A0 A0        1338 LBA8E                             DW     $A0A0           ;ENTRY
+BA90:             1339 ;
+BA90:             1340 ; $BA90
+BA90:             1341 ;
+BA90:04           1342 WritePB                         DB     $04
+BA91:B2           1343 WriteRN                         DB     $B2             ;ENTRY
+BA92:C9 D5        1344                                        DW     $D5C9           ;ENTRY
+BA94:A0 D0        1345                                        DW     $D0A0           ;ENTRY
+BA96:A0 A0        1346                                        DW     $A0A0
+BA98:             1347 ;
+BA98:             1348 ; Used by EXEC file
+BA98:             1349 ;
+BA98:04           1350 RdExecP                         DB     $04
+BA99:A0           1351 RdExeRN                         DB     $A0
+BA9A:00 02        1352                                        DW     InBuf
+BA9C:FF 00        1353                                        DW     255
+BA9E:C0 A0        1354 LBA9E                             DW     $A0C0           ;# of chars actually read 
+BAA0:             1355 ;
+BAA0:03           1356 NewLinePB                     DB     $03             ;ENTRY
+BAA1:A0           1357 NewLineRN                     DB     $A0             ;ENTRY
+BAA2:7F           1358                                        DB     $7F             ;ignore msb
+BAA3:0D           1359                                        DB     CR              ;newline char
+BAA4:             1360 ;
+BAA4:             1361 ; Use by the CATALOG/CAT cmd
+BAA4:             1362 ;
+BAA4:04           1363 LBAA4                             DB     $04             ;ENTRY
+BAA5:00           1364                                        DB     $00             ;ENTRY
+BAA6:D1 A8        1365                                        DW     XA8D1
+BAA8:00 00        1366                                        DW     $0000           ;ENTRY
+BAAA:00 00        1367                                        DW     $0000
+BAAC:             1368 ;
+BAAC:             1369 ; Use to skip last 5 bytes of a dir block
+BAAC:             1370 ;
+BAAC:04           1371 LBAAC                             DB     $04             ;ENTRY
+BAAD:00           1372                                        DB     $00             ;ENTRY
+BAAE:F1 A8        1373                                        DW     XA8D1+$20
+BAB0:05 00        1374                                        DW     $0005           ;# of bytes
+BAB2:00 00        1375                                        DW     $0000
+BAB4:             1376 ;
+BAB4:02           1377 SeofP                             DB     $02
+BAB5:C0           1378 LBAB5                             DB     $C0             ;ENTRY
+BAB6:        0003 1379 LBAB6                             DS     3,0             ;ENTRY
+BAB9:             1380 ;
+BAB9:01           1381 SPfx1P                           DB     $01
+BABA:80 BB        1382                                        DW     CurrPfxB
+BABC:             1383 ;
+BABC:             1384 ;
+BABC:01           1385 LBABC                             DB     $01             ;ENTRY
+BABD:80 BB        1386                                        DW     CurrPfxB
+BABF:             1387 ;
+BABF:             1388 ; Set prefix to dir from which EdAsm.System was launched
+BABF:             1389 ;
+BABF:01           1390 SPfxEdAsm                     DB     $01
+BAC0:79 BE        1391                                        DW     EdAsmDir
+BAC2:             1392 ;
+BAC2:02           1393 GeofP                             DB     $02
+BAC3:A0           1394 GeofRN                           DB     $A0
+BAC4:        0003 1395 fileEOF                         DS     3,$A0
+BAC7:             1396 ;
+BAC7:0A           1397 GFInfoP                         DB     10
+BAC8:A0 A0        1398 GFIPath                         DW     $A0A0           ;ENTRY
+BACA:A0           1399 LBACA                             DB     $A0             ;ENTRY
+BACB:D6           1400 GFIftype                       DB     $D6             ;ENTRY
+BACC:C9 D5        1401 LBACC                             DW     $D5C9           ;ENTRY
+BACE:A0           1402 LBACE                             DB     $A0             ;ENTRY
+BACF:A0 A0        1403 LBACF                             DW     $A0A0           ;ENTRY
+BAD1:A0 A0        1404 LBAD1                             DW     $A0A0           ;ENTRY
+BAD3:A0 CF        1405                                        DW     $CFA0
+BAD5:FF A0        1406                                        DW     $A0FF
+BAD7:A0 A0        1407                                        DW     $A0A0
+BAD9:             1408 ; $DAD9
+BAD9:07           1409 SFInfoP                         DB     $07
+BADA:A0 A0        1410 LBADA                             DW     $A0A0           ;ENTRY
+BADC:A0           1411 LBADC                             DB     $A0             ;ENTRY
+BADD:A0           1412 LBADD                             DB     $A0             ;ENTRY
+BADE:C5 A0        1413 LBADE                             DW     $A0C5           ;ENTRY
+BAE0:A0           1414                                        DB     $A0 
+BAE1:A0 A0        1415                                        DW     $A0A0
+BAE3:00 00        1416 LBAE3                             DW     $0000           ;ENTRY
+BAE5:00 00        1417                                        DW     $0000
+BAE7:             1418 ;
+BAE7:07           1419 CreateP                         DB     $07
+BAE8:A0 A0        1420 LBAE8                             DW     $A0A0           ;ENTRY
+BAEA:C3           1421 LBAEA                             DB     $C3             ;ENTRY
+BAEB:04           1422 LBAEB                             DB     $04             ;ENTRY
+BAEC:00 00        1423 LBAEC                             DW     $0000           ;ENTRY
+BAEE:01           1424 LBAEE                             DB     $01             ;ENTRY
+BAEF:00 00        1425                                        DW     $0000
+BAF1:00 00        1426                                        DW     $0000
+BAF3:             1427 ;
+BAF3:01           1428 DestroyP                       DB     $01
+BAF4:A0 C5        1429 LBAF4                             DW     $C5A0           ;ENTRY
+BAF6:             1430 ;
+BAF6:01           1431 CloseP                           DB     $01
+BAF7:A0           1432 CloseRN                         DB     $A0             ;ENTRY
+BAF8:             1433 ;
+BAF8:02           1434 RenameP                         DB     $02
+BAF9:40 BB        1435                                        DW     FileNameB
+BAFB:00 00        1436 LBAFB                             DW     $0000           ;ENTRY
+BAFD:             1437 ;
+BAFD:             1438 ; Online
+BAFD:             1439 ;
+BAFD:02           1440 LBAFD                             DB     $02             ;ENTRY
+BAFE:00           1441 LBAFE                             DB     $00             ;ENTRY
+BAFF:00 A9        1442                                        DW     XA900
+BB01:             1443 ;
+BB01:02           1444 LBB01                             DB     $02
+BB02:AA A0        1445                                        DW     $A0AA
+BB04:A0 A0        1446                                        DW     $A0A0
+BB06:             1447 ;
+BB06:00           1448 ExitFlag                       DB     $00             ;Used by the Error Handler
+BB07:             1449 ;
+BB07:45 44 41 53  1450 EdStr                             ASC    'EDASM.ED'
+BB0F:00           1451                                        DB     $00
+BB10:45 44 41 53  1452 AsmStr                           ASC    'EDASM.ASM'
+BB19:00           1453                                        DB     $00
+BB1A:        BB1A 1454 BIStr                             EQU    *               ;ENTRY
+BB1A:42 41 53 49  1455                                        ASC    'BASIC.SYSTEM'
+BB26:00           1456                                        DB     $00
+BB27:             1457 ;
+BB27:             1458 ; The random bytes below are generated by DS statement
+BB27:             1459 ;
+BB27:        BB27 1460 LBB27                             EQU    *               ;ENTRY
+BB27:D1 A0 35 3E  1461                                        DB     $D1,$A0,$35,$3E,$CF,$D5,$D4,$CE
+BB2F:C1 CD 45 21  1462                                        DB     $C1,$CD,$45,$21,$51,$A2,$23,$3F
+BB37:CF D5 D4 D4  1463                                        DB     $CF,$D5,$D4,$D4,$C9,$D4,$CC,$45
+BB3F:21           1464                                        DB     $21
+BB40:             1465 ;
+BB40:             1466 ; $BB40
+BB40:             1467 ;
+BB40:        BB40 1468 FileNameB                     EQU    *
+BB40:32 A2 5A 3E  1469                                        DB     $32,$A2,$5A,$3E,$C3,$C1,$D4,$CC
+BB48:CF CF 50 20  1470                                        DB     $CF,$CF,$50,$20,$EF,$A0,$6D,$3F
+BB50:CE C5 D8 D4  1471                                        DB     $CE,$C5,$D8,$D4,$C3,$C1,$54,$21
+BB58:6D A2 67 3E  1472                                        DB     $6D,$A2,$67,$3E,$C3,$C1,$D4,$C5
+BB60:CE C4 C5 44  1473                                        DB     $CE,$C4,$C5,$44,$21,$0D,$A1,$72
+BB68:3E C3 C1 D4  1474                                        DB     $3E,$C3,$C1,$D4,$C1,$D3,$43,$21 
+BB70:96 A3 88 3E  1475                                        DB     $96,$A3,$88,$3E,$C3,$C1,$D4,$CF
+BB78:D5 54 21 16  1476                                        DB     $D5,$54,$21,$16,$A1,$C4,$42,$D4
+BB80:             1477 ;
+BB80:             1478 ; $BB80
+BB80:             1479 ;
+BB80:        BB80 1480 CurrPfxB                       EQU    *               ;ENTRY
+BB80:D3 D4 CB C5  1481                                        DB     $D3,$D4,$CB,$C5,$59,$21,$11,$DD
+BB88:94 3E C3 C1  1482                                        DB     $94,$3E,$C3,$C1,$D4,$C6,$CF,$CF
+BB90:54 21 2A A1  1483                                        DB     $54,$21,$2A,$A1,$A0,$3E,$C3,$C1
+BB98:D4 CF D5 D4  1484                                        DB     $D4,$CF,$D5,$D4,$31,$20,$1E,$A1
+BBA0:CF 3E C3 C1  1485                                        DB     $CF,$3E,$C3,$C1,$D4,$C6,$D8,$C9
+BBA8:54 21 9E A1  1486                                        DB     $54,$21,$9E,$A1,$28,$46,$D3,$D0
+BBB0:C1 C3 C1 54  1487                                        DB     $C1,$C3,$C1,$54,$21,$54,$A5,$76
+BBB8:45 C6 CF CF  1488                                        DB     $45,$C6,$CF,$CF,$D4,$CC,$C7,$48
+BBC0:01 3E 00 2A  1489                                        DB     $01,$3E,$00,$2A,$41,$CD,$CF,$D6
+BBC8:C6 CF CF 54  1490                                        DB     $C6,$CF,$CF,$54,$20,$5E,$A1,$17
+BBD0:3F C3 C1 D4  1491                                        DB     $3F,$C3,$C1,$D4,$C6,$CF,$CF,$D4
+BBD8:52 21 F4 A1  1492                                        DB     $52,$21,$F4,$A1,$4C,$41,$C1,$C3
+BBE0:C3 48 21 AE  1493                                        DB     $C3,$48,$21,$AE,$A5,$BC,$3F,$D4
+BBE8:CF D4 CC C2  1494                                        DB     $CF,$D4,$CC,$C2,$CC,$CB,$53,$21
+BBF0:2D A2 8C 40  1495                                        DB     $2D,$A2,$8C,$40,$C8,$C5,$D8,$C4
+BBF8:C5 43 21 0F  1496                                        DB     $C5,$43,$21,$0F,$A5,$22,$42,$D5
+BC00:             1497 ;
+BC00:             1498 ; $BC00 - Buf to save the most recent List cmd
+BC00:             1499 ;
+BC00:        BC00 1500 SavCmdB                         EQU    *
+BC00:D3 C5 C4 C2  1501                                        DB     $D3,$C5,$C4,$C2,$CC,$CB,$53,$21
+BC08:16 A2 00 00  1502                                        DB     $16,$A2,$00,$00,$C6,$D2,$C5,$C5
+BC10:C2 CC CB 53  1503                                        DB     $C2,$CC,$CB,$53,$21,$00,$A2,$5F
+BC18:40 C3 C1 D4  1504                                        DB     $40,$C3,$C1,$D4,$C9,$D4,$CC,$31
+BC20:20 A3 A1 31  1505                                        DB     $20,$A3,$A1,$31,$3F,$CF,$D5,$D4
+BC28:C9 D4 CC C5  1506                                        DB     $C9,$D4,$CC,$C5,$CC,$50,$20,$34
+BC30:A2 3D 3F CF  1507                                        DB     $A2,$3D,$3F,$CF,$D5,$D4,$C9,$D4
+BC38:CC 32 21 3F  1508                                        DB     $CC,$32,$21,$3F,$A2,$49,$3F,$CF
+BC40:D5 D4 C9 D4  1509                                        DB     $D5,$D4,$C9,$D4,$CC,$33,$21,$50
+BC48:A2 57 3F CF  1510                                        DB     $A2,$57,$3F,$CF,$D5,$D4,$C9,$D4
+BC50:CC C5 CC 51  1511                                        DB     $CC,$C5,$CC,$51,$20,$45,$A2,$5A
+BC58:42 CF D5 D4  1512                                        DB     $42,$CF,$D5,$D4,$CE,$CC,$50,$20
+BC60:5C A2 79 3F  1513                                        DB     $5C,$A2,$79,$3F,$C3,$D2,$C5,$C1
+BC68:C4 31 21 7E  1514                                        DB     $C4,$31,$21,$7E,$A2,$84,$3F,$CE
+BC70:C5 D8 D4 CF  1515                                        DB     $C5,$D8,$D4,$CF,$C6,$46,$20,$7C
+BC78:A2 00 00 C3  1516                                        DB     $A2,$00,$00,$C3,$D2,$C5,$C1,$C4
+BC80:             1517 ;
+BC80:             1518 ; $BC80
+BC80:             1519 ;
+BC80:        BC80 1520 ExecLineB                     EQU    *
+BC80:32 21 90 A2  1521                                        DB     $32,$21,$90,$A2,$57,$4B,$CE,$C5
+BC88:D8 D4 C3 58  1522                                        DB     $D8,$D4,$C3,$58,$21,$9C,$A2,$9A
+BC90:3F D0 D2 C5  1523                                        DB     $3F,$D0,$D2,$C5,$C6,$C9,$58,$20
+BC98:9E A2 A5 3F  1524                                        DB     $9E,$A2,$A5,$3F,$D0,$D2,$C5,$C7
+BCA0:C5 54 21 E1  1525                                        DB     $C5,$54,$21,$E1,$A2,$B0,$3F,$D0
+BCA8:D2 C5 D3 C5  1526                                        DB     $D2,$C5,$D3,$C5,$54,$21,$BD,$A2
+BCB0:D3 3F D0 D2  1527                                        DB     $D3,$3F,$D0,$D2,$C5,$D3,$C5,$D4
+BCB8:31 21 BE A2  1528                                        DB     $31,$21,$BE,$A2,$C8,$3F,$D0,$C6
+BCC0:D8 CE D5 CC  1529                                        DB     $D8,$CE,$D5,$CC,$4C,$60,$AF,$A2
+BCC8:D5 40 D0 C6  1530                                        DB     $D5,$40,$D0,$C6,$D8,$D8,$C9,$54
+BCD0:60 BA A2 DF  1531                                        DB     $60,$BA,$A2,$DF,$3F,$D0,$D2,$C5
+BCD8:CD CF D6 45  1532                                        DB     $CD,$CF,$D6,$45,$20,$C2,$A2,$F9
+BCE0:3F D0 D2 C5  1533                                        DB     $3F,$D0,$D2,$C5,$C6,$C5,$CE,$44
+BCE8:21 D3 A2 4E  1534                                        DB     $21,$D3,$A2,$4E,$42,$D3,$D4,$D2 
+BCF0:D3 C5 D4 D0  1535                                        DB     $D3,$C5,$D4,$D0,$C6,$58,$21,$EF
+BCF8:A2 05 40 D0  1536                                        DB     $A2,$05,$40,$D0,$D2,$C5,$D3
+BCFF:        BCFF 1537 CIEnd                             EQU    *
+   3C A1               3E A2               42 A4             BB10 ASMSTR        
  2172 BANNER         E000 BASCLD        ?C300 BASICINT      ?  28 BASL          
    07 BEL            2331 BELL           FBDD BELL1            06 BINTYPE       
-?BBF3 BISTR          BF58 BITMAP           08 BS               76 BUFINDEX      
+?BB1A BISTR          BF58 BITMAP           08 BS               76 BUFINDEX      
 ?C063 BUTN2         ?C060 BUTN3         ?  03 C.ATTR        ?  05 C.AUXID       
 ?  04 C.BLKNUM      ?  02 C.BUFADR      ?  03 C.BUFPTR      ?  0E C.CREDATE     
 ?  10 C.CRETIME     ?  02 C.DATABUF     ?  08 C.DATE        ?  01 C.DEVNUM      
@@ -2355,27 +2355,27 @@ BDD8:        BDD8 1537 CIEnd                             EQU    *
 ?  0C C.MODTIME     ?  03 C.NEWL        ?  03 C.NEWPATH     ?  08 C.OUTBLK      
 ?  05 C.OUTREF      ?  01 C.PATH        ?  00 C.PCNT        ?  01 C.REFNUM      
 ?  04 C.REQCNT      ?  0A C.TIME        ?  06 C.TRANSCNT       75 CASEMODE      
-   24 CH            ?BDD8 CIEND          B95C CKATTRF        BA3F CKSIZEF       
- B341 CLEARSCR       BBCF CLOSEP         BBD0 CLOSERN        C00C CLR80VID      
- FC9C CLREOL         B9D7 CLSFILE2       B9C8 CLSFILE        23A9 CLSSWAPP      
- 23AA CLSSWAPRN     ?BF9C CMDADR           78 CMDDELIM       BA74 CNV2HEX       
- FDF0 COUT1          FDED COUT           BBC0 CREATEP          0D CR            
+   24 CH            ?BCFF CIEND          B883 CKATTRF        B966 CKSIZEF       
+ B341 CLEARSCR       BAF6 CLOSEP         BAF7 CLOSERN        C00C CLR80VID      
+ FC9C CLREOL         B8FE CLSFILE2       B8EF CLSFILE        23A9 CLSSWAPP      
+ 23AA CLSSWAPRN     ?BF9C CMDADR           78 CMDDELIM       B99B CNV2HEX       
+ FDF0 COUT1          FDED COUT           BAE7 CREATEP          0D CR            
 ?FD8E CROUT         ?  36 CSWL          ?  01 CTRLA         ?  02 CTRLB         
 ?  03 CTRLC         ?  04 CTRLD         ?  05 CTRLE         ?  06 CTRLF         
 ?  0E CTRLN         ?  0F CTRLO         ?  11 CTRLQ            12 CTRLR         
 ?  13 CTRLS         ?  14 CTRLT         ?  15 CTRLU         ?  16 CTRLV         
-?  17 CTRLW         ?  18 CTRLX          BC59 CURRPFXB       2133 CURRPFXP      
+?  17 CTRLW         ?  18 CTRLX          BB80 CURRPFXB       2133 CURRPFXP      
 ?  25 CV             BE64 DATETIME       21CD DAY           ?  7F DEL           
- BBCC DESTROYP       BE40 DEVCTLS       ?  0D DIRTYPE        B807 DOASMBLY      
- A7F1 DOHELP         BE79 EDASMDIR       BBE0 EDSTR          B1AB EIMAINLOOP    
- B100 EISTART        B198 EIWRMSTRT        72 ERRCODE        B952 ERRHNDLR      
- B698 ERRTABLE      ?  1B ESCAPE         BD59 EXECLINEB        53 EXECMODE      
- BBDF EXITFLAG       B6D1 FATALERR         0C FF             BB9D FILEEOF       
- BC19 FILENAMEB        51 FILETYPE       BB59 FREEMEM        BB9B GEOFP         
- BB9C GEOFRN         B263 GETCHAR       ?FD6A GETLN          B274 GETNBCHAR     
- B27E GETTOKEN       BBA4 GFIFTYPE       BBA0 GFINFOP        BBA1 GFIPATH       
-   7C HELPF          B5A6 HEXSTR           0C HIMEM          FC58 HOME          
- 0200 INBUF          FB2F INIT             32 INVFLG         BB5E IOBUFP        
+ BAF3 DESTROYP       BE40 DEVCTLS       ?  0D DIRTYPE        B72E DOASMBLY      
+ A7F1 DOHELP         BE79 EDASMDIR       BB07 EDSTR          B1AB EIMAINLOOP    
+ B100 EISTART        B198 EIWRMSTRT        72 ERRCODE        B879 ERRHNDLR      
+ B5BF ERRTABLE      ?  1B ESCAPE         BC80 EXECLINEB        53 EXECMODE      
+ BB06 EXITFLAG       B5F8 FATALERR         0C FF             BAC4 FILEEOF       
+ BB40 FILENAMEB        51 FILETYPE       BA80 FREEMEM        BAC2 GEOFP         
+ BAC3 GEOFRN         B263 GETCHAR       ?FD6A GETLN          B274 GETNBCHAR     
+ B27E GETTOKEN       BACB GFIFTYPE       BAC7 GFINFOP        BAC8 GFIPATH       
+   7C HELPF          B50A HEXSTR           0C HIMEM          FC58 HOME          
+ 0200 INBUF          FB2F INIT             32 INVFLG         BA85 IOBUFP        
  FFFE IRQV          ?BFFD IVERSION       C000 KBD            C010 KBDSTROBE     
 ?  38 KSWL           2000 L2000          2007 L2007          2011 L2011         
  201D L201D         ?201F L201F          2022 L2022          202D L202D         
@@ -2405,73 +2405,73 @@ BDD8:        BDD8 1537 CIEnd                             EQU    *
  B318 LB318          B31A LB31A          B328 LB328          B32B LB32B          
  B34F LB34F          B355 LB355          B35F LB35F         ?B36B LB36B         
 ?B375 LB375         ?B37F LB37F         ?B389 LB389         ?B393 LB393         
- B39E LB39E          B3A4 LB3A4          B3AC LB3AC         ?B3E2 LB3D9         
- B3F1 LB3E8          B3FF LB3F6          B40D LB404         ?B413 LB40A         
-?B42A LB420         ?B431 LB427         ?B447 LB432         ?B45B LB43E         
-?B470 LB448         ?B48A LB45B          B4A8 LB46E          B4C1 LB47D         
- B4DE LB490          B4F7 LB4A0          B50D LB4AC          B52B LB4BF         
- B548 LB4D2          B561 LB4E1          B575 LB4EB          B590 LB4FC         
- B5A9 LB50D         ?B5C2 LB521          B5FC LB54D          B615 LB55C         
- B62E LB570          B642 LB57F          B65B LB590          B67E LB5AA         
-?B6D8 LB5FF          B6E3 LB60A         ?B6F9 LB620          B715 LB63C         
- B721 LB648          B722 LB649         ?B732 LB659          B73B LB662         
- B753 LB67A          B75B LB682          B770 LB697          B77D LB6A4         
-?B7B2 LB6D9          B7BF LB6E6          B7C3 LB6EA          B7C8 LB6EF         
- B7D4 LB6FB          B7D9 LB700          B7DD LB704          B7EE LB715         
- B7FA LB721          B802 LB729          B81A LB741          B829 LB750         
- B898 LB7BF          B8BF LB7E6          B8F0 LB817          B8F2 LB819         
- B8FB LB822          B90F LB836          B916 LB83D          B936 LB85D         
- B93F LB866          B948 LB86F          B94F LB876          B959 LB880         
- B980 LB8A7          B989 LB8B0          B98A LB8B1          B98D LB8B4         
- B9A0 LB8C7          B9B8 LB8DF          B9D3 LB8FA         ?B9DD LB904         
-?B9E4 LB90B         ?B9EB LB912         ?B9F2 LB919         ?B9F9 LB920         
-?BA00 LB927         ?BA07 LB92E          BA3A LB961          BA3D LB964         
- BA3E LB965          BA54 LB97B          BA69 LB990          BA70 LB997         
- BA73 LB99A          BA7E LB9A5          BA88 LB9AF         ?BA89 LB9B0         
-?BA8D LB9B4          BA9C LB9C3          BAA3 LB9CA          BAA6 LB9CD         
- BAAF LB9D6         ?BAC7 LB9EE         ?BACB LB9F2         ?BB0C LBA33         
-?BB10 LBA37         ?BB51 LBA78         ?BB67 LBA8E          BB77 LBA9E         
-?BB7D LBAA4         ?BB85 LBAAC         ?BB8E LBAB5         ?BB8F LBAB6         
-?BB95 LBABC         ?BBA3 LBACA         ?BBA5 LBACC         ?BBA7 LBACE         
-?BBA8 LBACF         ?BBAA LBAD1         ?BBB3 LBADA         ?BBB5 LBADC         
-?BBB6 LBADD         ?BBB7 LBADE         ?BBBC LBAE3         ?BBC1 LBAE8         
-?BBC3 LBAEA         ?BBC4 LBAEB         ?BBC5 LBAEC         ?BBC7 LBAEE         
-?BBCD LBAF4         ?BBD4 LBAFB         ?BBD6 LBAFD         ?BBD7 LBAFE         
-?BBDA LBB01         ?BC00 LBB27         ?C083 LCBANK2        6800 LOADADRASM    
- 8900 LOADADRED      B8B2 LOADASM        B84D LOADDED        B91D LOADMOD       
+ B39E LB39E          B3A4 LB3A4          B3AC LB3AC         ?B3D9 LB3D9         
+ B3E8 LB3E8          B3F6 LB3F6          B404 LB404         ?B40A LB40A         
+?B420 LB420         ?B427 LB427         ?B432 LB432         ?B43E LB43E         
+?B448 LB448         ?B45B LB45B          B46E LB46E          B47D LB47D         
+ B490 LB490          B4A0 LB4A0          B4AC LB4AC          B4BF LB4BF         
+ B4D2 LB4D2          B4E1 LB4E1          B4EB LB4EB          B4FC LB4FC         
+ B50D LB50D         ?B521 LB521          B54D LB54D          B55C LB55C         
+ B570 LB570          B57F LB57F          B590 LB590          B5AA LB5AA         
+?B5FF LB5FF          B60A LB60A         ?B620 LB620          B63C LB63C         
+ B648 LB648          B649 LB649         ?B659 LB659          B662 LB662         
+ B67A LB67A          B682 LB682          B697 LB697          B6A4 LB6A4         
+?B6D9 LB6D9          B6E6 LB6E6          B6EA LB6EA          B6EF LB6EF         
+ B6FB LB6FB          B700 LB700          B704 LB704          B715 LB715         
+ B721 LB721          B729 LB729          B741 LB741          B750 LB750         
+ B7BF LB7BF          B7E6 LB7E6          B817 LB817          B819 LB819         
+ B822 LB822          B836 LB836          B83D LB83D          B85D LB85D         
+ B866 LB866          B86F LB86F          B876 LB876          B880 LB880         
+ B8A7 LB8A7          B8B0 LB8B0          B8B1 LB8B1          B8B4 LB8B4         
+ B8C7 LB8C7          B8DF LB8DF          B8FA LB8FA         ?B904 LB904         
+?B90B LB90B         ?B912 LB912         ?B919 LB919         ?B920 LB920         
+?B927 LB927         ?B92E LB92E          B961 LB961          B964 LB964         
+ B965 LB965          B97B LB97B          B990 LB990          B997 LB997         
+ B99A LB99A          B9A5 LB9A5          B9AF LB9AF         ?B9B0 LB9B0         
+?B9B4 LB9B4          B9C3 LB9C3          B9CA LB9CA          B9CD LB9CD         
+ B9D6 LB9D6         ?B9EE LB9EE         ?B9F2 LB9F2         ?BA33 LBA33         
+?BA37 LBA37         ?BA78 LBA78         ?BA8E LBA8E          BA9E LBA9E         
+?BAA4 LBAA4         ?BAAC LBAAC         ?BAB5 LBAB5         ?BAB6 LBAB6         
+?BABC LBABC         ?BACA LBACA         ?BACC LBACC         ?BACE LBACE         
+?BACF LBACF         ?BAD1 LBAD1         ?BADA LBADA         ?BADC LBADC         
+?BADD LBADD         ?BADE LBADE         ?BAE3 LBAE3         ?BAE8 LBAE8         
+?BAEA LBAEA         ?BAEB LBAEB         ?BAEC LBAEC         ?BAEE LBAEE         
+?BAF4 LBAF4         ?BAFB LBAFB         ?BAFD LBAFD         ?BAFE LBAFE         
+?BB01 LBB01         ?BB27 LBB27         ?C083 LCBANK2        6800 LOADADRASM    
+ 8900 LOADADRED      B7D9 LOADASM        B774 LOADDED        B844 LOADMOD       
 ?  0A LOMEM          BF98 MACHID        ?BFFC MINIVERS       21D2 MMM           
  228B MONTHS         FF65 MON            FF69 MONZ           FE2C MOVE          
-   77 MULCMDF        B884 MV2LCB2        BB79 NEWLINEPB      BB7A NEWLINERN     
- D000 NEWSW16        213A OLUNIT         2139 ONLINEP        B9A7 OPENDFILE     
- BA10 OPENNRD        BB5B OPENPB         BB60 OPENRN         2390 OPENSWAPP     
- BF90 P8DATE        ?BF92 P8TIME         BB5C PATHNAMEP      2136 PFX3P         
- F948 PRBLNK         B343 PRCHAR           61 PRCOLUMN       B6E1 PRERRMSG2     
- FF2D PRERR          B6DB PRERRMSG         73 PRINTF         F941 PRNTAX        
+   77 MULCMDF        B7AB MV2LCB2        BAA0 NEWLINEPB      BAA1 NEWLINERN     
+ D000 NEWSW16        213A OLUNIT         2139 ONLINEP        B8CE OPENDFILE     
+ B937 OPENNRD        BA82 OPENPB         BA87 OPENRN         2390 OPENSWAPP     
+ BF90 P8DATE        ?BF92 P8TIME         BA83 PATHNAMEP      2136 PFX3P         
+ F948 PRBLNK         B343 PRCHAR           61 PRCOLUMN       B608 PRERRMSG2     
+ FF2D PRERR          B602 PRERRMSG         73 PRINTF         F941 PRNTAX        
  BF00 PRODOS8          33 PROMPT         B339 PRTCR          BEFC PRTERROR      
- 2324 PRUCASE          54 PTRMODE        03F4 PWREDUP        B7B8 QUITP         
+ 2324 PRUCASE          54 PTRMODE        03F4 PWREDUP        B6DF QUITP         
    00 R0            ?  0A R10           ?  0B R11              0C R12           
 ?  0D R13           ?  0E R14           ?  01 R1               0F R15           
    02 R2            ?  03 R3               04 R4               05 R5            
 ?  06 R6            ?  07 R7            ?  08 R8            ?  09 R9            
- C080 RDBANK2       ?FD35 RDCHAR         BB71 RDEXECP        BB72 RDEXERN       
- FD0C RDKEY          C082 RDROM2         BB63 READDBUF       BB65 READLEN       
- BB61 READPB         BB62 READRN        ?  00 REG0          ?  14 REG10         
+ C080 RDBANK2       ?FD35 RDCHAR         BA98 RDEXECP        BA99 RDEXERN       
+ FD0C RDKEY          C082 RDROM2         BA8A READDBUF       BA8C READLEN       
+ BA88 READPB         BA89 READRN        ?  00 REG0          ?  14 REG10         
 ?  18 REG12         ?  1C REG14         ?  02 REG1          ?  16 REG11         
 ?  1A REG13         ?  1E REG15         ?  04 REG2          ?  06 REG3          
    08 REG4          ?  0A REG5          ?  0C REG6          ?  0E REG7          
-?  10 REG8          ?  12 REG9          ?  FE RELTYPE        BBD1 RENAMEP       
- B33D RINGBELL       C081 ROMIN2         BCD9 SAVCMDB        2130 SDEFPFXP      
- 2165 SENDBANR       BB8D SEOFP          FE89 SETKBD         FE84 SETNORM       
- B98B SETUPFN        FE93 SETVID         BBB2 SFINFOP        213D SHOWERR        
-?BF99 SLTBYT         03F2 SOFTEV           20 SPACE          BB92 SPFX1P        
- BB98 SPFXEDASM        73 STACKP2       ?  49 STACKP         0100 STACK         
+?  10 REG8          ?  12 REG9          ?  FE RELTYPE        BAF8 RENAMEP       
+ B33D RINGBELL       C081 ROMIN2         BC00 SAVCMDB        2130 SDEFPFXP      
+ 2165 SENDBANR       BAB4 SEOFP          FE89 SETKBD         FE84 SETNORM       
+ B8B2 SETUPFN        FE93 SETVID         BAD9 SFINFOP        213D SHOWERR        
+?BF99 SLTBYT         03F2 SOFTEV           20 SPACE          BAB9 SPFX1P        
+ BABF SPFXEDASM        73 STACKP2       ?  49 STACKP         0100 STACK         
  2396 SWAPFILES        74 SWAPMODE       2395 SWAPRN        ?F689 SWEET16       
 ?  FF SYSTYPE        BE60 TABTABLE      ?  09 TAB           ?  5F TABCHAR       
  21C3 TENST          2338 TOUCASE          79 TRUNCF         0280 TXBUF2        
    0A TXTBGN           0E TXTEND           04 TXTTYPE       ?  5F UNDERSCORE    
    68 USERTABT       03F8 USRADR           50 VIDEOSLT       FC24 VTABZ         
- B83B WAITK1        ?FCA8 WAIT          ?  21 WNDWDTH        BB69 WRITEPB       
- BB6A WRITERN        23A1 WRSWAPP        23A2 WRSWAPRN      ?2000 X2000         
+ B762 WAITK1        ?FCA8 WAIT          ?  21 WNDWDTH        BA90 WRITEPB       
+ BA91 WRITERN        23A1 WRSWAPP        23A2 WRSWAPRN      ?2000 X2000         
  3000 X3000          4000 X4000          7800 X7800          9900 X9900         
  9AA5 X9AA5          9C98 X9C98          9D11 X9D11          9D14 X9D14         
  9D21 X9D21          9E55 X9E55          9F83 X9F83          A70B XA70B         
