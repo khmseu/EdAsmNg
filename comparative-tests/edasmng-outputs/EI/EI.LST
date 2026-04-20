@@ -6,96 +6,97 @@ SOURCE   FILE #01 =>EI.S
  INCLUDE FILE #05 =>EI/RELOCATOR.S
  INCLUDE FILE #06 =>EI/EDASMINT.S
  
-0000:                1           LST   ON
-0000:                2           .INCLUDE COMMONEQUS.S
+0000:                1 ; [WS]
+0000:                2           LST   ON
+0000:                3           .INCLUDE COMMONEQUS.S
 0000:                1 * Name          : COMMONEQUS.S
 0000:                2 * End of file   :    6,161
 0000:                3 * This file was generated using the DiskBrowser utility with minimal editing.
 0000:                4 * It is meant for viewing purposes only.
 0000:                5 * 
-0000:                6           CHR   ";"
+0000:                6                                        CHR    ";"
 0000:                7 ;=================================================
 0000:                8 ; Equates used by EdAsm's modules
 0000:                9 ;
 0000:               10 ; ASCII keycodes
 0000:               11 ;
-0000:        BB23   12 CTRLA     EQU   $01
-0000:        BB23   13 CTRLB     EQU   $02
-0000:        BB23   14 CTRLC     EQU   $03
-0000:        BB23   15 CTRLD     EQU   $04
-0000:        BB23   16 CTRLE     EQU   $05
-0000:        BB23   17 CTRLF     EQU   $06
-0000:        BB23   18 BEL       EQU   $07
-0000:        BB23   19 BS        EQU   $08
-0000:        BB23   20 TAB       EQU   $09
-0000:        BB23   21 FF        EQU   $0C
-0000:        BB23   22 CR        EQU   $0D
-0000:        BB23   23 CTRLN     EQU   $0E
-0000:        BB23   24 CTRLO     EQU   $0F
-0000:        BB23   25 CTRLQ     EQU   $11
-0000:        BB23   26 CTRLR     EQU   $12
-0000:        BB23   27 CTRLS     EQU   $13
-0000:        BB23   28 CTRLT     EQU   $14
-0000:        BB23   29 CTRLU     EQU   $15
-0000:        BB23   30 CTRLV     EQU   $16
-0000:        BB23   31 CTRLW     EQU   $17
-0000:        BB23   32 CTRLX     EQU   $18             ;cancel
-0000:        BB23   33 ESCAPE    EQU   $1B
-0000:        BB23   34 SPACE     EQU   $20
-0000:        BB23   35 UNDERSCORE EQU   $5F
-0000:        BB23   36 DEL       EQU   $7F
+0000:        0001   12 CTRLA                             EQU    $01
+0000:        0002   13 CTRLB                             EQU    $02
+0000:        0003   14 CTRLC                             EQU    $03
+0000:        0004   15 CTRLD                             EQU    $04
+0000:        0005   16 CTRLE                             EQU    $05
+0000:        0006   17 CTRLF                             EQU    $06
+0000:        0007   18 BEL                               EQU    $07
+0000:        0008   19 BS                                EQU    $08
+0000:        0009   20 TAB                               EQU    $09
+0000:        000C   21 FF                                EQU    $0C
+0000:        000D   22 CR                                EQU    $0D
+0000:        000E   23 CTRLN                             EQU    $0E
+0000:        000F   24 CTRLO                             EQU    $0F
+0000:        0011   25 CTRLQ                             EQU    $11
+0000:        0012   26 CTRLR                             EQU    $12
+0000:        0013   27 CTRLS                             EQU    $13
+0000:        0014   28 CTRLT                             EQU    $14
+0000:        0015   29 CTRLU                             EQU    $15
+0000:        0016   30 CTRLV                             EQU    $16
+0000:        0017   31 CTRLW                             EQU    $17
+0000:        0018   32 CTRLX                             EQU    $18             ;cancel
+0000:        001B   33 ESCAPE                            EQU    $1B
+0000:        0020   34 SPACE                             EQU    $20
+0000:        005F   35 UNDERSCORE                        EQU    $5F
+0000:        007F   36 DEL                               EQU    $7F
 0000:               37 ;=================================================
 0000:               38 ; filetypes
 0000:               39 ;
-0000:        BB23   40 TXTtype   EQU   $04
-0000:        BB23   41 BINtype   EQU   $06
-0000:        BB23   42 DIRtype   EQU   $0D
-0000:        BB23   43 RELtype   EQU   $FE
-0000:        BB23   44 SYStype   EQU   $FF
+0000:        0004   40 TXTtype                           EQU    $04
+0000:        0006   41 BINtype                           EQU    $06
+0000:        000D   42 DIRtype                           EQU    $0D
+0000:        00FE   43 RELtype                           EQU    $FE
+0000:        00FF   44 SYStype                           EQU    $FF
 0000:               45 ;=================================================
 0000:               46 ; Apple ][ Standard Zero page
 0000:               47 ;
-0000:        BB23   48 WNDWDTH   EQU   $21
-0000:        BB23   49 CH        EQU   $24
-0000:        BB23   50 CV        EQU   $25
-0000:        BB23   51 BASL      EQU   $28
-0000:        BB23   52 InvFlg    EQU   $32
-0000:        BB23   53 Prompt    EQU   $33
-0000:        BB23   54 CSWL      EQU   $36             ;Output hook
-0000:        BB23   55 KSWL      EQU   $38             ;Input hook
-0000:        BB23   56 A1        EQU   $3C
-0000:        BB23   57 A2        EQU   $3E
-0000:        BB23   58 A4        EQU   $42
+0000:        0021   48 WNDWDTH                           EQU    $21
+0000:        0024   49 CH                                EQU    $24
+0000:        0025   50 CV                                EQU    $25
+0000:        0028   51 BASL                              EQU    $28
+0000:        0032   52 InvFlg                            EQU    $32
+0000:        0033   53 Prompt                            EQU    $33
+0000:        0036   54 CSWL                              EQU    $36             ;Output hook
+0000:        0038   55 KSWL                              EQU    $38             ;Input hook
+0000:        003C   56 A1                                EQU    $3C
+0000:        003E   57 A2                                EQU    $3E
+0000:        0042   58 A4                                EQU    $42
 0000:               59 ;=================================================
 0000:               60 ; These zpage locations are referenced by 2 or
 0000:               61 ; more of EdAsm's modules
 0000:               62 ;
-0000:        BB23   63 LoMem     EQU   $0A             ;=$0801
-0000:        BB23   64 TxtBgn    EQU   $0A             ;Reg5
-0000:        BB23   65 TxtEnd    EQU   $0E             ;Reg7
-0000:        BB23   66 HiMem     EQU   $0C             ;=$9900 Not used by EDASM.ASM
-0000:        BB23   67 StackP    EQU   $49             ;Save area for H/W stack ptr
-0000:        BB23   68 VideoSlt  EQU   $50             ;=$Cs where s=1-3 (if 80-col video card present)
-0000:        BB23   69 FileType  EQU   $51             ;filetype
-0000:        BB23   70 ExecMode  EQU   $53             ;Exec mode
-0000:        BB23   71 PtrMode   EQU   $54             ;=$80,$00 - Printer ON/OFF
-0000:        BB23   72 TabChar   EQU   $5F             ;Set by Editor
-0000:        BB23   73 PrColumn  EQU   $61             ;curr print col
-0000:        BB23   74 UserTabT  EQU   $68             ;$68-$71 User defined Table table
-0000:        BB23   75 PrintF    EQU   $73             ;-1=Print Cmd 0=List Cmd
-0000:        BB23   76 StackP2   EQU   $73             ;Save area for H/W stack ptr on fatal err
-0000:        BB23   77 SwapMode  EQU   $74             ;Split-buf mode 0-normal,1=buf1,2=buf2
-0000:        BB23   78 CaseMode  EQU   $75             ;ucase/lcase
-0000:        BB23   79 CmdDelim  EQU   $78             ;Cmd Delimiter/Separator
-0000:        BB23   80 TruncF    EQU   $79             ;=$FF-truncate comments
+0000:        000A   63 LoMem                             EQU    $0A             ;=$0801
+0000:        000A   64 TxtBgn                            EQU    $0A             ;Reg5
+0000:        000E   65 TxtEnd                            EQU    $0E             ;Reg7
+0000:        000C   66 HiMem                             EQU    $0C             ;=$9900 Not used by EDASM.ASM
+0000:        0049   67 StackP                            EQU    $49             ;Save area for H/W stack ptr
+0000:        0050   68 VideoSlt                          EQU    $50             ;=$Cs where s=1-3 (if 80-col video card present)
+0000:        0051   69 FileType                          EQU    $51             ;filetype
+0000:        0053   70 ExecMode                          EQU    $53             ;Exec mode
+0000:        0054   71 PtrMode                           EQU    $54             ;=$80,$00 - Printer ON/OFF
+0000:        005F   72 TabChar                           EQU    $5F             ;Set by Editor
+0000:        0061   73 PrColumn                          EQU    $61             ;curr print col
+0000:        0068   74 UserTabT                          EQU    $68             ;$68-$71 User defined Table table
+0000:        0073   75 PrintF                            EQU    $73             ;-1=Print Cmd 0=List Cmd
+0000:        0073   76 StackP2                           EQU    $73             ;Save area for H/W stack ptr on fatal err
+0000:        0074   77 SwapMode                          EQU    $74             ;Split-buf mode 0-normal,1=buf1,2=buf2
+0000:        0075   78 CaseMode                          EQU    $75             ;ucase/lcase
+0000:        0078   79 CmdDelim                          EQU    $78             ;Cmd Delimiter/Separator
+0000:        0079   80 TruncF                            EQU    $79             ;=$FF-truncate comments
 0000:               81 ;=================================================
-0000:        BB23   82 X2000     EQU   $2000           ;Load & Exec addr of SYS Files
-0000:        BB23   83 LoadAdrEd EQU   $8900           ;Load Addr of Editor Module
+0000:        2000   82 X2000                             EQU    $2000           ;Load & Exec addr of SYS Files
+0000:        8900   83 LoadAdrEd                         EQU    $8900           ;Load Addr of Editor Module
 0000:               84 ;=================================================
 0000:               85 ; 1024-byte I/O buffers for ProDOS8
 0000:               86 ;
-0000:        BB23   87 XA900     EQU   $A900
-0000:        BB23   88 XAD00     EQU   $AD00
+0000:        A900   87 XA900                             EQU    $A900
+0000:        AD00   88 XAD00                             EQU    $AD00
 0000:               89 ;=================================================
 0000:               90 ; Edasm Global Page
 0000:               91 ; Used to pass parameters btwn EdAsm's
@@ -106,156 +107,156 @@ SOURCE   FILE #01 =>EI.S
 0000:               96 ; modules viz Editor, Assembly & Linker
 0000:               97 ; The EI must be resident all the times
 0000:               98 ;
-0000:        BB23   99 XBD00     EQU   $BD00           ;General Purpose 128-byte buffers
-0000:        BB23  100 XBD80     EQU   $BD80           ; used by Edasm's modules
-0000:        BB23  101 XBE00     EQU   $BE00           ;$BE00-$BE3F (curr Pathname)
-0000:        BB23  102 DevCtlS   EQU   $BE40           ;($BE40-$BE61) Init to $C3 if 80-col card present
-0000:        BB23  103 TabTable  EQU   $BE60           ;$BE60-$BE62
-0000:        BB23  104 DateTime  EQU   $BE64           ;$BE64-$73
-0000:        BB23  105 EdAsmDir  EQU   $BE79           ;Where EDASM lives
-0000:        BB23  106 PrtError  EQU   $BEFC           ;EdAsm Interpreter error message rtn
+0000:        BD00   99 XBD00                             EQU    $BD00           ;General Purpose 128-byte buffers
+0000:        BD80  100 XBD80                             EQU    $BD80           ; used by Edasm's modules
+0000:        BE00  101 XBE00                             EQU    $BE00           ;$BE00-$BE3F (curr Pathname)
+0000:        BE40  102 DevCtlS                           EQU    $BE40           ;($BE40-$BE61) Init to $C3 if 80-col card present
+0000:        BE60  103 TabTable                          EQU    $BE60           ;$BE60-$BE62
+0000:        BE64  104 DateTime                          EQU    $BE64           ;$BE64-$73
+0000:        BE79  105 EdAsmDir                          EQU    $BE79           ;Where EDASM lives
+0000:        BEFC  106 PrtError                          EQU    $BEFC           ;EdAsm Interpreter error message rtn
 0000:              107 ;=================================================
 0000:              108 ; Apple ][
 0000:              109 ;
-0000:        BB23  110 Stack     EQU   $0100
-0000:        BB23  111 InBuf     EQU   $0200
-0000:        BB23  112 TxBuf2    EQU   $0280
-0000:        BB23  113 SOFTEV    EQU   $03F2           ;RESET vector
-0000:        BB23  114 PWREDUP   EQU   $03F4
-0000:        BB23  115 USRADR    EQU   $03F8           ;ctrl-Y vector
+0000:        0100  110 Stack                             EQU    $0100
+0000:        0200  111 InBuf                             EQU    $0200
+0000:        0280  112 TxBuf2                            EQU    $0280
+0000:        03F2  113 SOFTEV                            EQU    $03F2           ;RESET vector
+0000:        03F4  114 PWREDUP                           EQU    $03F4
+0000:        03F8  115 USRADR                            EQU    $03F8           ;ctrl-Y vector
 0000:              116 ;=================================================
 0000:              117 ; ProDOS 8 Global Page
 0000:              118 ;
-0000:        BB23  119 PRODOS8   EQU   $BF00
-0000:        BB23  120 LASTDEV   EQU   $BF30
-0000:        BB23  121 BitMap    EQU   $BF58
-0000:        BB23  122 P8DATE    EQU   $BF90
-0000:        BB23  123 P8TIME    EQU   $BF92
-0000:        BB23  124 MACHID    EQU   $BF98
-0000:        BB23  125 SLTBYT    EQU   $BF99           ;Slot ROM map
-0000:        BB23  126 CMDADR    EQU   $BF9C           ;last MLI call return address
-0000:        BB23  127 MINIVERS  EQU   $BFFC           ;minimum interpreter version
-0000:        BB23  128 IVERSION  EQU   $BFFD           ;interpreter version
+0000:        BF00  119 PRODOS8                           EQU    $BF00
+0000:        BF30  120 LASTDEV                           EQU    $BF30
+0000:        BF58  121 BitMap                            EQU    $BF58
+0000:        BF90  122 P8DATE                            EQU    $BF90
+0000:        BF92  123 P8TIME                            EQU    $BF92
+0000:        BF98  124 MACHID                            EQU    $BF98
+0000:        BF99  125 SLTBYT                            EQU    $BF99           ;Slot ROM map
+0000:        BF9C  126 CMDADR                            EQU    $BF9C           ;last MLI call return address
+0000:        BFFC  127 MINIVERS                          EQU    $BFFC           ;minimum interpreter version
+0000:        BFFD  128 IVERSION                          EQU    $BFFD           ;interpreter version
 0000:              129 ;=================================================
 0000:              130 ; Soft Switches
 0000:              131 ;
-0000:        BB23  132 KBD       EQU   $C000
-0000:        BB23  133 CLR80VID  EQU   $C00C
-0000:        BB23  134 KBDSTROBE EQU   $C010
-0000:        BB23  135 BUTN3     EQU   $C060
-0000:        BB23  136 BUTN2     EQU   $C063
-0000:        BB23  137 RDBANK2   EQU   $C080           ;Read only RAM bank 2; no write
-0000:        BB23  138 ROMIN2    EQU   $C081           ;Read ROM/Write RAM bank 2 (RR)
-0000:        BB23  139 RDROM2    EQU   $C082           ;Read ROM; no write
-0000:        BB23  140 LCBANK2   EQU   $C083           ;Read/Write RAM bank 2 (RR)
-0000:        BB23  141 BASICINT  EQU   $C300
-0000:        BB23  142 XC30B     EQU   $C30B           ;card identification
-0000:        BB23  143 XC30C     EQU   $C30C
+0000:        C000  132 KBD                               EQU    $C000
+0000:        C00C  133 CLR80VID                          EQU    $C00C
+0000:        C010  134 KBDSTROBE                         EQU    $C010
+0000:        C060  135 BUTN3                             EQU    $C060
+0000:        C063  136 BUTN2                             EQU    $C063
+0000:        C080  137 RDBANK2                           EQU    $C080           ;Read only RAM bank 2; no write
+0000:        C081  138 ROMIN2                            EQU    $C081           ;Read ROM/Write RAM bank 2 (RR)
+0000:        C082  139 RDROM2                            EQU    $C082           ;Read ROM; no write
+0000:        C083  140 LCBANK2                           EQU    $C083           ;Read/Write RAM bank 2 (RR)
+0000:        C300  141 BASICINT                          EQU    $C300
+0000:        C30B  142 XC30B                             EQU    $C30B           ;card identification
+0000:        C30C  143 XC30C                             EQU    $C30C
 0000:              144 ;
-0000:        BB23  145 XD000     EQU   $D000           ;LC Bank2 - SW16 or Asm's Print Symbol Table
-0000:        BB23  146 BASCLD    EQU   $E000           ;AppleSoft ColdStart
+0000:        D000  145 XD000                             EQU    $D000           ;LC Bank2 - SW16 or Asm's Print Symbol Table
+0000:        E000  146 BASCLD                            EQU    $E000           ;AppleSoft ColdStart
 0000:              147 ;=================================================
 0000:              148 ; Apple ][ Monitor Entry Points
 0000:              149 ;
-0000:        BB23  150 SWEET16   EQU   $F689           ;Original IntegerBASIC ROM entry point
-0000:        BB23  151 PRNTAX    EQU   $F941
-0000:        BB23  152 PRBLNK    EQU   $F948
-0000:        BB23  153 INIT      EQU   $FB2F
-0000:        BB23  154 BELL1     EQU   $FBDD
-0000:        BB23  155 VTABZ     EQU   $FC24
-0000:        BB23  156 HOME      EQU   $FC58
-0000:        BB23  157 CLREOL    EQU   $FC9C
-0000:        BB23  158 WAIT      EQU   $FCA8
-0000:        BB23  159 RDKEY     EQU   $FD0C
-0000:        BB23  160 RDCHAR    EQU   $FD35
-0000:        BB23  161 GETLN     EQU   $FD6A           ;input line w/prompt
-0000:        BB23  162 CROUT     EQU   $FD8E           ;issue carriage return
-0000:        BB23  163 COUT      EQU   $FDED           ;output char via user's I/O
-0000:        BB23  164 COUT1     EQU   $FDF0           ;output via video screen
-0000:        BB23  165 MOVE      EQU   $FE2C
-0000:        BB23  166 SETNORM   EQU   $FE84
-0000:        BB23  167 SETKBD    EQU   $FE89
-0000:        BB23  168 SETVID    EQU   $FE93
-0000:        BB23  169 PRERR     EQU   $FF2D
-0000:        BB23  170 MON       EQU   $FF65
-0000:        BB23  171 MONZ      EQU   $FF69
-0000:        BB23  172 IRQV      EQU   $FFFE
+0000:        F689  150 SWEET16                           EQU    $F689           ;Original IntegerBASIC ROM entry point
+0000:        F941  151 PRNTAX                            EQU    $F941
+0000:        F948  152 PRBLNK                            EQU    $F948
+0000:        FB2F  153 INIT                              EQU    $FB2F
+0000:        FBDD  154 BELL1                             EQU    $FBDD
+0000:        FC24  155 VTABZ                             EQU    $FC24
+0000:        FC58  156 HOME                              EQU    $FC58
+0000:        FC9C  157 CLREOL                            EQU    $FC9C
+0000:        FCA8  158 WAIT                              EQU    $FCA8
+0000:        FD0C  159 RDKEY                             EQU    $FD0C
+0000:        FD35  160 RDCHAR                            EQU    $FD35
+0000:        FD6A  161 GETLN                             EQU    $FD6A           ;input line w/prompt
+0000:        FD8E  162 CROUT                             EQU    $FD8E           ;issue carriage return
+0000:        FDED  163 COUT                              EQU    $FDED           ;output char via user's I/O
+0000:        FDF0  164 COUT1                             EQU    $FDF0           ;output via video screen
+0000:        FE2C  165 MOVE                              EQU    $FE2C
+0000:        FE84  166 SETNORM                           EQU    $FE84
+0000:        FE89  167 SETKBD                            EQU    $FE89
+0000:        FE93  168 SETVID                            EQU    $FE93
+0000:        FF2D  169 PRERR                             EQU    $FF2D
+0000:        FF65  170 MON                               EQU    $FF65
+0000:        FF69  171 MONZ                              EQU    $FF69
+0000:        FFFE  172 IRQV                              EQU    $FFFE
 0000:              173 ;=================================================
 0000:              174 ;
 0000:              175 ; SW16 registers when using 6502 instructions
 0000:              176 ;
-0000:        BB23  177 Reg0      EQU   $00             ;Doubles as the Accumulator
-0000:        BB23  178 Reg1      EQU   $02
-0000:        BB23  179 Reg2      EQU   $04
-0000:        BB23  180 Reg3      EQU   $06
-0000:        BB23  181 Reg4      EQU   $08
-0000:        BB23  182 Reg5      EQU   $0A             ;Points @ 1st char of curr edited file
-0000:        BB23  183 Reg6      EQU   $0C             ;HiMem
-0000:        BB23  184 Reg7      EQU   $0E             ;Points @ last char of curr edited file
-0000:        BB23  185 Reg8      EQU   $10
-0000:        BB23  186 Reg9      EQU   $12
-0000:        BB23  187 Reg10     EQU   $14
-0000:        BB23  188 Reg11     EQU   $16
-0000:        BB23  189 Reg12     EQU   $18             ;Subroutine return stack pointer
-0000:        BB23  190 Reg13     EQU   $1A             ;Result of a comparison instruction
-0000:        BB23  191 Reg14     EQU   $1C             ;Status Register
-0000:        BB23  192 Reg15     EQU   $1E             ;Program Counter
+0000:        0000  177 Reg0                              EQU    $00             ;Doubles as the Accumulator
+0000:        0002  178 Reg1                              EQU    $02
+0000:        0004  179 Reg2                              EQU    $04
+0000:        0006  180 Reg3                              EQU    $06
+0000:        0008  181 Reg4                              EQU    $08
+0000:        000A  182 Reg5                              EQU    $0A             ;Points @ 1st char of curr edited file
+0000:        000C  183 Reg6                              EQU    $0C             ;HiMem
+0000:        000E  184 Reg7                              EQU    $0E             ;Points @ last char of curr edited file
+0000:        0010  185 Reg8                              EQU    $10
+0000:        0012  186 Reg9                              EQU    $12
+0000:        0014  187 Reg10                             EQU    $14
+0000:        0016  188 Reg11                             EQU    $16
+0000:        0018  189 Reg12                             EQU    $18             ;Subroutine return stack pointer
+0000:        001A  190 Reg13                             EQU    $1A             ;Result of a comparison instruction
+0000:        001C  191 Reg14                             EQU    $1C             ;Status Register
+0000:        001E  192 Reg15                             EQU    $1E             ;Program Counter
 0000:              193 ;=================================================
 0000:              194 ; Sweet16 registers
 0000:              195 ; These labels are for the EdAsm assembler
 0000:              196 ; For Merlin8, Rn are pre-defined and
 0000:              197 ; do not need to be declared.
 0000:              198 ;
-0000:        BB23  199 R0        EQU   0
-0000:        BB23  200 R1        EQU   1
-0000:        BB23  201 R2        EQU   2
-0000:        BB23  202 R3        EQU   3
-0000:        BB23  203 R4        EQU   4
-0000:        BB23  204 R5        EQU   5
-0000:        BB23  205 R6        EQU   6
-0000:        BB23  206 R7        EQU   7
-0000:        BB23  207 R8        EQU   8
-0000:        BB23  208 R9        EQU   9
-0000:        BB23  209 R10       EQU   10
-0000:        BB23  210 R11       EQU   11
-0000:        BB23  211 R12       EQU   12              ;Subroutine return stack pointer
-0000:        BB23  212 R13       EQU   13              ;Result of a comparison instruction
-0000:        BB23  213 R14       EQU   14              ;Status Register
-0000:        BB23  214 R15       EQU   15              ;Program Counter
+0000:        0000  199 R0                                EQU    0
+0000:        0001  200 R1                                EQU    1
+0000:        0002  201 R2                                EQU    2
+0000:        0003  202 R3                                EQU    3
+0000:        0004  203 R4                                EQU    4
+0000:        0005  204 R5                                EQU    5
+0000:        0006  205 R6                                EQU    6
+0000:        0007  206 R7                                EQU    7
+0000:        0008  207 R8                                EQU    8
+0000:        0009  208 R9                                EQU    9
+0000:        000A  209 R10                               EQU    10
+0000:        000B  210 R11                               EQU    11
+0000:        000C  211 R12                               EQU    12              ;Subroutine return stack pointer
+0000:        000D  212 R13                               EQU    13              ;Result of a comparison instruction
+0000:        000E  213 R14                               EQU    14              ;Status Register
+0000:        000F  214 R15                               EQU    15              ;Program Counter
 0000:              215 ;=================================================
 0000:              216 ; Lifted from ProDOS v1.7
 0000:              217 ; xdos parameters:
 0000:              218 ;
-0000:        BB23  219 c.pCnt    EQU   $0              ; (count)
-0000:        BB23  220 c.devNum  EQU   $1              ; (value)
-0000:        BB23  221 c.refNum  EQU   $1              ; (value)
-0000:        BB23  222 c.intNum  EQU   $1              ; (value)
-0000:        BB23  223 c.path    EQU   $1              ;&2 (pointer) 
-0000:        BB23  224 c.isNewl  EQU   $2              ; (mask)
-0000:        BB23  225 c.dataBuf EQU   $2              ;&3 (value)
-0000:        BB23  226 c.bufAdr  EQU   $2              ;&3 (address)
-0000:        BB23  227 c.intAdr  EQU   $2              ;&3 (address)
-0000:        BB23  228 c.mark    EQU   $2              ;->4 (value)
-0000:        BB23  229 c.eof     EQU   $2              ;->4 (value)
-0000:        BB23  230 c.attr    EQU   $3              ; (flags) 
-0000:        BB23  231 c.newl    EQU   $3              ; (character)
-0000:        BB23  232 c.bufPtr  EQU   $3              ;&4 (pointer)
-0000:        BB23  233 c.newPath EQU   $3              ;&4 (pointer)
-0000:        BB23  234 c.fileId  EQU   $4              ; (value) 
-0000:        BB23  235 c.reqCnt  EQU   $4              ;&5 (value)
-0000:        BB23  236 c.blkNum  EQU   $4              ;&5 (address)
-0000:        BB23  237 c.outRef  EQU   $5
-0000:        BB23  238 c.auxId   EQU   $5              ;&6 (value) 
-0000:        BB23  239 c.transCnt EQU   $6              ;&7 (value)
-0000:        BB23  240 c.fKind   EQU   $7              ; (value) 
-0000:        BB23  241 c.date    EQU   $8              ;&9 (value) 
-0000:        BB23  242 c.outBlk  EQU   $8              ;&9 (count)
-0000:        BB23  243 c.time    EQU   $a              ;&b (value) 
-0000:        BB23  244 c.modDate EQU   $a              ;&b (value)
-0000:        BB23  245 c.modTime EQU   $c              ;&d (value)
-0000:        BB23  246 c.creDate EQU   $e              ;&f (value)
-0000:        BB23  247 c.creTime EQU   $10             ;&11 (value)
-0000:                3           .INCLUDE EI/EQUATES.S
+0000:        0000  219 c.pCnt                            EQU    $0              ; (count)
+0000:        0001  220 c.devNum                          EQU    $1              ; (value)
+0000:        0001  221 c.refNum                          EQU    $1              ; (value)
+0000:        0001  222 c.intNum                          EQU    $1              ; (value)
+0000:        0001  223 c.path                            EQU    $1              ;&2 (pointer) 
+0000:        0002  224 c.isNewl                          EQU    $2              ; (mask)
+0000:        0002  225 c.dataBuf                         EQU    $2              ;&3 (value)
+0000:        0002  226 c.bufAdr                          EQU    $2              ;&3 (address)
+0000:        0002  227 c.intAdr                          EQU    $2              ;&3 (address)
+0000:        0002  228 c.mark                            EQU    $2              ;->4 (value)
+0000:        0002  229 c.eof                             EQU    $2              ;->4 (value)
+0000:        0003  230 c.attr                            EQU    $3              ; (flags) 
+0000:        0003  231 c.newl                            EQU    $3              ; (character)
+0000:        0003  232 c.bufPtr                          EQU    $3              ;&4 (pointer)
+0000:        0003  233 c.newPath                         EQU    $3              ;&4 (pointer)
+0000:        0004  234 c.fileId                          EQU    $4              ; (value) 
+0000:        0004  235 c.reqCnt                          EQU    $4              ;&5 (value)
+0000:        0004  236 c.blkNum                          EQU    $4              ;&5 (address)
+0000:        0005  237 c.outRef                          EQU    $5
+0000:        0005  238 c.auxId                           EQU    $5              ;&6 (value) 
+0000:        0006  239 c.transCnt                        EQU    $6              ;&7 (value)
+0000:        0007  240 c.fKind                           EQU    $7              ; (value) 
+0000:        0008  241 c.date                            EQU    $8              ;&9 (value) 
+0000:        0008  242 c.outBlk                          EQU    $8              ;&9 (count)
+0000:        000A  243 c.time                            EQU    $a              ;&b (value) 
+0000:        000A  244 c.modDate                         EQU    $a              ;&b (value)
+0000:        000C  245 c.modTime                         EQU    $c              ;&d (value)
+0000:        000E  246 c.creDate                         EQU    $e              ;&f (value)
+0000:        0010  247 c.creTime                         EQU    $10             ;&11 (value)
+0000:                4           .INCLUDE EI/EQUATES.S
 0000:                1 * Name          : EQUATES.S
 0000:                2 * End of file   :      391
 0000:                3 * This file was generated using the DiskBrowser utility with minimal editing.
@@ -266,14 +267,14 @@ SOURCE   FILE #01 =>EI.S
 0000:                8 ; Since SW16 is used, the first 32 zero page
 0000:                9 ; locations must be treated with care
 0000:               10 ;
-0000:        BB23   11 Z00       EQU   $00             ;Reg0
-0000:        BB23   12 Z04       EQU   $04             ;Reg2
-0000:        BB23   13 Z12       EQU   $12             ;Reg9-Ptr to Msg/Save Char
-0000:        BB23   14 ErrCode   EQU   $72             ;error code
-0000:        BB23   15 BufIndex  EQU   $76             ;Index into InBuf
-0000:        BB23   16 MulCmdF   EQU   $77             ;multiple cmds if msb on
-0000:        BB23   17 HelpF     EQU   $7C             ;Display Help Menu-$80
-0000:                4           .INCLUDE EI/EXTERNALS.S
+0000:        0000   11 Z00                               EQU    $00             ;Reg0
+0000:        0004   12 Z04                               EQU    $04             ;Reg2
+0000:        0012   13 Z12                               EQU    $12             ;Reg9-Ptr to Msg/Save Char
+0000:        0072   14 ErrCode                           EQU    $72             ;error code
+0000:        0076   15 BufIndex                          EQU    $76             ;Index into InBuf
+0000:        0077   16 MulCmdF                           EQU    $77             ;multiple cmds if msb on
+0000:        007C   17 HelpF                             EQU    $7C             ;Display Help Menu-$80
+0000:                5           .INCLUDE EI/EXTERNALS.S
 0000:                1 * Name          : EXTERNALS.S
 0000:                2 * End of file   :      979
 0000:                3 * This file was generated using the DiskBrowser utility with minimal editing.
@@ -284,30 +285,30 @@ SOURCE   FILE #01 =>EI.S
 0000:                8 * This module references of a number
 0000:                9 * of routines and tables of EdAsm.Ed
 0000:               10 *
-0000:        BB23   11 X9AA5     EQU   $9AA5           ;set R12 to $BD00
-0000:        BB23   12 X9C98     EQU   $9C98           ;output err msg
-0000:        BB23   13 X9D11     EQU   $9D11           ;Default TAB table
-0000:        BB23   14 X9D14     EQU   $9D14           ;Edasm.AutoSt
-0000:        BB23   15 X9D21     EQU   $9D21           ;JMP table
-0000:        BB23   16 X9E55     EQU   $9E55           ;convert date/time to ASCII
-0000:        BB23   17 X9F83     EQU   $9F83           ;copy right
-0000:        BB23   18 XA70B     EQU   $A70B           ;cmd line input
-0000:        BB23   19 XA75B     EQU   $A75B           ;chk for presence of 80-col card
-0000:        BB23   20 XA788     EQU   $A788           ;reset I/O hooks
-0000:        BB23   21 XA78A     EQU   $A78A           ;alternate entry point of $A788
-0000:        BB23   22 DoHelp    EQU   $A7F1
-0000:        BB23   23 XA872     EQU   $A872           ;Load EDASM.SWAP
-0000:        BB23   24 XA8D1     EQU   $A8D1           ;vol/sub-dir header entry
-0000:        BB23   25 NEWSW16   EQU   $D000           ;Modified version of Sweet16 lives here
-0000:        BB23   26 XD610     EQU   $D610           ;printer init
-0000:        BB23   27 XDD41     EQU   $DD41           ;init TAB tabke
-0000:        BB23   28 XDE18     EQU   $DE18           ;Table of cmds (ASM,NEW,ONLINE etc)
-0000:        BB23   29 XDFA2     EQU   $DFA2           ;Cmd SW16 jmp table
+0000:        9AA5   11 X9AA5                             EQU    $9AA5           ;set R12 to $BD00
+0000:        9C98   12 X9C98                             EQU    $9C98           ;output err msg
+0000:        9D11   13 X9D11                             EQU    $9D11           ;Default TAB table
+0000:        9D14   14 X9D14                             EQU    $9D14           ;Edasm.AutoSt
+0000:        9D21   15 X9D21                             EQU    $9D21           ;JMP table
+0000:        9E55   16 X9E55                             EQU    $9E55           ;convert date/time to ASCII
+0000:        9F83   17 X9F83                             EQU    $9F83           ;copy right
+0000:        A70B   18 XA70B                             EQU    $A70B           ;cmd line input
+0000:        A75B   19 XA75B                             EQU    $A75B           ;chk for presence of 80-col card
+0000:        A788   20 XA788                             EQU    $A788           ;reset I/O hooks
+0000:        A78A   21 XA78A                             EQU    $A78A           ;alternate entry point of $A788
+0000:        A7F1   22 DoHelp                            EQU    $A7F1
+0000:        A872   23 XA872                             EQU    $A872           ;Load EDASM.SWAP
+0000:        A8D1   24 XA8D1                             EQU    $A8D1           ;vol/sub-dir header entry
+0000:        D000   25 NEWSW16                           EQU    $D000           ;Modified version of Sweet16 lives here
+0000:        D610   26 XD610                             EQU    $D610           ;printer init
+0000:        DD41   27 XDD41                             EQU    $DD41           ;init TAB tabke
+0000:        DE18   28 XDE18                             EQU    $DE18           ;Table of cmds (ASM,NEW,ONLINE etc)
+0000:        DFA2   29 XDFA2                             EQU    $DFA2           ;Cmd SW16 jmp table
 0000:               30 *
-0000:        BB23   31 LoadAdrAsm EQU   $6800
-0000:        BB23   32 X7800     EQU   $7800           ;EdAsm.Asm's sub-module load/exec Addr
-0000:        BB23   33 X9900     EQU   $9900           ;EdAsm.Ed's sub-module load/exec addr
-0000:                5           .INCLUDE EI/RELOCATOR.S
+0000:        6800   31 LoadAdrAsm                        EQU    $6800
+0000:        7800   32 X7800                             EQU    $7800           ;EdAsm.Asm's sub-module load/exec Addr
+0000:        9900   33 X9900                             EQU    $9900           ;EdAsm.Ed's sub-module load/exec addr
+0000:                6           .INCLUDE EI/RELOCATOR.S
 0000:                1 * Name          : RELOCATOR.S
 0000:                2 * End of file   :    7,244
 0000:                3 * This file was generated using the DiskBrowser utility with minimal editing.
@@ -777,8 +778,8 @@ SOURCE   FILE #01 =>EI.S
 2381:              466 ;=================================================
 2381:              467 ; These ProDOS parameter blocks are used for EDASM.SWAP
 2381:              468 ;
-2381:        238F  469 X3000     EQU   $3000
-2381:        238F  470 X4000     EQU   $4000           ;addr of 1024-byte file buffer
+2381:        3000  469 X3000                             EQU    $3000
+2381:        4000  470 X4000                             EQU    $4000           ;addr of 1024-byte file buffer
 2381:              471 ;
 2381:03            472 OpenSwapP DB    $03
 2382:7C 23         473           DW    SwapFileS
@@ -801,8 +802,8 @@ SOURCE   FILE #01 =>EI.S
 23C3:14 20 41 4C   490           STR   ' ALL RIGHTS RESERVED'
 23D8:              491 ;DS \,$EA
 47D8:        2400  492           DS    $2400-*,$EA
-47D8:        2400  493 L2400     EQU   *
-47D8:                6           .INCLUDE EI/EDASMINT.S
+47D8:        47D8  493 L2400                             EQU    *
+47D8:                7           .INCLUDE EI/EDASMINT.S
 47D8:                1 * Name          : EDASMINT.S
 47D8:                2 * End of file   :   27,137
 47D8:                3 * This file was generated using the DiskBrowser utility with minimal editing.
@@ -814,7 +815,7 @@ B100:                8 ; EDASM Command Interpreter
 B100:                9 ; This module references of a number
 B100:               10 ; of routines and tables of EdAsm.Ed
 B100:               11 ;
-B100:        B100   12 EIStart   EQU   *
+B100:        B100   12 EIStart                           EQU    *
 B100:A2 03          13           LDX   #3
 B102:BD 8A B2       14 LB102     LDA   LB296,X         ;Mark pages $B1-$B8
 B105:9D 6C BF       15           STA   BitMap+20,X     ; & $BF as used
@@ -898,7 +899,7 @@ B195:20 46 B8       92 LB195     JSR   LB866
 B198:               93 ;
 B198:               94 ; ($B198) Reset/Ctrl-Y Entry Point
 B198:               95 ;
-B198:        B846   96 EIWrmStrt EQU   *               ;ENTRY
+B198:        B198   96 EIWrmStrt                         EQU    *               ;ENTRY
 B198:A9 00          97           LDA   #$00
 B19A:85 54          98           STA   PtrMode         ;Disable printer
 B19C:24 53          99           BIT   ExecMode
@@ -910,7 +911,7 @@ B1A9:20 C2 B8      104           JSR   ClsFile
 B1AC:              105 ;
 B1AC:              106 ; $B1AB
 B1AC:              107 ;
-B1AC:        B8C2  108 EIMainLoop EQU   *               ;ENTRY
+B1AC:        B1AC  108 EIMainLoop                        EQU    *               ;ENTRY
 B1AC:20 00 BF      109           JSR   PRODOS8
 B1AF:82            110           DB    $82
 B1B0:B0 B1   B163  111           DW    *
@@ -928,7 +929,7 @@ B1C6:90 EC   B1B4  122           BCC   LB1BC
 B1C8:              123 ;
 B1C8:A9 00         124           LDA   #0
 B1CA:85 77         125           STA   MulCmdF
-B1CC:        0077  126 LB1CB     EQU   *               ;ENTRY
+B1CC:        B1CC  126 LB1CB                             EQU    *               ;ENTRY
 B1CC:2C 80 C0      127           BIT   RDBANK2
 B1CF:20 88 A7      128           JSR   XA788           ;Setup/Reset I/O Hooks
 B1D2:              129 ;
@@ -968,7 +969,7 @@ B210:              162 ;
 B210:              163 ; Command parser
 B210:              164 ;
 B210:A2 00         165 LB20F     LDX   #0              ;Index fr BO InBuf
-B212:        0000  166 LB211     EQU   *               ;ENTRY
+B212:        B212  166 LB211                             EQU    *               ;ENTRY
 B212:20 6A B2      167           JSR   GetNBChar       ;Get a char and store in $12
 B215:E0 01         168           CPX   #1
 B217:D0 03   B21C  169           BNE   LB226
@@ -1033,7 +1034,7 @@ B264:              227 ; Output
 B264:              228 ;  (A)-char converted to ucase as required
 B264:              229 ;  (X)=(X)+1
 B264:              230 ;
-B264:        9D21  231 GetChar   EQU   *
+B264:        B264  231 GetChar                           EQU    *
 B264:BD 00 02      232           LDA   InBuf,X
 B267:29 7F         233           AND   #$7F
 B269:E8            234           INX
@@ -1049,7 +1050,7 @@ B275:              243 ; Output
 B275:              244 ;  (A)-char fr InBuf
 B275:              245 ;  (Z12)-char fr InBuf
 B275:              246 ;
-B275:        00DF  247 GetNBChar EQU   *               ;ENTRY
+B275:        B275  247 GetNBChar                         EQU    *               ;ENTRY
 B275:20 59 B2      248           JSR   GetChar         ;Get char fr InBuf
 B278:C9 59         249           CMP   #SPACE
 B27A:F0 EE   B26A  250           BEQ   GetNBChar       ;skip spaces
@@ -1058,11 +1059,11 @@ B27E:60            252           RTS
 B27F:              253 ;=================================================
 B27F:              254 ; ($B27E) Get token fr cmd table ($DE18)
 B27F:              255 ;
-B27F:        0012  256 GetToken  EQU   *
+B27F:        B27F  256 GetToken                          EQU    *
 B27F:EE 7B B2      257           INC   LB286+1
 B282:D0 F6   B27A  258           BNE   LB286
 B284:EE 7C B2      259           INC   LB286+2
-B287:        B27C  260 LB286     EQU   *               ;ENTRY
+B287:        B287  260 LB286                             EQU    *               ;ENTRY
 B287:AD FF FF      261           LDA   IRQV+1          ;self-modifying code
 B28A:60            262 LB289     RTS   ;ENTRY
 B28B:              263 ;=================================================
@@ -1070,12 +1071,12 @@ B28B:              264 ; Print EI's Error Messages
 B28B:              265 ;
 B28B:              266 ; (X)-index into message table $9CA0
 B28B:              267 ;
-B28B:        FFFF  268 LB28A     EQU   *               ;ENTRY
+B28B:        B28B  268 LB28A                             EQU    *               ;ENTRY
 B28B:A2 31         269           LDX   #$31            ;Unknown cmd
 B28D:D0 F5   B284  270           BNE   LB290
-B28F:        B284  271 LB28E     EQU   *               ;ENTRY
+B28F:        B28F  271 LB28E                             EQU    *               ;ENTRY
 B28F:A2 00         272           LDX   #$00            ;cmd syntax
-B291:        0000  273 LB290     EQU   *               ;ENTRY
+B291:        B291  273 LB290                             EQU    *               ;ENTRY
 B291:20 98 9C      274           JSR   X9C98           ;Editor's Err Msg Printer
 B294:4C A3 B1      275           JMP   EIMainLoop
 B297:              276 ;=================================================
@@ -1083,14 +1084,14 @@ B297:81            277 LB296     DB    $00,$00,$7F,$81 ;mem bits
 B298:91 B1         278 LB29A     DW    EIWrmStrt       ;RESET vector
 B29A:14            279           DB    $14             ;poweredup byte
 B29B:              280 ;=================================================
-B29B:        B191  281 LB29D     EQU   *
+B29B:        B29B  281 LB29D                             EQU    *
 B29B:20 F2 B5      282           JSR   PrErrMsg2
 B29E:60            283           RTS
 B29F:              284 ;=================================================
 B29F:              285 ; Restore the most recent LIST cmd into InBuf
 B29F:              286 ;
-B29F:        B5F2  287 LB2A1     EQU   *
-B29F:A2 F2         288           LDX   #-1
+B29F:        B29F  287 LB2A1                             EQU    *
+B29F:A2 9F         288           LDX   #-1
 B2A1:E8            289 LB2A3     INX
 B2A2:BD 03 BB      290           LDA   SavCmdB,X
 B2A5:9D 00 02      291           STA   InBuf,X
@@ -1100,7 +1101,7 @@ B2AC:60            294           RTS
 B2AD:              295 ;=================================================
 B2AD:              296 ; Save List cmd for later use (via ctrl-R)
 B2AD:              297 ;
-B2AD:        B294  298 LB2AF     EQU   *
+B2AD:        B2AD  298 LB2AF                             EQU    *
 B2AD:A2 00         299           LDX   #0
 B2AF:BD 00 02      300 LB2B1     LDA   InBuf,X
 B2B2:9D 03 BB      301           STA   SavCmdB,X
@@ -1116,7 +1117,7 @@ B2BB:              310 ;
 B2BB:              311 ; Output
 B2BB:              312 ;  (X)-index eol
 B2BB:              313 ;
-B2BB:        B2A1  314 LB2BD     EQU   *
+B2BB:        B2BB  314 LB2BD                             EQU    *
 B2BB:24 77         315           BIT   MulCmdF         ;Multiple cmds?
 B2BD:30 31   B2F0  316           BMI   LB305           ;Yes
 B2BF:24 53         317           BIT   ExecMode
@@ -1186,15 +1187,15 @@ B337:60            380           RTS
 B338:              381 ;=================================================
 B338:              382 ; $B339
 B338:              383 ;
-B338:        0076  384 PrtCR     EQU   *               ;ENTRY
-B338:A9 76         385           LDA   #CR
+B338:        B338  384 PrtCR                             EQU    *               ;ENTRY
+B338:A9 38         385           LDA   #CR
 B33A:D0 F1   B32D  386           BNE   PrChar
-B33C:        B32D  387 RingBell  EQU   *               ;ENTRY
-B33C:A9 2D         388           LDA   #BEL
+B33C:        B33C  387 RingBell                          EQU    *               ;ENTRY
+B33C:A9 3C         388           LDA   #BEL
 B33E:D0 ED   B32D  389           BNE   PrChar
-B340:        B32D  390 ClearScr  EQU   *
-B340:A9 2D         391           LDA   #FF             ;Form Feed
-B342:        B32D  392 PrChar    EQU   *               ;ENTRY
+B340:        B340  390 ClearScr                          EQU    *
+B340:A9 40         391           LDA   #FF             ;Form Feed
+B342:        B342  392 PrChar                            EQU    *               ;ENTRY
 B342:09 80         393           ORA   #$80
 B344:C9 80         394           CMP   #BS+$80
 B346:D0 F1   B339  395           BNE   LB34F
@@ -1219,31 +1220,31 @@ B369:60            413           RTS
 B36A:              414 ;=================================================
 B36A:              415 ; Monitor rtns
 B36A:              416 ;
-B36A:        007F  417 LB36B     EQU   *               ;ENTRY
+B36A:        B36A  417 LB36B                             EQU    *               ;ENTRY
 B36A:2C 82 C0      418           BIT   RDROM2
 B36D:20 24 FC      419           JSR   VTABZ
 B370:2C 80 C0      420           BIT   RDBANK2
 B373:60            421           RTS
 B374:              422 ;
-B374:        C080  423 LB375     EQU   *               ;ENTRY
+B374:        B374  423 LB375                             EQU    *               ;ENTRY
 B374:2C 82 C0      424           BIT   RDROM2
 B377:20 DD FB      425           JSR   BELL1
 B37A:2C 80 C0      426           BIT   RDBANK2
 B37D:60            427           RTS
 B37E:              428 ;
-B37E:        C080  429 LB37F     EQU   *               ;ENTRY
+B37E:        B37E  429 LB37F                             EQU    *               ;ENTRY
 B37E:2C 82 C0      430           BIT   RDROM2
 B381:20 48 F9      431           JSR   PRBLNK
 B384:2C 80 C0      432           BIT   RDBANK2
 B387:60            433           RTS
 B388:              434 ;
-B388:        C080  435 LB389     EQU   *               ;ENTRY
+B388:        B388  435 LB389                             EQU    *               ;ENTRY
 B388:2C 82 C0      436           BIT   RDROM2
 B38B:20 41 F9      437           JSR   PRNTAX
 B38E:2C 80 C0      438           BIT   RDBANK2
 B391:60            439           RTS
 B392:              440 ;
-B392:        C080  441 LB393     EQU   *               ;ENTRY
+B392:        B392  441 LB393                             EQU    *               ;ENTRY
 B392:D0 F4   B388  442           BNE   LB39E
 B394:2C 82 C0      443           BIT   RDROM2
 B397:20 89 FE      444           JSR   SETKBD
@@ -1253,7 +1254,7 @@ B3A0:4C 69 FF      447           JMP   MONZ
 B3A3:              448 ;=================================================
 B3A3:              449 ; Perform some checks and inits
 B3A3:              450 ;
-B3A3:        FF69  451 LB3A4     EQU   *
+B3A3:        B3A3  451 LB3A4                             EQU    *
 B3A3:A9 00         452           LDA   #0
 B3A5:85 77         453           STA   MulCmdF
 B3A7:85 61         454           STA   PrColumn
@@ -1280,7 +1281,7 @@ B3D8:              474 ;=================================================
 B3D8:              475 ; EI's CSW entry point
 B3D8:              476 ; (A) = char to be printed
 B3D8:              477 ;
-B3D8:        BE40  478 LB3D9     EQU   *               ;ENTRY
+B3D8:        B3D8  478 LB3D9                             EQU    *               ;ENTRY
 B3D8:C9 61         479           CMP   #'a'-1+$80
 B3DA:90 F6   B3D2  480           BCC   LB3E8           ;Is char a-z?
 B3DC:C9 7A         481           CMP   #'z'+1+$80
@@ -1369,7 +1370,7 @@ B5BE:              563 ;=================================================
 B5BE:              564 ; ($B5BF) Command interpreter's error message table
 B5BE:              565 ; Each entry consists of 3 bytes
 B5BE:              566 ;
-B5BE:        5858  567 ErrTable  EQU   *
+B5BE:        B5BE  567 ErrTable                          EQU    *
 B5BE:10            568           DB    $10             ;error code
 B5BF:BC B4         569           DW    LB4D2           ;msg ptr
 B5C1:11            570           DB    $11
@@ -1413,7 +1414,7 @@ B5F7:              607 ; ($B5F8)
 B5F7:              608 ; Input
 B5F7:              609 ;  (A)=error code
 B5F7:              610 ;
-B5F7:        B4E6  611 FatalErr  EQU   *               ;ENTRY
+B5F7:        B5F7  611 FatalErr                          EQU    *               ;ENTRY
 B5F7:AA            612           TAX   ;error code
 B5F8:68            613           PLA   ;dump RTS addr
 B5F9:68            614           PLA
@@ -1426,7 +1427,7 @@ B601:              620 ;
 B601:              621 ; ($B602) Print Error Message and return to CI mainloop
 B601:              622 ;  (A) - error code
 B601:              623 ;
-B601:        B8D0  624 PrErrMsg  EQU   *               ;ENTRY
+B601:        B601  624 PrErrMsg                          EQU    *               ;ENTRY
 B601:20 F2 B5      625           JSR   PrErrMsg2
 B604:4C 91 B1      626           JMP   EIWrmStrt
 B607:              627 ;=================================================
@@ -1449,7 +1450,7 @@ B619:E8            643           INX
 B61A:BD A9 B5      644           LDA   ErrTable,X
 B61D:85 13         645           STA   Z12+1
 B61F:              646 ;
-B61F:        0013  647 LB620     EQU   *               ;ENTRY
+B61F:        B61F  647 LB620                             EQU    *               ;ENTRY
 B61F:A9 45         648           LDA   #'E'
 B621:20 2D B3      649           JSR   PrChar
 B624:A9 52         650           LDA   #'R'
@@ -1480,8 +1481,8 @@ B651:8E F4 B4      674           STX   HexStr
 B654:A9 FF         675           LDA   #$FF            ;Show err msg w/errcode in hex
 B656:4C F2 B5      676           JMP   PrErrMsg2
 B659:              677 ;=================================================
-B659:        B5F2  678 LB659     EQU   *               ;ENTRY
-B659:A9 F2         679           LDA   #CR
+B659:        B659  678 LB659                             EQU    *               ;ENTRY
+B659:A9 59         679           LDA   #CR
 B65B:C5 12         680           CMP   Z12
 B65D:F0 EE   B64D  681           BEQ   LB662
 B65F:4C 82 B2      682           JMP   LB28E           ;cmd syntax
@@ -1530,7 +1531,7 @@ B6A3:3F            724           ST    R15
 B6A4:              725 ;=================================================
 B6A4:              726 ; END cmd
 B6A4:              727 ;
-B6A4:        000C  728 LB6A4     EQU   *
+B6A4:        B6A4  728 LB6A4                             EQU    *
 B6A4:A5 74         729           LDA   SwapMode        ;Do we have a split txt buf?
 B6A6:D0 2D   B6D5  730           BNE   LB6EA           ;Yes, so can't quit
 B6A8:20 72 A8      731           JSR   XA872           ;Load Quit Code
@@ -1554,7 +1555,7 @@ B6D3:20 00 BF      748           JSR   PRODOS8
 B6D6:65            749           DB    $65
 B6D7:CA B6         750           DW    QuitP
 B6D9:              751 ;
-B6D9:        B6CA  752 LB6D9     EQU   *
+B6D9:        B6D9  752 LB6D9                             EQU    *
 B6D9:8D FF 02      753           STA   InBuf+$FF
 B6DC:4C 00 E0      754           JMP   BASCLD          ;Do a Monitor cold Start
 B6DF:              755 ;
@@ -1566,10 +1567,10 @@ B6E4:00 00         760           DW    $0000
 B6E6:              761 ;=================================================
 B6E6:              762 ; Prepare for Assembly
 B6E6:              763 ;
-B6E6:        0000  764 LB6E6     EQU   *
+B6E6:        B6E6  764 LB6E6                             EQU    *
 B6E6:A5 74         765           LDA   SwapMode        ;Do we have a split txt buf?
 B6E8:F0 F0   B6DA  766           BEQ   LB6EF           ;No
-B6EA:        B6DA  767 LB6EA     EQU   *               ;ENTRY
+B6EA:        B6EA  767 LB6EA                             EQU    *               ;ENTRY
 B6EA:A2 41         768           LDX   #$41            ;Multi-buffer
 B6EC:4C 84 B2      769           JMP   LB290
 B6EF:              770 ;
@@ -1628,7 +1629,7 @@ B741:              822 ; Relocator module loaded @ $8900-$98FF to
 B741:              823 ; $D000 LC Bank2
 B741:              824 ; Return to caller if successful else crash into Monitor
 B741:              825 ;
-B741:        B1A3  826 LB741     EQU   *
+B741:        B741  826 LB741                             EQU    *
 B741:20 19 B8      827           JSR   LB836           ;Set prefix to EdAsm's Dir
 B744:90 19   B75F  828           BCC   LoadDEd
 B746:A9 FE         829           LDA   #$FE            ;Re-mount...
@@ -1693,8 +1694,8 @@ B7AB:              887 ; ($B7AB) Move code btwn $8900-$98FF to the LC Bank2
 B7AB:              888 ; Also referenced by Editor to move Quit Code
 B7AB:              889 ; back to LC Bank2
 B7AB:              890 ;
-B7AB:        BF6B  891 Mv2LCB2   EQU   *               ;ENTRY
-B7AB:A9 6B         892           LDA   #>XD000         ;dest addr
+B7AB:        B7AB  891 Mv2LCB2                           EQU    *               ;ENTRY
+B7AB:A9 AB         892           LDA   #>XD000         ;dest addr
 B7AD:85 42         893           STA   A4
 B7AF:A9 42         894           LDA   #<XD000
 B7B1:85 43         895           STA   A4+1
@@ -1723,7 +1724,7 @@ B7D9:              917 ; $7800-$9EFF - Assembler overlay
 B7D9:              918 ; $D000-$DFFF (bank2) - Assembler tables,
 B7D9:              919 ;  Sorting,print symbol tables
 B7D9:              920 ;=================================================
-B7D9:        FF65  921 LoadAsm   EQU   *
+B7D9:        B7D9  921 LoadAsm                           EQU    *
 B7D9:20 19 B8      922           JSR   LB836           ;Set prefix to EdAsm's Boot Dir
 B7DC:90 EF   B7CD  923           BCC   LB7E6
 B7DE:20 20 B8      924           JSR   LB83D           ;Set to user's prefix
@@ -1774,7 +1775,7 @@ B835:60            968           RTS
 B836:              969 ;=================================================
 B836:              970 ; Set prefix to EdAsm's Boot Dir
 B836:              971 ;
-B836:        B792  972 LB836     EQU   *               ;ENTRY
+B836:        B836  972 LB836                             EQU    *               ;ENTRY
 B836:20 00 BF      973           JSR   PRODOS8
 B839:C6            974           DB    $C6
 B83A:7F BA         975           DW    SPfxEdAsm
@@ -1792,7 +1793,7 @@ B844:              986 ; EdAsm.Ed or EdAsm.Asm are loaded into memory
 B844:              987 ; Input
 B844:              988 ;  (X,Y) - ptr to filename
 B844:              989 ;
-B844:        BA79  990 LoadMod   EQU   *               ;ENTRY
+B844:        B844  990 LoadMod                           EQU    *               ;ENTRY
 B844:A9 FF         991           LDA   #$FF
 B846:8D C6 BA      992           STA   ExitFlag
 B849:86 08         993           STX   Reg4            ;ptr to file name
@@ -1823,7 +1824,7 @@ B868:79 BA        1017           DW    SPfx1P
 B86A:D0 E3   B84F 1018           BNE   LB86F
 B86C:60           1019           RTS
 B86D:             1020 ;
-B86D:        B84F 1021 LB86F     EQU   *               ;ENTRY
+B86D:        B86D 1021 LB86F                             EQU    *               ;ENTRY
 B86D:C9 40        1022           CMP   #$40            ;Invalid pathname
 B86F:F0 E5   B856 1023           BEQ   LB876
 B871:4C 59 B8     1024           JMP   ErrHndlr
@@ -1834,7 +1835,7 @@ B877:             1028 ; EI's error handler
 B877:             1029 ; Input
 B877:             1030 ;  ExitFlag - $00,$FF,$8x
 B877:             1031 ;
-B877:        B5EC 1032 ErrHndlr  EQU   *
+B877:        B877 1032 ErrHndlr                          EQU    *
 B877:2C C6 BA     1033           BIT   ExitFlag
 B87A:10 E3   B85F 1034           BPL   LB880
 B87C:38           1035           SEC
@@ -1851,7 +1852,7 @@ B881:             1045 ;  C=1 - Not found
 B881:             1046 ;  C=0, Z=0 - Found but wrong filetype
 B881:             1047 ;  C=0, Z=1 - Found
 B881:             1048 ;
-B881:        B5E2 1049 CkAttrF   EQU   *               ;ENTRY
+B881:        B881 1049 CkAttrF                           EQU    *               ;ENTRY
 B881:85 51        1050           STA   FileType        ;ftype
 B883:20 8C B8     1051           JSR   SetupFN
 B886:A9 8C        1052           LDA   #>FileNameB
@@ -1880,7 +1881,7 @@ B8B0:             1074 ; ($B8B2) Setup file name
 B8B0:             1075 ; Input
 B8B0:             1076 ;  (Reg4)=ptr to the filename
 B8B0:             1077 ;
-B8B0:        0011 1078 SetupFN   EQU   *               ;ENTRY
+B8B0:        B8B0 1078 SetupFN                           EQU    *               ;ENTRY
 B8B0:A0 00        1079           LDY   #0
 B8B2:B9 00 00     1080 LB8B4     LDA   (Reg4),Y
 B8B5:F0 EB   B8A2 1081           BEQ   LB8C7           ;null-terminated
@@ -1901,7 +1902,7 @@ B8CD:             1095 ; Input
 B8CD:             1096 ;  (X,Y)- ptr to 1024-byte buffer of PRODOS to use
 B8CD:             1097 ;  PathNameP - Pathname of file to be opened
 B8CD:             1098 ;
-B8CD:        0280 1099 OpenDFile EQU   *               ;ENTRY
+B8CD:        B8CD 1099 OpenDFile                         EQU    *               ;ENTRY
 B8CD:8E 45 BA     1100           STX   IOBufP
 B8D0:8C 46 BA     1101           STY   IOBufP+1
 B8D3:20 00 BF     1102           JSR   PRODOS8
@@ -1919,7 +1920,7 @@ B8ED:60           1113           RTS
 B8EE:             1114 ;=================================================
 B8EE:             1115 ; ($B8EF)
 B8EE:             1116 ;
-B8EE:        BAB7 1117 ClsFile   EQU   *               ;ENTRY
+B8EE:        B8EE 1117 ClsFile                           EQU    *               ;ENTRY
 B8EE:20 00 BF     1118           JSR   PRODOS8
 B8F1:CC           1119           DB    $CC
 B8F2:B6 BA        1120           DW    CloseP
@@ -1933,43 +1934,43 @@ B8FD:             1127 ; ($B8FE)
 B8FD:             1128 ; (A)-error code
 B8FD:             1129 ; Preserved (A)
 B8FD:             1130 ;
-B8FD:        BAB7 1131 ClsFile2  EQU   *               ;ENTRY
+B8FD:        B8FD 1131 ClsFile2                          EQU    *               ;ENTRY
 B8FD:48           1132           PHA
 B8FE:20 C2 B8     1133           JSR   ClsFile
 B901:68           1134           PLA
 B902:60           1135           RTS
 B903:             1136 ;=================================================
-B903:        B8C2 1137 LB904     EQU   *               ;ENTRY
+B903:        B903 1137 LB904                             EQU    *               ;ENTRY
 B903:20 00 BF     1138           JSR   PRODOS8
 B906:C3           1139           DB    $C3
 B907:99 BA        1140           DW    SFInfoP
 B909:60           1141           RTS
 B90A:             1142 ;
-B90A:        BA99 1143 LB90B     EQU   *               ;ENTRY
+B90A:        B90A 1143 LB90B                             EQU    *               ;ENTRY
 B90A:20 00 BF     1144           JSR   PRODOS8
 B90D:C1           1145           DB    $C1
 B90E:B3 BA        1146           DW    DestroyP
 B910:60           1147           RTS
 B911:             1148 ;
-B911:        BAB3 1149 LB912     EQU   *               ;ENTRY
+B911:        B911 1149 LB912                             EQU    *               ;ENTRY
 B911:20 00 BF     1150           JSR   PRODOS8
 B914:C2           1151           DB    $C2
 B915:B8 BA        1152           DW    RenameP
 B917:60           1153           RTS
 B918:             1154 ;
-B918:        BAB8 1155 LB919     EQU   *               ;ENTRY
+B918:        B918 1155 LB919                             EQU    *               ;ENTRY
 B918:20 00 BF     1156           JSR   PRODOS8
 B91B:C0           1157           DB    $C0
 B91C:A7 BA        1158           DW    CreateP
 B91E:60           1159           RTS
 B91F:             1160 ;
-B91F:        BAA7 1161 LB920     EQU   *               ;ENTRY
+B91F:        B91F 1161 LB920                             EQU    *               ;ENTRY
 B91F:20 00 BF     1162           JSR   PRODOS8
 B922:CB           1163           DB    $CB
 B923:50 BA   B8DF 1164           DW    WritePB
 B925:60           1165           RTS
 B926:             1166 ;
-B926:        BA50 1167 LB927     EQU   *               ;ENTRY
+B926:        B926 1167 LB927                             EQU    *               ;ENTRY
 B926:20 00 BF     1168           JSR   PRODOS8
 B929:D0           1169           DB    $D0
 B92A:74 BA        1170           DW    SeofP
@@ -1978,7 +1979,7 @@ B92D:             1172 ;=================================================
 B92D:             1173 ; Used by EXIT cmd to transfer control
 B92D:             1174 ; to a SYSTEM program
 B92D:             1175 ;
-B92D:        BA74 1176 LB92E     EQU   *               ;ENTRY
+B92D:        B92D 1176 LB92E                             EQU    *               ;ENTRY
 B92D:AD 81 C0     1177           LDA   ROMIN2
 B930:AD 81 C0     1178           LDA   ROMIN2
 B933:4C 00 20     1179           JMP   L2000
@@ -1995,7 +1996,7 @@ B936:             1189 ;  C=1 - error
 B936:             1190 ;  (A) - error code
 B936:             1191 ;  C=0 - file loaded successfully
 B936:             1192 ;
-B936:        2000 1193 OpenNRd   EQU   *               ;ENTRY
+B936:        B936 1193 OpenNRd                           EQU    *               ;ENTRY
 B936:20 62 B8     1194           JSR   CkAttrF         ;Check file's attributes
 B939:B0 F8   B933 1195           BCS   LB965           ;Not found
 B93B:D0 F5   B932 1196           BNE   LB964           ;Found but wrong type
@@ -2025,7 +2026,7 @@ B965:             1219 ; Output
 B965:             1220 ;  (A)=error code
 B965:             1221 ;  C=1 - file too large
 B965:             1222 ;
-B965:        B8D0 1223 CkSizeF   EQU   *               ;ENTRY
+B965:        B965 1223 CkSizeF                           EQU    *               ;ENTRY
 B965:20 00 BF     1224           JSR   PRODOS8
 B968:D1           1225           DB    $D1
 B969:82 BA        1226           DW    GeofP
@@ -2059,7 +2060,7 @@ B99A:             1253 ;  (A) - byte value to be converted
 B99A:             1254 ; Output
 B99A:             1255 ;  (X,A) - Hex Digits
 B99A:             1256 ;
-B99A:        0010 1257 Cnv2Hex   EQU   *               ;ENTRY
+B99A:        B99A 1257 Cnv2Hex                           EQU    *               ;ENTRY
 B99A:48           1258           PHA   ;Convert to 2 HEX digits
 B99B:4A           1259           LSR   ;Shift upper nybble
 B99C:4A           1260           LSR
@@ -2078,11 +2079,11 @@ B9AF:             1272 ;=================================================
 B9AF:             1273 ; EXEC command
 B9AF:             1274 ; Ref pg 62 for lots of info on use of EXEC files
 B9AF:             1275 ;
-B9AF:        0006 1276 LB9B0     EQU   *               ;ENTRY
+B9AF:        B9AF 1276 LB9B0                             EQU    *               ;ENTRY
 B9AF:14 04 00     1277           SET   R4,XBD80
 B9B2:00           1278           RTN
 B9B3:             1279 ;
-B9B3:        0004 1280 LB9B4     EQU   *
+B9B3:        B9B3 1280 LB9B4                             EQU    *
 B9B3:24 53        1281           BIT   ExecMode        ;exec mode?
 B9B5:10 CF   B986 1282           BPL   LB9C3           ;No
 B9B7:0E 53 00     1283           ASL   ExecMode
@@ -2103,7 +2104,7 @@ B9D3:20 A8 B8     1297           JSR   OpenDFile
 B9D6:             1298 ;
 B9D6:             1299 ; Set to read file in new line mode
 B9D6:             1300 ;
-B9D6:        B8A8 1301 LB9D6     EQU   *
+B9D6:        B9D6 1301 LB9D6                             EQU    *
 B9D6:AD 47 BA     1302           LDA   OpenRN
 B9D9:8D 61 BA     1303           STA   NewLineRN
 B9DC:8D 59 BA     1304           STA   RdExeRN
@@ -2256,13 +2257,13 @@ BB91:45 44 41 53  1450 EdStr   ASC                  'EDASM.ED'
 BB99:00           1451           DB    $00
 BB9A:45 44 41 53  1452 AsmStr   ASC                  'EDASM.ASM'
 BBA3:00           1453           DB    $00
-BBA4:        A0A0 1454 BIStr     EQU   *               ;ENTRY
+BBA4:        BBA4 1454 BIStr                             EQU    *               ;ENTRY
 BBA4:42 41 53 49  1455           ASC   'BASIC.SYSTEM'
 BBB0:00           1456           DB    $00
 BBB1:             1457 ;
 BBB1:             1458 ; The random bytes below are generated by DS statement
 BBB1:             1459 ;
-BBB1:        A0A0 1460 LBB27     EQU   *               ;ENTRY
+BBB1:        BBB1 1460 LBB27                             EQU    *               ;ENTRY
 BBB1:CE           1461           DB    $D1,$A0,$35,$3E,$CF,$D5,$D4,$CE
 BBB2:3F           1462           DB    $C1,$CD,$45,$21,$51,$A2,$23,$3F
 BBB3:45           1463           DB    $CF,$D5,$D4,$D4,$C9,$D4,$CC,$45
@@ -2270,7 +2271,7 @@ BBB4:21           1464           DB    $21
 BBB5:             1465 ;
 BBB5:             1466 ; $BB40
 BBB5:             1467 ;
-BBB5:        A0A0 1468 FileNameB EQU   *
+BBB5:        BBB5 1468 FileNameB                         EQU    *
 BBB5:CC           1469           DB    $32,$A2,$5A,$3E,$C3,$C1,$D4,$CC
 BBB6:3F           1470           DB    $CF,$CF,$50,$20,$EF,$A0,$6D,$3F
 BBB7:21           1471           DB    $CE,$C5,$D8,$D4,$C3,$C1,$54,$21
@@ -2282,7 +2283,7 @@ BBBC:D4           1476           DB    $D5,$54,$21,$16,$A1,$C4,$42,$D4
 BBBD:             1477 ;
 BBBD:             1478 ; $BB80
 BBBD:             1479 ;
-BBBD:        A0A0 1480 CurrPfxB  EQU   *               ;ENTRY
+BBBD:        BBBD 1480 CurrPfxB                          EQU    *               ;ENTRY
 BBBD:DD           1481           DB    $D3,$D4,$CB,$C5,$59,$21,$11,$DD
 BBBE:CF           1482           DB    $94,$3E,$C3,$C1,$D4,$C6,$CF,$CF
 BBBF:C1           1483           DB    $54,$21,$2A,$A1,$A0,$3E,$C3,$C1
@@ -2302,7 +2303,7 @@ BBCC:D5           1496           DB    $C5,$43,$21,$0F,$A5,$22,$42,$D5
 BBCD:             1497 ;
 BBCD:             1498 ; $BC00 - Buf to save the most recent List cmd
 BBCD:             1499 ;
-BBCD:        A0A0 1500 SavCmdB   EQU   *
+BBCD:        BBCD 1500 SavCmdB                           EQU    *
 BBCD:21           1501           DB    $D3,$C5,$C4,$C2,$CC,$CB,$53,$21
 BBCE:C5           1502           DB    $16,$A2,$00,$00,$C6,$D2,$C5,$C5
 BBCF:5F           1503           DB    $C2,$CC,$CB,$53,$21,$00,$A2,$5F
@@ -2322,7 +2323,7 @@ BBDC:C4           1516           DB    $A2,$00,$00,$C3,$D2,$C5,$C1,$C4
 BBDD:             1517 ;
 BBDD:             1518 ; $BC80
 BBDD:             1519 ;
-BBDD:        A0A0 1520 ExecLineB EQU   *
+BBDD:        BBDD 1520 ExecLineB                         EQU    *
 BBDD:C5           1521           DB    $32,$21,$90,$A2,$57,$4B,$CE,$C5
 BBDE:9A           1522           DB    $D8,$D4,$C3,$58,$21,$9C,$A2,$9A
 BBDF:20           1523           DB    $3F,$D0,$D2,$C5,$C6,$C9,$58,$20
@@ -2339,7 +2340,7 @@ BBE9:44           1533           DB    $3F,$D0,$D2,$C5,$C6,$C5,$CE,$44
 BBEA:D2           1534           DB    $21,$D3,$A2,$4E,$42,$D3,$D4,$D2
 BBEB:EF           1535           DB    $D3,$C5,$D4,$D0,$C6,$58,$21,$EF
 BBEC:D3           1536           DB    $A2,$05,$40,$D0,$D2,$C5,$D3
-BBED:        A0A0 1537 CIEnd     EQU   *
+BBED:        BBED 1537 CIEnd                             EQU    *
 ***** ERROR IN LINE 0060: DIRECTIVE OPERAND
 ***** ERROR IN LINE 0065: DIRECTIVE OPERAND
 ***** ERROR IN LINE 0061: DIRECTIVE OPERAND
@@ -2349,6 +2350,6 @@ BBED:        A0A0 1537 CIEnd     EQU   *
 ***** ERROR IN LINE 0114: DIRECTIVE OPERAND
 ***** ERROR IN LINE 0116: DIRECTIVE OPERAND
 ** SUCCESSFUL ASSEMBLY := 94 ERRORS
-** ASSEMBLER CREATED ON 20-APR-26 05:26 
-** TOTAL LINES ASSEMBLED002333 
+** ASSEMBLER CREATED ON 20-APR-26 07:49 
+** TOTAL LINES ASSEMBLED002334 
 ** FREE SPACE PAGE COUNT00138 

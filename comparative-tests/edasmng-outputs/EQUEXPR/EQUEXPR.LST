@@ -2,13 +2,13 @@
 SOURCE   FILE #01 =>EQUEXPR.SRC
  
 0000:                1 * EQU EXPRESSION TEST - symbol defined via EQU used as operand [WS]
-0000:        C000    2 BASE                            EQU   $C000
+0000:        C000    2 BASE                              EQU    $C000
 ----- NEXT OBJECT FILE NAME IS /OUT/EQUEXPR.OBJ              
 0800:        0800    3                                     ORG   $0800
 0800:A9 01           4                                     LDA   #$01
 0802:8D 00 C0        5                                     STA   BASE
 0805:60              6                                     RTS
 ** SUCCESSFUL ASSEMBLY := NO ERRORS
-** ASSEMBLER CREATED ON 20-APR-26 05:26 
+** ASSEMBLER CREATED ON 20-APR-26 07:49 
 ** TOTAL LINES ASSEMBLED     6 
 ** FREE SPACE PAGE COUNT  160 
