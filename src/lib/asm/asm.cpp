@@ -714,7 +714,7 @@ namespace {
     // op
 
     auto skip_spaces = [&]() {
-      while (SrcP_at(Y) == SPACE) {
+      while (SrcP_at(Y) == SPACE || SrcP_at(Y) == '\t') {
         Y++;
         if (Y == 0) break;
       }
@@ -777,11 +777,18 @@ namespace {
       // CRITICAL: FindSym() needs to read from the current position in the source.
       // In the original 6502 code, symbol names were always at the start of a line (Y=0),
       // but in expression evaluation, we need to position SrcP to point at the symbol.
-      uint16_t saved_SrcP = SrcP;
-      SrcP += start_y;  // Advance SrcP to where the symbol actually starts
-      Y = 0;            // FindSym expects Y=0
+      uint16_t saved_SrcP      = SrcP;
+      uint32_t saved_large_pos = g_large_src_pos;
+      if (!g_large_src.empty()) {
+        // In large-source mode SrcP_at() reads from g_large_src_pos, not SrcP.
+        g_large_src_pos += start_y;
+      } else {
+        SrcP += start_y;  // Advance SrcP to where the symbol actually starts
+      }
+      Y = 0;  // FindSym expects Y=0
       AsmInternal::FindSym();
-      SrcP = saved_SrcP;  // Restore SrcP
+      SrcP            = saved_SrcP;  // Restore SrcP
+      g_large_src_pos = saved_large_pos;
       if (C) {
         Y = start_y;  // Restore Y before returning
         return false;
@@ -884,6 +891,31 @@ namespace {
         return true;
       }
 
+      // EDASM-style character constants: 'A or "A
+      // A quote prefix applies to the immediate next byte and does not
+      // require a closing quote in source expressions.
+      if (ch == '\'' || ch == '"') {
+        uint8_t quote = ch;
+        Y++;  // consume quote marker
+        uint8_t chr = SrcP_at(Y);
+        if (chr == CR || chr == 0) {
+          return false;
+        }
+        Y++;
+        // Accept either EDASM shorthand ('A) or a closed quote form ('A').
+        if (SrcP_at(Y) == quote) {
+          Y++;
+        }
+        val = chr;
+        if (use_low) {
+          val = val & 0x00FF;
+        } else if (use_high) {
+          val = (val >> 8) & 0x00FF;
+        }
+        finish_tokens();
+        return true;
+      }
+
       if (ch == '*') {
         Y++;
         val      = PC;
@@ -915,8 +947,16 @@ namespace {
 
     // ---- expression parse starts here ----
     RelExprF       = 0;
+    ExprAccF       = 0;
     uint16_t term1 = 0, term2 = 0;
     bool     term1_rel = false, term2_rel = false;
+
+    // Mnemonic operand evaluation may leave Y positioned at '#'.
+    // Treat it as an immediate marker, not part of the expression term.
+    skip_spaces();
+    if (SrcP_at(Y) == '#') {
+      Y++;
+    }
 
     if (!parse_term(term1, term1_rel, true)) {
       C = true;
@@ -927,7 +967,7 @@ namespace {
 
     skip_spaces();
     uint8_t op = SrcP_at(Y);
-    if (op == '+' || op == '-' || op == '*') {
+    while (op == '+' || op == '-' || op == '*') {
       Y++;
       if (!parse_term(term2, term2_rel, true)) {
         C = true;
@@ -946,22 +986,29 @@ namespace {
       if (op == '+') res = static_cast<uint32_t>(term1) + term2;
       if (op == '-') res = static_cast<uint32_t>(term1) - term2;
       if (op == '*') res = static_cast<uint32_t>(term1) * term2;
-      ValExpr    = static_cast<uint8_t>(res & 0xFF);
-      ValExpr_hi = static_cast<uint8_t>((res >> 8) & 0xFF);
-      Lower8     = ValExpr;
-      RelExprF   = (term1_rel || term2_rel) ? relative : 0;
-      C          = false;
-      finish_tokens();
+      term1     = static_cast<uint16_t>(res & 0xFFFF);
+      term1_rel = term1_rel || term2_rel;
+      skip_spaces();
+      op = SrcP_at(Y);
+    }
+
+    if (SrcP_at(Y) != CR && SrcP_at(Y) != '\n' && SrcP_at(Y) != 0 && SrcP_at(Y) != ',' &&
+        SrcP_at(Y) != ';' && SrcP_at(Y) != ')') {
+      C = true;
+      X = 0x24;
+      RegAsmEW(X);
       return;
     }
 
-    // Single term only
     ValExpr    = static_cast<uint8_t>(term1 & 0xFF);
     ValExpr_hi = static_cast<uint8_t>((term1 >> 8) & 0xFF);
     Lower8     = ValExpr;
     RelExprF   = term1_rel ? relative : 0;
     C          = false;
     finish_tokens();
+    return;
+
+    // Single term only
   }
 
   // void InitASM() {
@@ -4495,10 +4542,18 @@ namespace {
     auto emit_imm_zp_abs = [&](std::uint8_t immediate_opcode, std::uint8_t zp_opcode,
                                std::uint8_t zpx_opcode, std::uint8_t zpy_opcode,
                                std::uint8_t absolute_opcode, std::uint8_t absx_opcode,
-                               std::uint8_t absy_opcode) {
+                               std::uint8_t absy_opcode, std::uint8_t xind_opcode = 0xFF,
+                               std::uint8_t indy_opcode = 0xFF) {
       ZAB = 0x7F;
       NxtField();
       std::uint8_t operand_pos = Y;
+
+      auto skip_spaces_tabs = [&]() {
+        while (SrcP_at(Y) == SPACE || SrcP_at(Y) == '\t') {
+          Y++;
+          if (Y == 0) break;
+        }
+      };
 
       bool is_immediate = (SrcP_at(Y) == '#') && immediate_opcode != 0xFF;
       if (is_immediate) {
@@ -4525,6 +4580,113 @@ namespace {
           A = immediate_opcode;
           StorByt();
           A = operand_byte;
+          StorByt();
+          PC = ObjPC;
+        }
+        C = false;
+        return;
+      }
+
+      if (SrcP_at(Y) == '(') {
+        // Handle indexed-indirect and indirect-indexed forms: (zp,X) and (zp),Y.
+        if (PassNbr == 0) {
+          std::uint8_t scan = static_cast<std::uint8_t>(Y + 1);
+          while (true) {
+            std::uint8_t ch = SrcP_at(scan);
+            if (ch == CR || ch == 0 || ch == ';') {
+              break;
+            }
+            if (ch == ',') {
+              std::uint8_t reg = SrcP_at(static_cast<std::uint8_t>(scan + 1));
+              std::uint8_t nxt = SrcP_at(static_cast<std::uint8_t>(scan + 2));
+              bool is_xind     = (reg == 'X' || reg == 'x') && nxt == ')' && xind_opcode != 0xFF;
+              bool is_indy     = (reg == 'Y' || reg == 'y') && indy_opcode != 0xFF;
+              if (is_xind || is_indy) {
+                Length = 2;
+                PC += 2;
+                C = false;
+                return;
+              }
+              break;
+            }
+            scan++;
+          }
+        }
+
+        Y++;
+        EvalExpr();
+        if (C) {
+          return;
+        }
+
+        std::uint16_t value  = static_cast<std::uint16_t>(ValExpr | (ValExpr_hi << 8));
+        bool          use_zp = (ValExpr_hi == 0 && RelExprF == 0);
+
+        skip_spaces_tabs();
+        std::uint8_t opcode = 0xFF;
+
+        if (SrcP_at(Y) == ',') {
+          Y++;
+          skip_spaces_tabs();
+          std::uint8_t reg = SrcP_at(Y);
+          if ((reg == 'X' || reg == 'x') && xind_opcode != 0xFF) {
+            Y++;
+            skip_spaces_tabs();
+            if (SrcP_at(Y) != ')') {
+              X = 0x2A;
+              RegAsmEW(X);
+              C = true;
+              return;
+            }
+            opcode = xind_opcode;
+          } else {
+            X = 0x2A;
+            RegAsmEW(X);
+            C = true;
+            return;
+          }
+        } else if (SrcP_at(Y) == ')') {
+          Y++;
+          skip_spaces_tabs();
+          if (SrcP_at(Y) != ',') {
+            X = 0x2A;
+            RegAsmEW(X);
+            C = true;
+            return;
+          }
+          Y++;
+          skip_spaces_tabs();
+          std::uint8_t reg = SrcP_at(Y);
+          if ((reg == 'Y' || reg == 'y') && indy_opcode != 0xFF) {
+            opcode = indy_opcode;
+          } else {
+            X = 0x2A;
+            RegAsmEW(X);
+            C = true;
+            return;
+          }
+        } else {
+          X = 0x2A;
+          RegAsmEW(X);
+          C = true;
+          return;
+        }
+
+        if (!use_zp) {
+          X = 0x2E;
+          RegAsmEW(X);
+          C = true;
+          return;
+        }
+
+        Length = 2;
+        if (g_use_experimental_pass2) {
+          const std::uint8_t bytes[] = {opcode, static_cast<std::uint8_t>(value & 0xFF)};
+          QueueExperimentalBytes(bytes, 2);
+        } else {
+          A = opcode;
+          StorByt();
+          A = static_cast<std::uint8_t>(value & 0xFF);
           StorByt();
           PC = ObjPC;
         }
@@ -4604,6 +4766,9 @@ namespace {
       }
 
       EvalExpr();
+      if (C) {
+        return;
+      }
 
       std::uint16_t value      = static_cast<std::uint16_t>(ValExpr | (ValExpr_hi << 8));
       bool          use_zp     = (ValExpr_hi == 0 && RelExprF == 0);
@@ -4994,17 +5159,17 @@ namespace {
     }
 
     if (mnemonic == "LDA") {
-      emit_imm_zp_abs(0xA9, 0xA5, 0xB5, 0xFF, 0xAD, 0xBD, 0xB9);
+      emit_imm_zp_abs(0xA9, 0xA5, 0xB5, 0xFF, 0xAD, 0xBD, 0xB9, 0xA1, 0xB1);
       return;
     }
 
     if (mnemonic == "ADC") {
-      emit_imm_zp_abs(0x69, 0x65, 0x75, 0xFF, 0x6D, 0x7D, 0x79);
+      emit_imm_zp_abs(0x69, 0x65, 0x75, 0xFF, 0x6D, 0x7D, 0x79, 0x61, 0x71);
       return;
     }
 
     if (mnemonic == "AND") {
-      emit_imm_zp_abs(0x29, 0x25, 0x35, 0xFF, 0x2D, 0x3D, 0x39);
+      emit_imm_zp_abs(0x29, 0x25, 0x35, 0xFF, 0x2D, 0x3D, 0x39, 0x21, 0x31);
       return;
     }
 
@@ -5014,7 +5179,7 @@ namespace {
     }
 
     if (mnemonic == "STA") {
-      emit_imm_zp_abs(0xFF, 0x85, 0x95, 0xFF, 0x8D, 0x9D, 0x99);
+      emit_imm_zp_abs(0xFF, 0x85, 0x95, 0xFF, 0x8D, 0x9D, 0x99, 0x81, 0x91);
       return;
     }
 
@@ -5127,150 +5292,10 @@ namespace {
       return;
     }
 
-    if (mnemonic == "DB") {
-      ZAB = 0x7F;
-      NxtField();
-
-      auto trim = [&](const std::string& s) -> std::string {
-        std::size_t start = 0;
-        while (start < s.size() && (s[start] == ' ' || s[start] == '\t')) start++;
-        std::size_t end = s.size();
-        while (end > start && (s[end - 1] == ' ' || s[end - 1] == '\t')) end--;
-        return s.substr(start, end - start);
-      };
-
-      auto upper = [&](std::string s) -> std::string {
-        for (char& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        return s;
-      };
-
-      auto read_current_source_line = [&]() -> std::string {
-        std::string line;
-        if (!g_large_src.empty()) {
-          for (std::uint32_t idx = 0; idx < 256; ++idx) {
-            std::uint32_t pos = g_large_src2p + idx;
-            if (pos >= g_large_src.size()) break;
-            std::uint8_t ch = g_large_src[pos];
-            if (ch == CR) break;
-            line.push_back(static_cast<char>(ch & 0x7F));
-          }
-        } else {
-          for (std::uint16_t idx = 0; idx < 256; ++idx) {
-            std::uint8_t ch = g_test_src_memory[static_cast<std::uint16_t>(Src2P + idx)];
-            if (ch == CR) break;
-            line.push_back(static_cast<char>(ch & 0x7F));
-          }
-        }
-        return line;
-      };
-
-      auto extract_db_operands = [&](const std::string& line) -> std::string {
-        std::size_t i = 0;
-        while (i < line.size()) {
-          while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) i++;
-          if (i >= line.size() || line[i] == ';') break;
-
-          std::size_t token_start = i;
-          while (i < line.size() && line[i] != ' ' && line[i] != '\t' && line[i] != ';') i++;
-          std::string token = upper(line.substr(token_start, i - token_start));
-          if (token == "DB" || token == ".DB") {
-            while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) i++;
-            std::size_t end = i;
-            while (end < line.size() && line[end] != ';') end++;
-            return trim(line.substr(i, end - i));
-          }
-        }
-        return "";
-      };
-
-      auto parse_db_token = [&](const std::string& tok) -> std::uint8_t {
-        std::string t = trim(tok);
-        if (t.empty()) return 0;
-
-        if (t[0] == '$') {
-          std::uint16_t value = 0;
-          for (std::size_t i = 1; i < t.size(); ++i) {
-            char c = t[i];
-            if (c >= '0' && c <= '9')
-              value = static_cast<std::uint16_t>((value << 4) | (c - '0'));
-            else if (c >= 'A' && c <= 'F')
-              value = static_cast<std::uint16_t>((value << 4) | (c - 'A' + 10));
-            else if (c >= 'a' && c <= 'f')
-              value = static_cast<std::uint16_t>((value << 4) | (c - 'a' + 10));
-            else
-              break;
-          }
-          return static_cast<std::uint8_t>(value & 0xFF);
-        }
-
-        bool decimal_only = true;
-        for (char c : t) {
-          if (c < '0' || c > '9') {
-            decimal_only = false;
-            break;
-          }
-        }
-        if (decimal_only) {
-          std::uint16_t value = 0;
-          for (char c : t) value = static_cast<std::uint16_t>(value * 10 + (c - '0'));
-          return static_cast<std::uint8_t>(value & 0xFF);
-        }
-
-        if ((t.front() == '\'' && t.back() == '\'' && t.size() >= 3) ||
-            (t.front() == '"' && t.back() == '"' && t.size() >= 3)) {
-          return static_cast<std::uint8_t>(t[1]);
-        }
-
-        const std::string sym = upper(t);
-        if (sym == "CR") return 0x8D;
-        if (sym == "BEL") return 0x87;
-        if (sym == "BS") return 0x88;
-        return 0;
-      };
-
-      std::string               operands = extract_db_operands(read_current_source_line());
-      std::vector<std::uint8_t> values;
-      std::string               current;
-      bool                      in_quote = false;
-      char                      quote_ch = 0;
-
-      for (char c : operands) {
-        if ((c == '\'' || c == '"')) {
-          if (in_quote && c == quote_ch)
-            in_quote = false;
-          else if (!in_quote) {
-            in_quote = true;
-            quote_ch = c;
-          }
-        }
-
-        if (c == ',' && !in_quote) {
-          values.push_back(parse_db_token(current));
-          current.clear();
-          continue;
-        }
-        current.push_back(c);
-      }
-      if (!current.empty()) values.push_back(parse_db_token(current));
-      if (values.empty()) values.push_back(0);
-
-      Length = static_cast<std::uint8_t>(values.size() & 0xFF);
-      if (PassNbr == 0) {
-        PC += Length;
-      } else {
-        for (std::uint8_t byte_value : values) {
-          if (g_use_experimental_pass2) {
-            const std::uint8_t bytes[] = {byte_value};
-            QueueExperimentalBytes(bytes, 1);
-          } else {
-            A = byte_value;
-            StorByt();
-            PC = ObjPC;
-          }
-        }
-      }
-      C = false;
-      return;
+    if (mnemonic == "DB" || mnemonic == ".DB") {
+      // Alias DB to DFB handling so comma-separated byte lists use the
+      // same pass1/pass2 parsing and emission path.
+      mnemonic = "DFB";
     }
 
     if (mnemonic == "DW") {
@@ -5691,7 +5716,8 @@ namespace {
       return;
     }
 
-    if (mnemonic == "DFB" || mnemonic == ".BYTE" || mnemonic == ".DFB") {
+    if (mnemonic == "DFB" || mnemonic == ".BYTE" || mnemonic == ".DFB" || mnemonic == "DB" ||
+        mnemonic == ".DB") {
       // DFB (Define Byte) - with relocatable support
       ZAB                   = 0x80;  // Mark as directive
       g_LastDirectiveCalled = "HndlBYTE";
@@ -5761,9 +5787,12 @@ namespace {
       }
 
       // Pass 2: Evaluate expressions and emit bytes
-      std::uint8_t queuedBytes[4] = {0, 0, 0, 0};
-      std::uint8_t queuedCount    = 0;
-      bool         queueMode      = g_use_experimental_pass2;
+      std::uint16_t listingAddr       = ObjPC;
+      std::uint8_t  displayedBytes[4] = {0, 0, 0, 0};
+      std::uint8_t  displayedCount    = 0;
+      std::uint8_t  queuedBytes[4]    = {0, 0, 0, 0};
+      std::uint8_t  queuedCount       = 0;
+      bool          queueMode         = g_use_experimental_pass2;
       while (true) {
         // Skip spaces
         while (SrcP_at(Y) == ' ' || SrcP_at(Y) == '\t') Y++;
@@ -5785,10 +5814,16 @@ namespace {
           Y = savedY;
         }
 
+        std::uint8_t outByte = static_cast<std::uint8_t>(ValExpr & 0xFF);
+        if (displayedCount < 4) {
+          displayedBytes[displayedCount] = outByte;
+          displayedCount++;
+        }
+
         // Pass 2: Emit byte and check for relocatable
         if (PassNbr == 1) {
           if (queueMode && RelExprF == 0 && queuedCount < 4) {
-            queuedBytes[queuedCount] = static_cast<std::uint8_t>(ValExpr & 0xFF);
+            queuedBytes[queuedCount] = outByte;
             queuedCount++;
           } else {
             if (queueMode) {
@@ -5812,7 +5847,7 @@ namespace {
               X = save_X;
               Y = save_Y;
             }
-            A = (ValExpr & 0xFF);
+            A = outByte;
             StorByt();
           }
         }
@@ -5834,6 +5869,13 @@ namespace {
         if (queueMode) {
           QueueExperimentalBytes(queuedBytes, queuedCount);
         } else {
+          if (g_use_experimental_pass2) {
+            EmitExplicitListingLine(listingAddr, displayedBytes, displayedCount);
+            // Bytes are already emitted via StorByt; skip the generic
+            // PrtAsmLn/StorGMC/AdvPC path to avoid double-advancing ObjPC.
+            ZAB    = 0x83;
+            Length = 0;
+          }
           PC = ObjPC;
         }
       }

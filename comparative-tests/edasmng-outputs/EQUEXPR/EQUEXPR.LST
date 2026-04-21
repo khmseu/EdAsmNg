@@ -9,6 +9,6 @@ SOURCE   FILE #01 =>EQUEXPR.SRC
 0802:8D 00 C0        5                                     STA   BASE
 0805:60              6                                     RTS
 ** SUCCESSFUL ASSEMBLY := NO ERRORS
-** ASSEMBLER CREATED ON 20-APR-26 07:49 
+** ASSEMBLER CREATED ON 21-APR-26 07:02 
 ** TOTAL LINES ASSEMBLED     6 
 ** FREE SPACE PAGE COUNT  160 

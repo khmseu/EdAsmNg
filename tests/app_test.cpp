@@ -1432,6 +1432,39 @@ TEST_F(EvalOprndTest, PreservesPassNumber_Pass1) {
   EXPECT_EQ(EdAsmNg::Asm::GetPassNbr(), 1);
 }
 
+TEST_F(EvalOprndTest, CharPrefixExpression_EvaluatesToExpectedValue) {
+  // EDASM expression form: '0+$80 => 0x30 + 0x80 = 0xB0
+  EdAsmNg::Asm::SetupSourceLine("'0+$80");
+  EdAsmNg::Asm::SetPassNbr(1);
+
+  EdAsmNg::Asm::EvalOprnd();
+
+  EXPECT_EQ(EdAsmNg::Asm::GetPassNbr(), 1);
+  EXPECT_EQ(EdAsmNg::Asm::GetValExpr(), 0x00B0);
+}
+
+TEST_F(EvalOprndTest, CharClosedQuoteExpression_EvaluatesToExpectedValue) {
+  // EDASM also accepts closed-quote constants in expressions.
+  EdAsmNg::Asm::SetupSourceLine("'0'+$80");
+  EdAsmNg::Asm::SetPassNbr(1);
+
+  EdAsmNg::Asm::EvalOprnd();
+
+  EXPECT_EQ(EdAsmNg::Asm::GetPassNbr(), 1);
+  EXPECT_EQ(EdAsmNg::Asm::GetValExpr(), 0x00B0);
+}
+
+TEST_F(EvalOprndTest, ChainedArithmeticExpression_EvaluatesLeftToRight) {
+  // EDASM expression form: '3+1+$80 => 0x33 + 1 + 0x80 = 0xB4
+  EdAsmNg::Asm::SetupSourceLine("'3+1+$80");
+  EdAsmNg::Asm::SetPassNbr(1);
+
+  EdAsmNg::Asm::EvalOprnd();
+
+  EXPECT_EQ(EdAsmNg::Asm::GetPassNbr(), 1);
+  EXPECT_EQ(EdAsmNg::Asm::GetValExpr(), 0x00B4);
+}
+
 class DirectiveDispatchTest : public ::testing::Test {
  protected:
   void SetUp() override {
